@@ -1,0 +1,14 @@
+node_modules
+dist
+.DS_Store
+*.log
+.firebase
+
+# Local env / secrets — keep all .env* files out of git except the example + CI templates
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+!.env.example
+!.env.ci
