@@ -18,7 +18,42 @@ service cloud.firestore {
 
     match /admins/{uid} {
       allow read: if signedInAs(uid) || isAdmin();
-      allow write: if false; // doar consolă/Admin SDK — niciodată din client
+      // Aprobarea unei cereri = un admin existent creează documentul (declanșează onAdminWrite →
+      // claim). Primul admin e creat de bootstrap-ul din functions (Admin SDK ocolește rules).
+      allow create, delete: if isAdmin();
+      allow update: if false;
+    }
+
+    // Cererile de acces la backend: orice cont logat care încearcă /admin își înregistrează
+    // cererea (o singură dată, pe propriul uid); doar adminii o rezolvă.
+    match /adminRequests/{uid} {
+      allow read: if signedInAs(uid) || isAdmin();
+      allow create: if signedInAs(uid)
+        && request.resource.data.keys().hasOnly(['email', 'displayName', 'requestedAt', 'status'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.email is string && request.resource.data.email.size() <= 120
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 80
+        && request.resource.data.requestedAt == request.time;
+      allow update, delete: if isAdmin();
+    }
+
+    // Lead-urile formularului public /start — site-ul NU are login, deci crearea e anonimă,
+    // dar strict validată (whitelist + plafoane + status forțat 'new'). Doar adminii citesc.
+    match /leads/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(
+          ['schema', 'companyName', 'cui', 'website', 'contactName', 'contactEmail', 'contactPhone',
+           'industry', 'industryOther', 'objectives', 'adBudget', 'facebook', 'instagram', 'tiktok',
+           'description', 'packageInterest', 'locale', 'status', 'createdAt']
+        )
+        && request.resource.data.schema == 1
+        && request.resource.data.status == 'new'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120
+        && request.resource.data.contactEmail is string && request.resource.data.contactEmail.size() <= 120
+        && request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() <= 30
+        && request.resource.data.description is string && request.resource.data.description.size() <= 2000
+        && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
     }
 
     // ───────── Izolare multi-tenant: tot ce aparține unui client stă sub clients/{uid}/** ─────────

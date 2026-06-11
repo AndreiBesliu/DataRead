@@ -1,5 +1,8 @@
-/* DataRead — stiluri de bază. Temă luminoasă (site public de produs).
-   Variabilele sunt folosite și de ErrorBoundary (fallback-uri inline). */
+/* DataRead — stiluri de bază.
+   Două teme: default (deschisă — /app, /admin, până se decide design-ul de backend) și
+   .theme-banner (site-ul public — preluată din bannerul oficial: navy întunecat, roșu aprins,
+   albastru electric, motive diagonale + dot grid). Variabilele sunt folosite și de
+   ErrorBoundary (fallback-uri inline). */
 
 :root {
   --bg-0: #f6f7f9;
@@ -12,6 +15,23 @@
   --accent-contrast: #ffffff;
   --radius: 10px;
   --max-width: 1080px;
+}
+
+/* Tema bannerului — DOAR pe site-ul public (aplicată pe rădăcina SiteLayout). */
+.theme-banner {
+  --bg-0: #0a1228;
+  --bg-1: #101c3a;
+  --fg-0: #ffffff;
+  --fg-1: #9fb0d0;
+  --border: #21335e;
+  --accent: #e02639;
+  --accent-dark: #b81d2e;
+  --accent-contrast: #ffffff;
+  --blue: #2e7fff;
+  --blue-glow: rgba(46, 127, 255, 0.45);
+  --red-glow: rgba(224, 38, 57, 0.4);
+  background: var(--bg-0);
+  color: var(--fg-0);
 }
 
 * {
@@ -38,6 +58,10 @@ body {
 a {
   color: var(--accent);
   text-decoration: none;
+}
+
+.theme-banner a {
+  color: var(--blue);
 }
 
 a:hover {
@@ -77,4 +101,114 @@ h3 {
 
 .btn-primary:hover {
   background: var(--accent-dark);
+}
+
+/* CTA-urile bannerului: roșu plin cu glow + varianta albastru-contur. */
+.theme-banner .btn-primary {
+  box-shadow: 0 0 18px var(--red-glow);
+  border: none;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.theme-banner .btn-blue {
+  border: 1px solid var(--blue);
+  color: #ffffff;
+  background: rgba(46, 127, 255, 0.12);
+  box-shadow: 0 0 14px var(--blue-glow);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.theme-banner .btn-blue:hover {
+  background: rgba(46, 127, 255, 0.22);
+  text-decoration: none;
+}
+
+/* Wordmark-ul DataRead — roșu cu halou albastru discret (logo-ul din banner). */
+.theme-banner .wordmark {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 14px var(--blue-glow);
+}
+
+/* Headline-urile de secțiune din banner: uppercase + linia roșie dedesubt. */
+.theme-banner .section-title {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 800;
+  text-align: center;
+  margin-top: 0;
+}
+
+.theme-banner .section-title::after {
+  content: '';
+  display: block;
+  width: 56px;
+  height: 3px;
+  background: var(--accent);
+  margin: 10px auto 0;
+  border-radius: 2px;
+}
+
+/* Cardurile întunecate cu contur subtil albastru. */
+.theme-banner .card {
+  background: linear-gradient(180deg, #12204286 0%, #0d1834 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+}
+
+/* Motivele bannerului: benzi diagonale roșu/albastru în colțuri + grile de puncte. Pur CSS,
+   determinist (prerender-safe), fără imagini. */
+.theme-banner .hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(rgba(224, 38, 57, 0.5) 1.6px, transparent 1.6px) 92% 12% / 14px 14px no-repeat,
+    radial-gradient(rgba(46, 127, 255, 0.5) 1.6px, transparent 1.6px) 6% 88% / 14px 14px no-repeat,
+    linear-gradient(115deg, rgba(224, 38, 57, 0.85) 0 36px, rgba(46, 127, 255, 0.8) 36px 52px, transparent 52px) 0 0 / 100% 100% no-repeat,
+    linear-gradient(295deg, rgba(224, 38, 57, 0.85) 0 36px, rgba(46, 127, 255, 0.8) 36px 52px, transparent 52px) 100% 100% / 100% 100% no-repeat,
+    radial-gradient(1200px 500px at 80% -10%, rgba(46, 127, 255, 0.18), transparent 60%),
+    var(--bg-0);
+}
+
+.theme-banner .hero-dots {
+  background-image: radial-gradient(var(--fg-1) 1.2px, transparent 1.2px);
+  background-size: 16px 16px;
+  opacity: 0.25;
+}
+
+/* Banda de încredere (DATE REALE · STRATEGII INTELIGENTE · …). */
+.theme-banner .trust-strip {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: rgba(16, 28, 58, 0.6);
+}
+
+.theme-banner .trust-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #dbe4f5;
+  white-space: nowrap;
+}
+
+/* Inputurile pe tema întunecată. */
+.theme-banner input,
+.theme-banner select,
+.theme-banner textarea {
+  background: #0c1730 !important;
+  color: var(--fg-0) !important;
+  border-color: var(--border) !important;
+}
+
+.theme-banner input::placeholder,
+.theme-banner textarea::placeholder {
+  color: #5e7099;
 }

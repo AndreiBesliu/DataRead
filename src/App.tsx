@@ -8,6 +8,7 @@ import { PUBLIC_ROUTES, type PublicRoute } from './site/publicRoutes';
 import SiteLayout from './site/SiteLayout';
 import Landing from './site/Landing';
 import Packages from './site/Packages';
+import StartPage from './site/StartPage';
 import Contact from './site/Contact';
 import Legal from './site/Legal';
 import AppHome from './app/AppHome';
@@ -41,6 +42,7 @@ function NotFound() {
 const PAGE_FOR_SLUG: Record<string, ReactElement> = {
   '/': <Landing />,
   '/pachete': <Packages />,
+  '/start': <StartPage />,
   '/contact': <Contact />,
   '/legal/termeni': <Legal kind="termeni" />,
   '/legal/confidentialitate': <Legal kind="confidentialitate" />,

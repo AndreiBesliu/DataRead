@@ -11,7 +11,7 @@
  * fără ea, deploy-ul merge tăcut în us-central1 și callables-urile pică cu "internal").
  * Deploy:  firebase deploy --only functions   (cere planul Blaze)
  */
-const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { logger } = require('firebase-functions');
 const admin = require('firebase-admin');
 
@@ -19,16 +19,26 @@ admin.initializeApp();
 
 const REGION = 'europe-central2'; // trebuie să coincidă cu VITE_FIREBASE_FUNCTIONS_REGION + extensia Stripe
 
+// Primul admin al platformei (Andrei) — singura cerere auto-aprobată, și DOAR cât timp nu există
+// niciun admin. Orice alt acces la backend trece prin fluxul de cereri + aprobare.
+const BOOTSTRAP_ADMIN_UID = 'IMBKFBkONkOB7VVZCmqgS90JdBi2';
+
 // ───────────────────────── [1] Admin: admins/{uid} → claim `admin` ─────────────────────────
 // Documentul admins/{uid} se creează DOAR din consolă/Admin SDK (rules: write false pentru
 // client). Crearea lui acordă claim-ul; ștergerea îl revocă. Clientul își reîmprospătează
 // tokenul (getIdToken(true)) ca să vadă claim-ul — AdminHome face asta o dată automat.
 
 async function recomputeAdminClaim(uid) {
-  const snap = await admin.firestore().collection('admins').doc(uid).get();
+  const db = admin.firestore();
+  const snap = await db.collection('admins').doc(uid).get();
   const isAdmin = snap.exists;
   const user = await admin.auth().getUser(uid);
   await admin.auth().setCustomUserClaims(uid, Object.assign({}, user.customClaims || {}, { admin: isAdmin }));
+  // Oglindește rezolvarea pe cererea de acces (dacă există) — auditul fluxului de aprobare.
+  await db.collection('adminRequests').doc(uid).set(
+    { status: isAdmin ? 'approved' : 'revoked', resolvedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true }
+  );
   logger.info('admin claim recomputed', { uid, admin: isAdmin });
 }
 
@@ -37,6 +47,26 @@ exports.onAdminWrite = onDocumentWritten({ document: 'admins/{uid}', region: REG
     await recomputeAdminClaim(event.params.uid);
   } catch (err) {
     logger.error('recomputeAdminClaim failed', { uid: event.params.uid, err: String(err) });
+  }
+});
+
+// Bootstrap-ul primului admin: când UID-ul de bootstrap își înregistrează cererea (prima vizită
+// pe /admin) și încă NU există niciun admin, cererea e auto-aprobată — crearea admins/{uid}
+// declanșează onAdminWrite, care setează claim-ul și marchează cererea ca aprobată.
+exports.onAdminRequestCreated = onDocumentCreated({ document: 'adminRequests/{uid}', region: REGION }, async (event) => {
+  try {
+    const uid = event.params.uid;
+    if (uid !== BOOTSTRAP_ADMIN_UID) return;
+    const db = admin.firestore();
+    const existing = await db.collection('admins').limit(1).get();
+    if (!existing.empty) return; // bootstrap-ul rulează o singură dată, pe platforma fără admini
+    await db.collection('admins').doc(uid).set({
+      approvedBy: 'bootstrap',
+      approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    logger.info('bootstrap admin approved', { uid });
+  } catch (err) {
+    logger.error('bootstrap admin failed', { uid: event.params.uid, err: String(err) });
   }
 });
 

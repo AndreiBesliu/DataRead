@@ -70,18 +70,26 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 
 ## Arhitectură (hartă scurtă)
 
+- **Site-ul public NU are login (decizie Andrei, 11.06.2026):** intrarea clienților e formularul
+  public `/start` (fără cont) → colecția `leads` (create anonim, validat strict; citit doar de
+  admini). Doar `/admin` (backend-ul) are autentificare. Zona `/app` (cont client + checkout
+  Stripe) rămâne în cod, DORMANTĂ și nelegată din site, până revine self-serve-ul.
+- **Acces backend prin cereri aprobate:** o logare pe `/admin` fără claim înregistrează automat
+  `adminRequests/{uid}` (pending); un admin existent aprobă din `/admin` (creează `admins/{uid}` →
+  trigger → claim). Bootstrap: UID-ul lui Andrei (`IMBKFBkONkOB7VVZCmqgS90JdBi2`, constantă în
+  functions) e auto-aprobat la prima cerere, DOAR cât timp nu există niciun admin.
+- **Design:** tema bannerului oficial (navy #0a1228, roșu #e02639, albastru electric #2e7fff,
+  diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public. Backend-ul
+  (/app, /admin) rămâne pe tema deschisă default — design de decis mai târziu.
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
-  `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (dashboard client, noindex) + `/admin`
-  (operatori, gate pe claim `admin`).
+  `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (dormant, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage
   (regulă pentru prerender).
 - Entitlements: extensia Stripe scrie `customers/{uid}/subscriptions` → functions
   `onSubscriptionWrite` → custom claim `ent` + mirror `clients/{uid}.entitlement`. FĂRĂ trial.
   Statusuri: `none | active | expired`.
-- Admin: doc `admins/{uid}` (creat doar din consolă/Admin SDK) → trigger `onAdminWrite` →
-  claim `admin: true`.
-- `functions/index.js`: secțiuni separate — entitlement / admin / (viitor) AI. Trigger-ele primesc
-  EXPLICIT `{ region: 'europe-central2' }`.
+- `functions/index.js`: secțiuni separate — admin (claims + bootstrap) / entitlement / (viitor) AI.
+  Runtime **Node 22** gen-2; trigger-ele primesc EXPLICIT `{ region: 'europe-central2' }`.
 - Verticala 1 (felia 2, următoarea sesiune): cerere de marketing (ofertă + buget + obiectiv) →
   callable `aiGenerateCampaign` → texte/creatives/structură campanie Meta sub `clients/{uid}/**`,
   vizibile în dashboardul clientului și în `/admin`; quota în `aiUsage`.

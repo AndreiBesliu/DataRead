@@ -29,6 +29,18 @@ normaliser, secretele niciodată în chat/repo.
       consolă (Blaze, extensie, webhook, produse) = sarcinile lui Andrei din STRIPE_SETUP.md
 - [x] Faza 7: verificare end-to-end + sync final (E2E-ul de plată rămâne după pașii Stripe ai lui Andrei)
 
+### Sesiunea 1b — restructurare fără login + design banner (în lucru)
+- [x] Formular public `/start` (fără cont) → colecția `leads`; CTA-urile pachetelor → /start?pkg=
+- [x] Login scos de pe site; `/app` dormant (revine cu self-serve-ul Stripe)
+- [x] Flux de acces backend: `/admin` → cerere `adminRequests/{uid}` → aprobare de admin existent;
+      bootstrap auto-aprobat pentru UID-ul lui Andrei (prima cerere, zero admini)
+- [x] Design-ul bannerului preluat pe site-ul public (temă `.theme-banner`: navy/roșu/albastru,
+      hero 3 rânduri, trust strip, 4 servicii cu iconuri, diagonale + dot grid); backend netematizat
+- [x] Firestore creat la europe-central2 + rules deployate
+- [x] Functions deployate la europe-central2 (onAdminWrite, onAdminRequestCreated/bootstrap,
+      onSubscriptionWrite) — Node 22 gen-2; au mers la al 3-lea retry (propagarea Eventarc la
+      primul deploy gen-2 e normală)
+
 ### Felia 2 — Verticala 1 Marketing AI (sesiunea următoare)
 - [ ] Cerere de marketing (ofertă + buget + obiectiv, din dashboard client sau /admin) →
       callable `aiGenerateCampaign` → texte reclame + creatives (copy + video script) + structură
@@ -142,3 +154,38 @@ normaliser, secretele niciodată în chat/repo.
 > Sesiunea 1 = scaffold complet + felia verticală construită cap-coadă. Pașii rămași sunt în
 > mâna lui Andrei (vezi STRIPE_SETUP.md + lista de mai jos), apoi E2E-ul de plată cu cardul de
 > test închide felia.
+
+### 2026-06-11 — Sesiunea 1b (redirecționare: fără login + design banner)
+
+**22:05 - Task Started**
+> Model: Claude Fable 5
+> Prompt: Andrei — (1) site-ul NU are login, doar backend-ul; logarea pe /admin declanșează o
+> cerere înregistrată în backend, care trebuie aprobată; (2) preia design-ul bannerului oficial
+> pentru site-ul live (backend-ul: decizie ulterioară); Stripe + cheia AI rămân pe placeholders.
+> Context primit: API Firestore + Blaze + provideri Auth activate; UID-ul lui Andrei pentru admin.
+
+**22:30 - Task Completed — restructurare + design (cod)**
+> Model: Claude Fable 5
+> Changes: formular public /start (refolosește OnboardingFields extras + validarea pură; draft
+> dataread.leadDraft.v1 prin coerce) → colecția `leads` (rules: create anonim validat strict,
+> read/update doar admin); login scos din SiteLayout; CTA pachete → /start?pkg=; /app dormant.
+> Flux acces backend: RequestAccess auto-înregistrează adminRequests/{uid} (rules: create o
+> singură dată pe propriul uid); /admin pentru admini = Cereri de acces (aprobă→admins/{uid},
+> respinge) + Lead-uri (tabel live + detaliu) + Clienți; functions: onAdminRequestCreated cu
+> BOOTSTRAP_ADMIN_UID (auto-aprobare doar la zero admini) + mirror status approved/revoked în
+> recomputeAdminClaim; runtime Node 22 (Node 20 deprecat din 04.2026).
+> Design banner: temă .theme-banner scoped pe site-ul public (navy #0a1228, roșu #e02639,
+> albastru #2e7fff, glow, diagonale + dot grid CSS pur — prerender-safe); hero pe 3 rânduri din
+> banner + tagline „Date. Strategie. Creștere."; trust strip; 4 servicii cu iconuri SVG roșii;
+> copy actualizat ro+en. Backend rămâne pe tema deschisă (decizie ulterioară).
+> Verificat: build + 5 suites + prerender (12 pagini) + boot-smoke (8 profile, incl. /start cu
+> draft corupt) verzi; screenshots Playwright pe bundle-ul de producție — design fidel bannerului.
+> Infra: Firestore creat la europe-central2 ✓, rules deployate ✓, hosting live ✓.
+
+**22:48 - Task Completed — deploy functions + verificare live — SESIUNEA 1b ÎNCHEIATĂ**
+> Model: Claude Fable 5
+> Changes: functions deployate la europe-central2 (Node 22 gen-2): onAdminWrite,
+> onAdminRequestCreated (bootstrap-ul lui Andrei), onSubscriptionWrite. Verificat live:
+> /start servește formularul prerenderizat, landing-ul are hero-ul din banner, sitemap 8 URL-uri.
+> Capturi de design trimise lui Andrei. FLUXUL COMPLET ACUM LIVE: vizitator → /start → lead în
+> Firestore → vizibil în /admin; prima logare a lui Andrei pe /admin se auto-aprobă (bootstrap).

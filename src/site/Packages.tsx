@@ -57,15 +57,11 @@ function PackageCard({ pkg }: { pkg: PackageDef }) {
         )}
       </div>
 
-      {pkg.priceId ? (
-        <Link to={`/app?pkg=${pkg.id}`} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }}>
-          {t('pachete.choose', { name })}
-        </Link>
-      ) : (
-        <Link to={toLocalizedPath('/contact', lang)} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }}>
-          {t('pachete.contactUs')}
-        </Link>
-      )}
+      {/* Site fără login (decizie 11.06): CTA-ul duce la formularul public /start cu pachetul
+          preselectat. Când revine self-serve-ul Stripe, ramura cu priceId → /app?pkg= se reactivează. */}
+      <Link to={`${toLocalizedPath('/start', lang)}?pkg=${pkg.id}`} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }}>
+        {t('pachete.choose', { name })}
+      </Link>
     </div>
   );
 }

@@ -3,7 +3,7 @@
   "description": "DataRead — backend central (Cloud Functions): admin claims, entitlements Stripe, AI (felia 2)",
   "main": "index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
