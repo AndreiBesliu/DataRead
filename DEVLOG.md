@@ -27,7 +27,7 @@ normaliser, secretele niciodată în chat/repo.
 - [x] Faza 5: fundația admin (/admin, claim, listă clienți + onboarding-uri)
 - [x] Faza 6: Stripe (billing, entitlements fără trial, functions) — codul complet; pașii de
       consolă (Blaze, extensie, webhook, produse) = sarcinile lui Andrei din STRIPE_SETUP.md
-- [ ] Faza 7: verificare end-to-end + sync final
+- [x] Faza 7: verificare end-to-end + sync final (E2E-ul de plată rămâne după pașii Stripe ai lui Andrei)
 
 ### Felia 2 — Verticala 1 Marketing AI (sesiunea următoare)
 - [ ] Cerere de marketing (ofertă + buget + obiectiv, din dashboard client sau /admin) →
@@ -132,3 +132,13 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED (hosting): https://dataread-e1bd6.web.app
 > Nedeployate încă (blocate pe Andrei): firestore.rules + functions — cer API-ul Firestore
 > activat, respectiv planul Blaze.
+
+**21:32 - Task Completed — Faza 7 (verificare finală) — SESIUNEA 1 ÎNCHEIATĂ**
+> Model: Claude Fable 5
+> Verificat pe LIVE (https://dataread-e1bd6.web.app): /pachete servește HTML prerenderizat
+> românesc cu prețurile 149/999 + hreflang (fără JS); /en/pachete în engleză; robots.txt cu
+> Disallow /app; sitemap.xml cu 6 URL-uri; /app servit prin shell-ul SPA (app.html). Local:
+> build + 5 suites (89 checks) + prerender (10 pagini) + boot-smoke (6 profile) — toate verzi.
+> Sesiunea 1 = scaffold complet + felia verticală construită cap-coadă. Pașii rămași sunt în
+> mâna lui Andrei (vezi STRIPE_SETUP.md + lista de mai jos), apoi E2E-ul de plată cu cardul de
+> test închide felia.
