@@ -10,10 +10,22 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // Adminii (operatorii platformei) — claim setat de functions/onAdminWrite pe baza
+    // documentului admins/{uid} (creat doar din consolă/Admin SDK).
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    match /admins/{uid} {
+      allow read: if signedInAs(uid) || isAdmin();
+      allow write: if false; // doar consolă/Admin SDK — niciodată din client
+    }
+
     // ───────── Izolare multi-tenant: tot ce aparține unui client stă sub clients/{uid}/** ─────────
+    // Owner-only pentru client; adminii pot CITI (panoul intern), dar nu scriu în v1.
 
     match /clients/{uid} {
-      allow read: if signedInAs(uid);
+      allow read: if signedInAs(uid) || isAdmin();
       // Crearea: doar schema curentă, fără câmpuri străine și NICIODATĂ entitlement
       // (entitlement-ul e scris exclusiv de Cloud Functions, ca mirror din Stripe).
       allow create: if signedInAs(uid)
@@ -29,7 +41,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /onboarding/{docId} {
-        allow read: if signedInAs(uid);
+        allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)
           && docId == 'main'
           && request.resource.data.keys().hasOnly(
@@ -43,6 +55,47 @@ service cloud.firestore {
           && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
         allow delete: if false;
       }
+    }
+
+    // ───────── Stripe (extensia firestore-stripe-payments) ─────────
+    // Extensia scrie cu Admin SDK (ocolește rules); clientul doar citește ce-i aparține și
+    // creează checkout_sessions (extensia completează `url`).
+
+    match /customers/{uid} {
+      allow read: if signedInAs(uid) || isAdmin();
+      allow write: if false;
+
+      match /checkout_sessions/{id} {
+        allow read, create: if signedInAs(uid);
+        allow update, delete: if false;
+      }
+      match /subscriptions/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false;
+      }
+      match /payments/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false;
+      }
+    }
+
+    // Catalogul sincronizat de extensie — public (pagina de pricing citește prețurile live).
+    match /products/{id} {
+      allow read: if true;
+      allow write: if false;
+      match /prices/{priceId} {
+        allow read: if true;
+        allow write: if false;
+      }
+      match /tax_rates/{taxId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+    // collectionGroup peste prices — calea preferată din billing.fetchLivePrices (prinde și
+    // prețurile cu părinte-fantomă, lecție CNCVS).
+    match /{path=**}/prices/{priceId} {
+      allow read: if true;
     }
 
     // Rapoarte de crash (consent-gated, trimise de client): create-only, validate strict —

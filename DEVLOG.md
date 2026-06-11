@@ -24,8 +24,9 @@ normaliser, secretele niciodată în chat/repo.
 - [x] Faza 2: site public prerenderizat (landing, pachete, contact, legal-draft)
 - [x] Faza 3: auth + cont client (dashboard cu secțiunile pregătite)
 - [x] Faza 4: formular onboarding cu draft autosave
-- [ ] Faza 5: fundația admin (/admin, claim, listă clienți + onboarding-uri)
-- [ ] Faza 6: Stripe (billing, entitlements fără trial, functions)
+- [x] Faza 5: fundația admin (/admin, claim, listă clienți + onboarding-uri)
+- [x] Faza 6: Stripe (billing, entitlements fără trial, functions) — codul complet; pașii de
+      consolă (Blaze, extensie, webhook, produse) = sarcinile lui Andrei din STRIPE_SETUP.md
 - [ ] Faza 7: verificare end-to-end + sync final
 
 ### Felia 2 — Verticala 1 Marketing AI (sesiunea următoare)
@@ -110,3 +111,24 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED: https://dataread-e1bd6.web.app
 > Blocat pe Andrei (testarea manuală a fluxului): providerii Auth (Email/Password + Google) de
 > activat în consolă + API-ul Firestore (rules încă nedeployate — baza nu există).
+
+**21:25 - Task Completed — Fazele 5+6 (fundația admin + Stripe)**
+> Model: Claude Fable 5
+> Changes: functions/index.js (backend central pe secțiuni: [1] onAdminWrite admins/{uid}→claim
+> `admin`; [2] onSubscriptionWrite→claim `ent`+mirror clients/{uid}.entitlement, AMBELE cu
+> region europe-central2 explicit — fix-ul bug-ului CNCVS; [3] secțiunea AI rezervată cu șablonul
+> defineSecret pentru felia 2); firestore.rules: isAdmin(), admins/{uid} write-never, adminii
+> citesc clients/** + blocurile extensiei Stripe (customers/checkout_sessions/subscriptions/
+> payments, products public, collectionGroup prices); AdminHome (/admin: gate pe claim cu un
+> token-refresh automat, ecran „denied" care afișează UID-ul pt. bootstrap, tabel clienți live +
+> detaliu onboarding); billing.ts portat fără trial (fetchLivePrices, watchSubscription cu rank
+> start/growth/premium, createCheckoutSession→/app?checkout=success, createPortalLink);
+> entitlementLogic (none|active|expired, PERIOD_END_GRACE_MS, preț nemapat→start conservator,
+> module ca feature flags) + entitlementStore (cache offline dataread_ent_, ensureClaimToken,
+> recompute la focus/60s); AppHome: card abonament complet („Se confirmă plata…", reînnoire/
+> încheiere, portal, checkout, resync); STRIPE_SETUP.md rescris pt. DataRead (ordinea corectă:
+> extensie→webhook→produse); dump-prices.mjs (prices:check); test-entitlement.ts (10 checks).
+> Verificat: build + 5 suites + prerender + test:boot toate verzi.
+> DEPLOYED (hosting): https://dataread-e1bd6.web.app
+> Nedeployate încă (blocate pe Andrei): firestore.rules + functions — cer API-ul Firestore
+> activat, respectiv planul Blaze.
