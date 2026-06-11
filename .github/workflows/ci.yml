@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Use CI Firebase config (fake values — bundle must initialise for the boot smoke)
+        run: cp .env.ci .env
+      - name: Typecheck + build
+        run: npm run build
+      - name: Headless test suites
+        run: npm test
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Boot smoke (production bundle vs poisoned profiles)
+        run: npm run test:boot

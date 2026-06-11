@@ -1,0 +1,80 @@
+/* DataRead — stiluri de bază. Temă luminoasă (site public de produs).
+   Variabilele sunt folosite și de ErrorBoundary (fallback-uri inline). */
+
+:root {
+  --bg-0: #f6f7f9;
+  --bg-1: #ffffff;
+  --fg-0: #16202c;
+  --fg-1: #4b5563;
+  --border: #e2e6eb;
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --accent-contrast: #ffffff;
+  --radius: 10px;
+  --max-width: 1080px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  color: var(--fg-0);
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.btn-primary:hover {
+  background: var(--accent-dark);
+}

@@ -20,7 +20,7 @@ normaliser, secretele niciodată în chat/repo.
 
 ### Sesiunea 1 — scaffold + felia verticală (în lucru)
 - [x] Faza 0: repo + documente (CLAUDE.md, DEVLOG, kickoff actualizat)
-- [ ] Faza 1: schelet buildabil + harness portat (teste, CI, boot-smoke, error reporting, i18n)
+- [x] Faza 1: schelet buildabil + harness portat (teste, CI, boot-smoke, error reporting, i18n)
 - [ ] Faza 2: site public prerenderizat (landing, pachete, contact, legal-draft)
 - [ ] Faza 3: auth + cont client (dashboard cu secțiunile pregătite)
 - [ ] Faza 4: formular onboarding cu draft autosave
@@ -65,3 +65,17 @@ normaliser, secretele niciodată în chat/repo.
 > Changes: git init (branch `main`) + remote origin; .gitignore; CLAUDE.md (reguli + principiile
 > platformei + fapte infra); DEVLOG.md (acest fișier); PROJECT_KICKOFF.md actualizat cu poziționarea
 > de platformă multi-tenant.
+
+**20:25 - Task Completed — Faza 1 (schelet + harness)**
+> Model: Claude Fable 5
+> Changes: Vite+React+TS+Zustand schelet (base '/', build identity __APP_VERSION__/__BUILD_HASH__);
+> i18n ro-primar cu paritate `en: typeof ro` + rutare de limbă strict din path (routing.ts pur);
+> ErrorBoundary cu „Resetează datele aplicației" (prefix dataread) + chunk-reload guard;
+> errorReporting consent-gated → Firestore errorReports (rules create-only validate);
+> analytics GDPR opt-in cu buffer; firebase.ts (region europe-central2, App Check inert);
+> harness: run-tests.mjs (esbuild headless) + test-i18n-routing (20 checks), boot-smoke.mjs
+> (4 profile: curat, JSON stricat, /en, 404), CI GitHub Actions; firebase.json (trailingSlash
+> false, cache headers), firestore.rules (errorReports), .env.example/.ci/.local.
+> Verificat: typecheck+build+test+test:boot toate verzi. DEPLOYED: https://dataread-e1bd6.web.app
+> Blocat pe Andrei: API-ul Firestore (un click pe link) — baza se creează apoi prin CLI la
+> europe-central2; rules se deployează atunci.
