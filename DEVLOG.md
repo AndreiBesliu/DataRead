@@ -189,3 +189,13 @@ normaliser, secretele niciodată în chat/repo.
 > /start servește formularul prerenderizat, landing-ul are hero-ul din banner, sitemap 8 URL-uri.
 > Capturi de design trimise lui Andrei. FLUXUL COMPLET ACUM LIVE: vizitator → /start → lead în
 > Firestore → vizibil în /admin; prima logare a lui Andrei pe /admin se auto-aprobă (bootstrap).
+
+**23:05 - Task Completed — fix bootstrap admin (race la primul deploy)**
+> Model: Claude Fable 5
+> Bug raportat de Andrei: „Reverifică accesul" nu-i dădea acces. Cauza (confirmată în logurile
+> functions): cererea lui adminRequests/{uid} fusese creată ÎNAINTE ca functions să devină active
+> (fereastra dintre deploy-ul hosting și cel de functions, întârziat de propagarea Eventarc) —
+> onDocumentCreated nu rulează retroactiv. Fix: (1) cererea veche ștearsă cu firestore:delete →
+> recrearea declanșează bootstrap-ul; (2) RequestAccess e acum self-healing: „Reverifică" re-asigură
+> și documentul de cerere (recreează dacă lipsește), iar după înregistrare rulează automat două
+> reverificări (la 4s și 10s) — bootstrap-ul nu mai cere nicio acțiune manuală. Deploy hosting ✓.

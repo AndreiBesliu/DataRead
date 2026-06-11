@@ -79,28 +79,49 @@ function OnboardingDetail({ detail }: { detail: OnboardingData }) {
 
 /** Ecranul pentru ne-admini: ÎNREGISTREAZĂ automat o cerere de acces (adminRequests/{uid}) —
  *  „dacă cineva încearcă să se logheze prin /admin, declanșează o cerere care trebuie aprobată".
- *  Primul admin (bootstrap) e auto-aprobat de functions; butonul Reverifică reia claim-ul. */
+ *  Primul admin (bootstrap) e auto-aprobat de functions. Self-healing: și butonul Reverifică
+ *  re-asigură documentul de cerere (dacă a fost șters / creat înaintea trigger-ului, recrearea
+ *  lui re-declanșează fluxul), iar după înregistrare urmează o reverificare automată — fluxul
+ *  de bootstrap merge fără nicio acțiune manuală. */
 function RequestAccess({ uid, email, displayName, onRecheck }: { uid: string; email: string | null; displayName: string | null; onRecheck: () => void }) {
   const { t } = useTranslation();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const ref = doc(db, 'adminRequests', uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          await setDoc(ref, {
-            email: email ?? '',
-            displayName: displayName ?? '',
-            requestedAt: serverTimestamp(),
-            status: 'pending',
-          });
-        }
-      } catch (e) {
-        console.warn('admin request register failed:', e);
+  const ensureRequest = async (): Promise<void> => {
+    try {
+      const ref = doc(db, 'adminRequests', uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          email: email ?? '',
+          displayName: displayName ?? '',
+          requestedAt: serverTimestamp(),
+          status: 'pending',
+        });
       }
-    })();
-  }, [uid, email, displayName]);
+    } catch (e) {
+      console.warn('admin request register failed:', e);
+    }
+  };
+
+  useEffect(() => {
+    let t1: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
+    void ensureRequest().then(() => {
+      // Bootstrap-ul / o aprobare proaspătă durează câteva secunde (trigger → claim) —
+      // reverificăm automat de două ori înainte să lăsăm utilizatorul să apese manual.
+      t1 = setTimeout(onRecheck, 4000);
+      t2 = setTimeout(onRecheck, 10000);
+    });
+    return () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  const recheck = () => {
+    void ensureRequest().then(onRecheck);
+  };
 
   return (
     <main data-page="admin-request" style={{ maxWidth: 560, margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}>
@@ -111,7 +132,7 @@ function RequestAccess({ uid, email, displayName, onRecheck }: { uid: string; em
         {uid}
       </code>
       <div style={{ marginTop: 20, display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <button className="btn btn-primary" onClick={onRecheck}>{t('admin.accessRecheck')}</button>
+        <button className="btn btn-primary" onClick={recheck}>{t('admin.accessRecheck')}</button>
         <Link to="/" className="btn">{t('notFound.back')}</Link>
       </div>
     </main>
