@@ -24,5 +24,7 @@ jobs:
         run: npm test
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+      - name: Prerender public routes
+        run: npm run prerender
       - name: Boot smoke (production bundle vs poisoned profiles)
         run: npm run test:boot

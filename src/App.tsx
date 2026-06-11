@@ -1,9 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactElement } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n, { storedLanguage } from './i18n';
 import { resolveInitialLanguage, toLocalizedPath } from './i18n/routing';
+import { PUBLIC_ROUTES, type PublicRoute } from './site/publicRoutes';
+import SiteLayout from './site/SiteLayout';
 import Landing from './site/Landing';
+import Packages from './site/Packages';
+import Contact from './site/Contact';
+import Legal from './site/Legal';
 
 /** Ține limba i18n sincronizată cu path-ul la navigările client-side (regula: pe rutele publice
  *  limba derivă STRICT din path; pe /app|/admin din alegerea stocată). */
@@ -28,13 +33,30 @@ function NotFound() {
   );
 }
 
+// Componenta fiecărui slug public (sursa rutelor: site/publicRoutes.ts).
+const PAGE_FOR_SLUG: Record<string, ReactElement> = {
+  '/': <Landing />,
+  '/pachete': <Packages />,
+  '/contact': <Contact />,
+  '/legal/termeni': <Legal kind="termeni" />,
+  '/legal/confidentialitate': <Legal kind="confidentialitate" />,
+};
+
+function publicElement(route: PublicRoute): ReactElement {
+  return <SiteLayout route={route}>{PAGE_FOR_SLUG[route.slug]}</SiteLayout>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <LanguageSync />
       <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/en" element={<Landing />} />
+        {PUBLIC_ROUTES.map((r) => (
+          <Route key={r.slug} path={r.slug} element={publicElement(r)} />
+        ))}
+        {PUBLIC_ROUTES.map((r) => (
+          <Route key={`en:${r.slug}`} path={toLocalizedPath(r.slug, 'en')} element={publicElement(r)} />
+        ))}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

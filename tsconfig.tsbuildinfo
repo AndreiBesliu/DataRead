@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/firebase.ts","./src/main.tsx","./src/vite-env.d.ts","./src/components/errorboundary.tsx","./src/i18n/index.ts","./src/i18n/routing.ts","./src/i18n/locales/en.ts","./src/i18n/locales/ro.ts","./src/services/analytics.ts","./src/services/errorreporting.ts","./src/site/landing.tsx","./src/site/publicroutes.ts"],"version":"5.9.3"}

@@ -25,13 +25,15 @@ const CORRUPT_KEYS = [
 
 const PROFILES = [
   { name: 'vizitator curat /', path: '/', storage: { ...BASE }, expectSelector: '[data-page="landing"]' },
+  { name: '/pachete are 3 carduri', path: '/pachete', storage: { ...BASE }, expectSelector: '[data-testid="package-card"]', minCount: 3 },
   {
     name: 'JSON stricat în toate cheile dataread*',
     path: '/',
     storage: Object.fromEntries(CORRUPT_KEYS.map((k) => [k, '{broken json!'])),
     expectSelector: '[data-page="landing"]',
   },
-  { name: 'ruta /en', path: '/en', storage: { ...BASE }, expectSelector: '[data-page="landing"]' },
+  // Limba derivă din path: chiar cu stored 'ro', /en/pachete trebuie să fie în engleză.
+  { name: '/en/pachete în engleză', path: '/en/pachete', storage: { ...BASE }, expectSelector: '[data-page="packages"]', textSelector: 'h1', textIncludes: 'pricing' },
   { name: 'rută inexistentă → 404', path: '/nu-exista', storage: { ...BASE }, expectSelector: '[data-page="not-found"]' },
 ];
 
@@ -64,12 +66,19 @@ for (const profile of PROFILES) {
     const deadline = Date.now() + 25000;
     let aliveSince = 0;
     for (;;) {
-      const state = await page.evaluate((sel) => ({
+      const state = await page.evaluate(({ sel, minCount, textSelector, textIncludes }) => ({
         errorPanel: [...document.querySelectorAll('div')].some(
           (d) => (d.textContent === 'A apărut o eroare.' || d.textContent === 'Something went wrong.') && d.children.length === 0
         ),
-        target: !!document.querySelector(sel),
-      }), profile.expectSelector);
+        target:
+          document.querySelectorAll(sel).length >= (minCount || 1) &&
+          (!textSelector || (document.querySelector(textSelector)?.textContent || '').includes(textIncludes)),
+      }), {
+        sel: profile.expectSelector,
+        minCount: profile.minCount,
+        textSelector: profile.textSelector,
+        textIncludes: profile.textIncludes,
+      });
       if (state.errorPanel) { verdict = 'error panel shown'; break; }
       if (state.target && !aliveSince) aliveSince = Date.now();
       if (state.target && Date.now() - aliveSince > 1500) break; // viu și a rămas viu

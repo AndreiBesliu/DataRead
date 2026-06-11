@@ -21,7 +21,7 @@ normaliser, secretele niciodată în chat/repo.
 ### Sesiunea 1 — scaffold + felia verticală (în lucru)
 - [x] Faza 0: repo + documente (CLAUDE.md, DEVLOG, kickoff actualizat)
 - [x] Faza 1: schelet buildabil + harness portat (teste, CI, boot-smoke, error reporting, i18n)
-- [ ] Faza 2: site public prerenderizat (landing, pachete, contact, legal-draft)
+- [x] Faza 2: site public prerenderizat (landing, pachete, contact, legal-draft)
 - [ ] Faza 3: auth + cont client (dashboard cu secțiunile pregătite)
 - [ ] Faza 4: formular onboarding cu draft autosave
 - [ ] Faza 5: fundația admin (/admin, claim, listă clienți + onboarding-uri)
@@ -79,3 +79,16 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck+build+test+test:boot toate verzi. DEPLOYED: https://dataread-e1bd6.web.app
 > Blocat pe Andrei: API-ul Firestore (un click pe link) — baza se creează apoi prin CLI la
 > europe-central2; rules se deployează atunci.
+
+**20:42 - Task Completed — Faza 2 (site public + prerender)**
+> Model: Claude Fable 5
+> Changes: packages.ts (sursa unică: 3 pachete 149/399/999 € + 5 upsell-uri + modules feature-flags);
+> locales complete ro/en (landing, pachete, contact, legal, cookies, SEO); SiteLayout (nav, comutator
+> limbă path-based, footer, banner consimțământ GDPR); Seo.tsx (title/description/canonical/hreflang/og
+> fără helmet); pagini: Landing, Packages (CTA „Contactează-ne" pre-Stripe), Contact, Legal (DRAFT
+> banner + noindex); prerender.mjs (10 pagini statice ro+en + sitemap.xml cu hreflang; shell-ul curat
+> → app.html = destinația rewrite-ului SPA); robots.txt (Disallow /app /admin); test-packages.ts
+> (70+ checks incl. paritatea cheilor i18n); boot-smoke extins (5 profile, incl. „/en/pachete în
+> engleză cu stored ro").
+> Verificat: build+test (2 suites)+prerender+test:boot toate verzi; HTML-ul static conține prețuri +
+> hreflang fără JS. DEPLOYED: https://dataread-e1bd6.web.app
