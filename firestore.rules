@@ -6,6 +6,45 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // ───────── Izolare multi-tenant: tot ce aparține unui client stă sub clients/{uid}/** ─────────
+
+    match /clients/{uid} {
+      allow read: if signedInAs(uid);
+      // Crearea: doar schema curentă, fără câmpuri străine și NICIODATĂ entitlement
+      // (entitlement-ul e scris exclusiv de Cloud Functions, ca mirror din Stripe).
+      allow create: if signedInAs(uid)
+        && request.resource.data.keys().hasOnly(
+          ['schema', 'email', 'displayName', 'locale', 'onboardingStatus', 'createdAt', 'tosAcceptedAt']
+        )
+        && request.resource.data.schema == 1
+        && request.resource.data.onboardingStatus in ['none', 'submitted'];
+      // Update: clientul nu poate atinge entitlement și nu poate retrograda schema.
+      allow update: if signedInAs(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['entitlement'])
+        && request.resource.data.schema == 1;
+      allow delete: if false;
+
+      match /onboarding/{docId} {
+        allow read: if signedInAs(uid);
+        allow create, update: if signedInAs(uid)
+          && docId == 'main'
+          && request.resource.data.keys().hasOnly(
+            ['schema', 'companyName', 'cui', 'website', 'contactName', 'contactEmail', 'contactPhone',
+             'industry', 'industryOther', 'objectives', 'adBudget', 'facebook', 'instagram', 'tiktok',
+             'description', 'packageInterest', 'locale', 'submittedAt', 'updatedAt']
+          )
+          && request.resource.data.schema == 1
+          && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120
+          && request.resource.data.description is string && request.resource.data.description.size() <= 2000
+          && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
+        allow delete: if false;
+      }
+    }
+
     // Rapoarte de crash (consent-gated, trimise de client): create-only, validate strict —
     // nimeni nu le poate citi/modifica din client (se citesc doar din consolă/Admin SDK).
     match /errorReports/{id} {

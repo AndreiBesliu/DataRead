@@ -22,8 +22,8 @@ normaliser, secretele niciodată în chat/repo.
 - [x] Faza 0: repo + documente (CLAUDE.md, DEVLOG, kickoff actualizat)
 - [x] Faza 1: schelet buildabil + harness portat (teste, CI, boot-smoke, error reporting, i18n)
 - [x] Faza 2: site public prerenderizat (landing, pachete, contact, legal-draft)
-- [ ] Faza 3: auth + cont client (dashboard cu secțiunile pregătite)
-- [ ] Faza 4: formular onboarding cu draft autosave
+- [x] Faza 3: auth + cont client (dashboard cu secțiunile pregătite)
+- [x] Faza 4: formular onboarding cu draft autosave
 - [ ] Faza 5: fundația admin (/admin, claim, listă clienți + onboarding-uri)
 - [ ] Faza 6: Stripe (billing, entitlements fără trial, functions)
 - [ ] Faza 7: verificare end-to-end + sync final
@@ -92,3 +92,21 @@ normaliser, secretele niciodată în chat/repo.
 > engleză cu stored ro").
 > Verificat: build+test (2 suites)+prerender+test:boot toate verzi; HTML-ul static conține prețuri +
 > hreflang fără JS. DEPLOYED: https://dataread-e1bd6.web.app
+
+**21:02 - Task Completed — Fazele 3+4 (auth + cont client + onboarding)**
+> Model: Claude Fable 5
+> Changes: authStore portat din CNCVS fără Electron (erori = chei i18n; cont nou Google fără
+> consimțământ → rollback); useAuthInit (sincronizare + ensureClientDoc idempotent cu ștampila ToS);
+> AuthPanel (taburi login/cont nou, checkbox termeni obligatoriu, ?pkg= persistat prin sessionStorage);
+> AppHome (carduri Onboarding/Abonament + secțiunile Verticalei 1 „în curând": cereri/rezultate/AI
+> insights); ClientProfile schema 1 + coerceToClientProfile; OnboardingData schema 1 + coerce +
+> validateOnboarding pură (chei i18n) + normaliseUrl; OnboardingForm (draft autosave
+> dataread.onboardingDraft.v1 citit NUMAI prin coerce, submit → clients/{uid}/onboarding/main +
+> onboardingStatus mirror); firestore.rules: izolare multi-tenant clients/{uid}/** owner-only,
+> entitlement protejat de affectedKeys guard, onboarding cu whitelist + plafoane; 2 suite noi
+> (normalisers 18 checks, onboarding-validate 21 checks); boot-smoke profil nou „/app cu draft +
+> ent corupte → auth panel".
+> Verificat: build + 4 suites + prerender + test:boot (6 profile) toate verzi.
+> DEPLOYED: https://dataread-e1bd6.web.app
+> Blocat pe Andrei (testarea manuală a fluxului): providerii Auth (Email/Password + Google) de
+> activat în consolă + API-ul Firestore (rules încă nedeployate — baza nu există).

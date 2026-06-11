@@ -35,6 +35,19 @@ const PROFILES = [
   // Limba derivă din path: chiar cu stored 'ro', /en/pachete trebuie să fie în engleză.
   { name: '/en/pachete în engleză', path: '/en/pachete', storage: { ...BASE }, expectSelector: '[data-page="packages"]', textSelector: 'h1', textIncludes: 'pricing' },
   { name: 'rută inexistentă → 404', path: '/nu-exista', storage: { ...BASE }, expectSelector: '[data-page="not-found"]' },
+  // Zona de aplicație cu TOT ce e persistat corupt (draft, entitlement cache, limbă) —
+  // panoul de autentificare trebuie să apară oricum (utilizator nelogat).
+  {
+    name: '/app cu draft + ent corupte → auth panel',
+    path: '/app',
+    storage: {
+      dataread_lang: '{broken',
+      'dataread.onboardingDraft.v1': JSON.stringify({ companyName: 42, objectives: 'leads', schema: 'v9' }),
+      dataread_ent_u1: '{broken json!',
+      dataread_cookie_consent: 'denied',
+    },
+    expectSelector: '[data-page="auth"]',
+  },
 ];
 
 // ---- Runner ------------------------------------------------------------------------------------
