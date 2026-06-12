@@ -333,6 +333,21 @@ if (AI_ENABLED) {
       const deliverables = {};
       for (const k of KIND_FIELDS[kind]) deliverables[k] = String(out[k] || '').slice(0, 8000);
 
+      // Plasa de siguranță: înainte să suprascriem, starea curentă (dacă are conținut) devine o
+      // versiune în istoric — o regenerare nu pierde niciodată munca anterioară (AI sau manuală).
+      const prevDel = (typeof reqData.deliverables === 'object' && reqData.deliverables) || {};
+      const hasPrev = KIND_FIELDS[kind].some((k) => typeof prevDel[k] === 'string' && prevDel[k].trim());
+      if (hasPrev) {
+        await reqRef.collection('versions').add({
+          deliverables: prevDel,
+          kind,
+          source: reqData.source === 'ai' ? 'ai' : 'manual',
+          reason: 'pre-ai-regenerate',
+          snapshotAt: admin.firestore.FieldValue.serverTimestamp(),
+          snapshotBy: request.auth.uid,
+        });
+      }
+
       // set + merge pe căi imbricate: notele scrise manual rămân neatinse.
       await reqRef.set(
         {

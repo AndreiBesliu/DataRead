@@ -300,3 +300,17 @@ normaliser, secretele niciodată în chat/repo.
 > campuri content + paritatea cheilor de label pe ambele tipuri).
 > Verificat: build + 5 suites + prerender + boot-smoke + functions load — toate verzi.
 > DEPLOYED: functions (callable actualizat) + hosting. Testarea generarii de continut = Andrei.
+
+**15:50 - Task Completed — istoric versiuni livrabile (snapshot automat + restaurare)**
+> Model: Claude Fable 5
+> Motivatie: regenerarea AI suprascria ireversibil livrabilele — plasa de siguranta a muncii.
+> Changes: subcolectia leads/{id}/requests/{reqId}/versions (rules: admin read/create/delete,
+> update interzis — snapshot-uri imutabile); functions: inainte de fiecare suprascriere AI,
+> starea curenta cu continut devine versiune (deliverables complete + kind + source + reason
+> pre-ai-regenerate + snapshotBy); UI in editorul cererii: "Istoric versiuni" pliabil (incarcare
+> lazy, ultimele 20), fiecare versiune cu data + sursa AI/Manual + Copiaza (pachetul formatat al
+> versiunii) + Restaureaza — restaurarea salveaza INTAI starea curenta ca versiune (pre-restore),
+> apoi inlocuieste campurile tipului curent; notele raman mereu neatinse; deleteLead curata acum
+> si subcolectiile versions (Firestore nu face cascade).
+> Verificat: build + 5 suites + prerender + boot-smoke + functions load — verzi.
+> DEPLOYED: functions + rules + hosting.

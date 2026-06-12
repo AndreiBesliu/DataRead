@@ -5,6 +5,8 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -34,6 +36,12 @@ interface Row {
   id: string;
   data: MarketingRequest;
   updatedAt: unknown;
+}
+
+interface VersionRow {
+  id: string;
+  data: MarketingRequest;
+  snapshotAt: unknown;
 }
 
 const field: CSSProperties = {
@@ -69,6 +77,8 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMessage, setAiMessage] = useState<{ kind: 'ok' | 'err'; key: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
+  const [versions, setVersions] = useState<VersionRow[] | null>(null);
 
   const copyText = (key: string, text: string) => {
     navigator.clipboard
@@ -141,11 +151,64 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
     if (openReq === row.id) {
       setOpenReq(null);
       setDraft(null);
+      setShowVersions(false);
+      setVersions(null);
       return;
     }
     setOpenReq(row.id);
     setDraft(row.data);
     setSaveState('idle');
+    setShowVersions(false);
+    setVersions(null);
+  };
+
+  const loadVersions = async (reqId: string) => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'leads', leadId, 'requests', reqId, 'versions'), orderBy('snapshotAt', 'desc'), limit(20))
+      );
+      setVersions(snap.docs.map((d) => ({ id: d.id, data: coerceToMarketingRequest(d.data()), snapshotAt: d.data().snapshotAt })));
+    } catch (e) {
+      console.warn('versions load failed:', e);
+      setVersions([]);
+    }
+  };
+
+  const toggleVersions = (reqId: string) => {
+    const next = !showVersions;
+    setShowVersions(next);
+    if (next && versions === null) void loadVersions(reqId);
+  };
+
+  /** Restaurează o versiune: starea curentă devine la rândul ei versiune (nimic nu se pierde),
+   *  apoi câmpurile tipului curent se înlocuiesc cu cele din versiune. Notele rămân neatinse. */
+  const restoreVersion = async (reqId: string, v: VersionRow) => {
+    if (!draft || !window.confirm(t('admin.verRestoreConfirm'))) return;
+    try {
+      const versionsCol = collection(db, 'leads', leadId, 'requests', reqId, 'versions');
+      await addDoc(versionsCol, {
+        deliverables: draft.deliverables,
+        kind: draft.kind,
+        source: draft.source,
+        reason: 'pre-restore',
+        snapshotAt: serverTimestamp(),
+        snapshotBy: adminUid,
+      });
+      const merged = { ...draft.deliverables };
+      for (const f of deliverableFieldsFor(draft.kind)) {
+        if (f.key !== 'notes') merged[f.key] = v.data.deliverables[f.key];
+      }
+      await updateDoc(doc(db, 'leads', leadId, 'requests', reqId), {
+        deliverables: merged,
+        source: v.data.source,
+        updatedAt: serverTimestamp(),
+      });
+      setDraft((d) => (d ? { ...d, deliverables: merged, source: v.data.source } : d));
+      setSaveState('saved');
+      void loadVersions(reqId);
+    } catch (e) {
+      console.warn('restore failed:', e);
+    }
   };
 
   const save = async (id: string) => {
@@ -331,6 +394,51 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
                   <button className="btn" style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r.id)}>
                     {t('admin.reqDelete')}
                   </button>
+                </div>
+
+                {/* Istoricul versiunilor — snapshot automat înainte de fiecare regenerare/restaurare. */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => toggleVersions(r.id)}
+                    style={{ background: 'none', border: 'none', padding: 0, fontSize: 12, fontWeight: 700, color: 'var(--accent, #2563eb)', cursor: 'pointer' }}
+                  >
+                    {showVersions ? `▾ ${t('admin.verHide')}` : `▸ ${t('admin.verShow')}`}
+                    {versions !== null && versions.length > 0 ? ` (${versions.length})` : ''}
+                  </button>
+                  {showVersions && (
+                    <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                      {versions === null && <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>…</span>}
+                      {versions !== null && versions.length === 0 && (
+                        <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>{t('admin.verEmpty')}</span>
+                      )}
+                      {versions !== null &&
+                        versions.map((v) => (
+                          <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px' }}>
+                            <span style={{ whiteSpace: 'nowrap' }}>{fmtTs(v.snapshotAt)}</span>
+                            <span style={{ fontWeight: 700, borderRadius: 4, padding: '0 7px', fontSize: 10, textTransform: 'uppercase', background: v.data.source === 'ai' ? '#e8f0fe' : '#f1f3f5', color: v.data.source === 'ai' ? '#2563eb' : 'var(--fg-1)' }}>
+                              {t(v.data.source === 'ai' ? 'admin.verAi' : 'admin.verManual')}
+                            </span>
+                            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => copyText(`ver-${v.id}`, buildCopyAll({ ...v.data, title: draft.title, offer: draft.offer, budget: draft.budget, objective: draft.objective }))}
+                                style={{ border: '1px solid var(--border)', background: 'var(--bg-0)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: copiedKey === `ver-${v.id}` ? '#1e7e34' : 'var(--fg-1)' }}
+                              >
+                                {copiedKey === `ver-${v.id}` ? t('admin.copied') : t('admin.copy')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void restoreVersion(r.id, v)}
+                                style={{ border: '1px solid var(--border)', background: 'var(--bg-0)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                {t('admin.verRestore')}
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 {aiMessage && (

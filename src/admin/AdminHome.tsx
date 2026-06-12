@@ -317,12 +317,16 @@ export default function AdminHome() {
     setNotesState('idle');
   };
 
-  /** Șterge definitiv lead-ul + subcolecția lui de cereri (Firestore nu face cascade). */
+  /** Șterge definitiv lead-ul + cererile lui + istoricele de versiuni (Firestore nu face cascade). */
   const deleteLead = async (id: string) => {
     if (!window.confirm(t('admin.leadDeleteConfirm'))) return;
     try {
       const reqs = await getDocs(collection(db, 'leads', id, 'requests'));
-      await Promise.all(reqs.docs.map((d) => deleteDoc(d.ref)));
+      for (const r of reqs.docs) {
+        const vers = await getDocs(collection(r.ref, 'versions'));
+        await Promise.all(vers.docs.map((v) => deleteDoc(v.ref)));
+        await deleteDoc(r.ref);
+      }
       await deleteDoc(doc(db, 'leads', id));
       if (openLead === id) setOpenLead(null);
     } catch (e) {

@@ -58,6 +58,12 @@ service cloud.firestore {
       // Cererile de marketing ale lead-ului (Verticala 1) — exclusiv zona operatorilor.
       match /requests/{reqId} {
         allow read, create, update, delete: if isAdmin();
+
+        // Istoricul versiunilor de livrabile (snapshot-uri imutabile — fără update).
+        match /versions/{versionId} {
+          allow read, create, delete: if isAdmin();
+          allow update: if false;
+        }
       }
     }
 
