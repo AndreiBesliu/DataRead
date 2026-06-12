@@ -224,3 +224,16 @@ normaliser, secretele niciodată în chat/repo.
 > prerenderizat); theme-color #0a1228. Linkurile share-uite pe WhatsApp/Facebook/LinkedIn arată
 > acum cardul de brand. Verificat live: og.png 200, og:image prezent în HTML-ul static.
 > DEPLOYED: https://dataread-e1bd6.web.app
+
+**00:20 - Task Completed — Verticala 1 semi-manual: Cereri de marketing în /admin**
+> Model: Claude Fable 5
+> Changes: leads/{id}/requests/{reqId} schema 1 (titlu, ofertă ≤500, buget liber ≤80, obiectiv
+> din enum, status open/done, source manual|ai) cu livrabilele din spec-ul lui Ionuţ: texte
+> reclame / scripturi video-creatives / structură campanie Meta / note (≤8000 fiecare);
+> types/request.ts cu coerceToMarketingRequest (5 checks noi); LeadRequests.tsx în detaliul
+> lead-ului: creare cerere, editor livrabile, status pill, ștergere cu confirmare, buton
+> „Generează cu AI — în curând" (dezactivat; aiGenerateCampaign din felia 2 va completa
+> ACELEAȘI câmpuri, fără refactor); rules: subcolecția requests = admin-only.
+> Verificat: build + 5 suites (99 checks) + prerender + boot-smoke verzi.
+> DEPLOYED (hosting + rules). Fluxul Fazei 1 e complet: lead → contactare (status+note) →
+> cerere de marketing → livrabile → Livrat.
