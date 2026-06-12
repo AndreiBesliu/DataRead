@@ -172,15 +172,41 @@ const CAMPAIGN_SCHEMA = {
   additionalProperties: false,
 };
 
+// Schema planului de conținut (cereri kind: 'content' — spec 5.6 Content Planner).
+const CONTENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    calendar: {
+      type: 'string',
+      description:
+        'Calendar de conținut pe 30 de zile în română, cu 12-15 zile active de postare (ritm sustenabil): pe fiecare linie „Ziua N: temă — format (poză/reel/carusel/text) — canal".',
+    },
+    posts: {
+      type: 'string',
+      description:
+        '8 postări complete în română, gata de publicat, numerotate și aliniate cu calendarul: textul postării + hashtag-uri + sugestie de vizual.',
+    },
+    ideas: {
+      type: 'string',
+      description: '12 idei suplimentare de conținut în română, câte una pe linie, specifice firmei și industriei.',
+    },
+  },
+  required: ['calendar', 'posts', 'ideas'],
+  additionalProperties: false,
+};
+
+// Câmpurile de livrabile completate de AI, per tip de cerere.
+const KIND_FIELDS = {
+  campaign: ['adTexts', 'videoScripts', 'campaignStructure'],
+  content: ['calendar', 'posts', 'ideas'],
+};
+
 const OBJECTIVE_RO = { leads: 'lead-uri / cereri de ofertă', sales: 'vânzări online', awareness: 'notorietate / brand', traffic: 'trafic pe site', other: 'alt obiectiv' };
 
-function buildCampaignPrompt(lead, req) {
+function leadContextBlock(lead) {
   const l = lead || {};
-  const r = req || {};
   const objectives = Array.isArray(l.objectives) ? l.objectives.map((o) => OBJECTIVE_RO[o] || o).join(', ') : '';
   return [
-    'Pregătește livrabilele unei campanii de marketing pentru clientul de mai jos.',
-    '',
     '== FIRMA CLIENTULUI ==',
     `Nume: ${l.companyName || '-'}`,
     `Industrie: ${l.industry || '-'}${l.industryOther ? ` (${l.industryOther})` : ''}`,
@@ -188,6 +214,33 @@ function buildCampaignPrompt(lead, req) {
     `Website: ${l.website || '-'}`,
     `Social: ${[l.facebook, l.instagram, l.tiktok].filter(Boolean).join(', ') || '-'}`,
     `Obiectivele declarate ale firmei: ${objectives || '-'}`,
+  ].join('\n');
+}
+
+function buildContentPrompt(lead, req) {
+  const r = req || {};
+  return [
+    'Pregătește PLANUL DE CONȚINUT PE 30 DE ZILE pentru clientul de mai jos (social media organic).',
+    '',
+    leadContextBlock(lead),
+    '',
+    '== CEREREA ==',
+    `Titlu: ${r.title || '-'}`,
+    `Focusul perioadei (ofertă/produs/eveniment de împins): ${r.offer || '-'}`,
+    `Obiectivul: ${OBJECTIVE_RO[r.objective] || r.objective || '-'}`,
+    '',
+    'Cerințe: totul în limba ROMÂNĂ, concret și gata de folosit (fără placeholder-e). Calendarul',
+    'cu ritm realist pentru o firmă mică (12-15 postări/lună), variat ca formate, aliniat cu',
+    'focusul și industria. Postările scrise în vocea firmei, cu hashtag-uri locale relevante.',
+  ].join('\n');
+}
+
+function buildCampaignPrompt(lead, req) {
+  const r = req || {};
+  return [
+    'Pregătește livrabilele unei campanii de marketing pentru clientul de mai jos.',
+    '',
+    leadContextBlock(lead),
     '',
     '== CEREREA DE CAMPANIE ==',
     `Titlu: ${r.title || '-'}`,
@@ -238,6 +291,12 @@ if (AI_ENABLED) {
       if (!leadSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
       if (!reqSnap.exists) throw new HttpsError('not-found', 'Cererea nu există.');
 
+      // Tipul cererii decide schema + promptul ('content' = plan 30 zile, altfel campanie ads).
+      const reqData = reqSnap.data() || {};
+      const kind = reqData.kind === 'content' ? 'content' : 'campaign';
+      const schema = kind === 'content' ? CONTENT_SCHEMA : CAMPAIGN_SCHEMA;
+      const prompt = kind === 'content' ? buildContentPrompt(leadSnap.data(), reqData) : buildCampaignPrompt(leadSnap.data(), reqData);
+
       // Import leneș: SDK-ul se încarcă doar în containerul acestui callable.
       const Anthropic = require('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
@@ -251,8 +310,8 @@ if (AI_ENABLED) {
           system:
             'Ești strategul de marketing și copywriterul senior al agenției DataRead. Scrii pentru ' +
             'firme mici și mijlocii din România: concret, persuasiv, fără jargon corporatist gol.',
-          output_config: { format: { type: 'json_schema', schema: CAMPAIGN_SCHEMA } },
-          messages: [{ role: 'user', content: buildCampaignPrompt(leadSnap.data(), reqSnap.data()) }],
+          output_config: { format: { type: 'json_schema', schema } },
+          messages: [{ role: 'user', content: prompt }],
         });
       } catch (err) {
         logger.error('anthropic call failed', { err: String(err) });
@@ -271,11 +330,8 @@ if (AI_ENABLED) {
         throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
       }
 
-      const deliverables = {
-        adTexts: String(out.adTexts || '').slice(0, 8000),
-        videoScripts: String(out.videoScripts || '').slice(0, 8000),
-        campaignStructure: String(out.campaignStructure || '').slice(0, 8000),
-      };
+      const deliverables = {};
+      for (const k of KIND_FIELDS[kind]) deliverables[k] = String(out[k] || '').slice(0, 8000);
 
       // set + merge pe căi imbricate: notele scrise manual rămân neatinse.
       await reqRef.set(
@@ -290,7 +346,7 @@ if (AI_ENABLED) {
         { merge: true }
       );
 
-      logger.info('campaign generated', { leadId, requestId, by: request.auth.uid, usage: response.usage });
+      logger.info('campaign generated', { leadId, requestId, kind, by: request.auth.uid, usage: response.usage });
       return { deliverables };
     }
   );

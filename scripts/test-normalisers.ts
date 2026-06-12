@@ -64,8 +64,32 @@ check('lead status: gunoi → new', coerceLeadStatus('hacked') === 'new' && coer
 check('lead notes: non-string → gol', coerceLeadNotes(42) === '' && coerceLeadNotes(null) === '');
 check('lead notes: tăiate la plafon', coerceLeadNotes('x'.repeat(9000)).length === 4000);
 
-// ── cereri de marketing (Verticala 1, semi-manual) ───────────────────────────────────────────
-import { coerceToMarketingRequest, emptyRequest } from '../src/types/request';
+// ── cereri de marketing (Verticala 1: campanii + plan de conținut) ───────────────────────────
+import { coerceToMarketingRequest, deliverableFieldsFor, emptyRequest } from '../src/types/request';
+import roDict from '../src/i18n/locales/ro';
+
+function roKeyExists(key: string): boolean {
+  let node: unknown = roDict;
+  for (const part of key.split('.')) {
+    if (typeof node !== 'object' || node === null || !(part in (node as Record<string, unknown>))) return false;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return typeof node === 'string' && node.length > 0;
+}
+
+check("request kind: 'content' trece", coerceToMarketingRequest({ kind: 'content' }).kind === 'content');
+check("request kind: gunoi/lipsa → 'campaign' (compatibilitate cu cererile vechi)", (() => {
+  return coerceToMarketingRequest({ kind: 'mega' }).kind === 'campaign' && coerceToMarketingRequest({}).kind === 'campaign';
+})());
+check('request: câmpurile content coerce-uite', (() => {
+  const r = coerceToMarketingRequest({ kind: 'content', deliverables: { calendar: 'Ziua 1', posts: 42, ideas: 'x'.repeat(20000) } });
+  return r.deliverables.calendar === 'Ziua 1' && r.deliverables.posts === '' && r.deliverables.ideas.length === 8000;
+})());
+for (const kind of ['campaign', 'content'] as const) {
+  for (const f of deliverableFieldsFor(kind)) {
+    check(`cheie ro există (${kind}): ${f.labelKey}`, roKeyExists(f.labelKey));
+  }
+}
 check('request: non-obiect → empty', JSON.stringify(coerceToMarketingRequest('x')) === JSON.stringify(emptyRequest()));
 check('request: defaults corecte', (() => {
   const r = emptyRequest();

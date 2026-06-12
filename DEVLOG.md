@@ -285,3 +285,18 @@ normaliser, secretele niciodată în chat/repo.
 > structura campanie Meta (a interpretat corect bugetul mic si a recomandat Instant Forms),
 > totul in romana, adaptat firmei -> Salvat + Copiaza tot. Control center-ul (stats, cautare,
 > stergere, copy) vizibil si functional in screenshot. Primul ciclu complet al platformei.
+
+**10:40 - Task Completed — Content Planner: cereri de tip "plan de continut 30 zile" cu AI**
+> Model: Claude Fable 5
+> Motivatie: pachetul Start (tierul de intrare) vinde exact continut lunar (6-10 postari, 12 idei,
+> plan, calendar) — pana acum AI-ul genera doar partea de reclame (Growth+). Spec Ionut 5.6.
+> Changes: MarketingRequest.kind = campaign|content (coerce: cererile vechi raman campaign);
+> deliverables extinse cu calendar/posts/ideas; deliverableFieldsFor(kind) = sursa unica a
+> campurilor pe tip (editor, copy-all, AI-merge, save generic); selector de tip in formularul de
+> creare + chip de tip pe rand (mov pentru continut); functions: CONTENT_SCHEMA + buildContentPrompt
+> (calendar 30 zile cu 12-15 zile active, 8 postari complete cu hashtag-uri si sugestii de vizual,
+> 12 idei) — acelasi callable aiGenerateCampaign alege schema+promptul dupa kind, KIND_FIELDS
+> mapeaza campurile scrise; leadContextBlock extras comun. 6 checks noi in normalisers (kind +
+> campuri content + paritatea cheilor de label pe ambele tipuri).
+> Verificat: build + 5 suites + prerender + boot-smoke + functions load — toate verzi.
+> DEPLOYED: functions (callable actualizat) + hosting. Testarea generarii de continut = Andrei.

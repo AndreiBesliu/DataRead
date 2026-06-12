@@ -15,14 +15,20 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import { OBJECTIVES, type Objective } from '../types/onboarding';
 import {
-  DELIVERABLE_FIELDS,
   DELIVERABLE_MAX,
   REQUEST_SCHEMA,
   REQUEST_STATUSES,
   coerceToMarketingRequest,
+  deliverableFieldsFor,
   type MarketingRequest,
+  type RequestKind,
   type RequestStatus,
 } from '../types/request';
+
+const KIND_KEY: Record<RequestKind, string> = {
+  campaign: 'admin.reqKindCampaign',
+  content: 'admin.reqKindContent',
+};
 
 interface Row {
   id: string;
@@ -55,7 +61,7 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
   const { t } = useTranslation();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [creating, setCreating] = useState(false);
-  const [newReq, setNewReq] = useState({ title: '', offer: '', budget: '', objective: 'leads' as Objective });
+  const [newReq, setNewReq] = useState({ kind: 'campaign' as RequestKind, title: '', offer: '', budget: '', objective: 'leads' as Objective });
   const [formError, setFormError] = useState(false);
   const [openReq, setOpenReq] = useState<string | null>(null);
   const [draft, setDraft] = useState<MarketingRequest | null>(null);
@@ -79,13 +85,10 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
     const parts = [`=== ${d.title} ===`, `Ofertă: ${d.offer}`];
     if (d.budget) parts.push(`Buget: ${d.budget}`);
     if (d.objective) parts.push(`Obiectiv: ${t(`onboarding.objective.${d.objective}`)}`);
-    const sections: Array<[string, string]> = [
-      [t('admin.reqAdTexts'), d.deliverables.adTexts],
-      [t('admin.reqVideoScripts'), d.deliverables.videoScripts],
-      [t('admin.reqCampaignStructure'), d.deliverables.campaignStructure],
-    ];
-    for (const [label, text] of sections) {
-      if (text.trim()) parts.push('', `— ${label} —`, text.trim());
+    for (const f of deliverableFieldsFor(d.kind)) {
+      if (f.key === 'notes') continue;
+      const text = d.deliverables[f.key].trim();
+      if (text) parts.push('', `— ${t(f.labelKey)} —`, text);
     }
     return parts.join('\n');
   };
@@ -114,19 +117,20 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
     try {
       await addDoc(collection(db, 'leads', leadId, 'requests'), {
         schema: REQUEST_SCHEMA,
+        kind: newReq.kind,
         title: newReq.title.trim().slice(0, 120),
         offer: newReq.offer.trim().slice(0, 500),
         budget: newReq.budget.trim().slice(0, 80),
         objective: newReq.objective,
         status: 'open',
         source: 'manual',
-        deliverables: { adTexts: '', videoScripts: '', campaignStructure: '', notes: '' },
+        deliverables: { adTexts: '', videoScripts: '', campaignStructure: '', calendar: '', posts: '', ideas: '', notes: '' },
         createdBy: adminUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
       setCreating(false);
-      setNewReq({ title: '', offer: '', budget: '', objective: 'leads' });
+      setNewReq({ kind: 'campaign', title: '', offer: '', budget: '', objective: 'leads' });
       setFormError(false);
     } catch (e) {
       console.warn('request create failed:', e);
@@ -154,12 +158,12 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
         budget: draft.budget.slice(0, 80),
         objective: draft.objective,
         status: draft.status,
-        deliverables: {
-          adTexts: draft.deliverables.adTexts.slice(0, DELIVERABLE_MAX),
-          videoScripts: draft.deliverables.videoScripts.slice(0, DELIVERABLE_MAX),
-          campaignStructure: draft.deliverables.campaignStructure.slice(0, DELIVERABLE_MAX),
-          notes: draft.deliverables.notes.slice(0, DELIVERABLE_MAX),
-        },
+        deliverables: Object.fromEntries(
+          (Object.keys(draft.deliverables) as Array<keyof MarketingRequest['deliverables']>).map((k) => [
+            k,
+            draft.deliverables[k].slice(0, DELIVERABLE_MAX),
+          ])
+        ),
         updatedAt: serverTimestamp(),
       });
       setSaveState('saved');
@@ -192,8 +196,8 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
    *  pornim apelul și aducem rezultatul în editor. Dacă functions-ul nu e deployat încă (cheia
    *  Anthropic nesetată), arătăm mesajul de „neactivat" — integrarea nu e dependență critică. */
   const generateWithAi = async (id: string) => {
-    const hasContent =
-      !!draft && (draft.deliverables.adTexts || draft.deliverables.videoScripts || draft.deliverables.campaignStructure);
+    const aiFields = draft ? deliverableFieldsFor(draft.kind).filter((f) => f.key !== 'notes') : [];
+    const hasContent = !!draft && aiFields.some((f) => draft.deliverables[f.key].trim());
     if (hasContent && !window.confirm(t('admin.reqAiOverwriteConfirm'))) return;
     setAiBusy(true);
     setAiMessage(null);
@@ -204,21 +208,14 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
       );
       const { data } = await fn({ leadId, requestId: id });
       const del = data?.deliverables ?? {};
-      setDraft((d) =>
-        d
-          ? {
-              ...d,
-              source: 'ai',
-              deliverables: {
-                ...d.deliverables,
-                adTexts: typeof del.adTexts === 'string' ? del.adTexts : d.deliverables.adTexts,
-                videoScripts: typeof del.videoScripts === 'string' ? del.videoScripts : d.deliverables.videoScripts,
-                campaignStructure:
-                  typeof del.campaignStructure === 'string' ? del.campaignStructure : d.deliverables.campaignStructure,
-              },
-            }
-          : d
-      );
+      setDraft((d) => {
+        if (!d) return d;
+        const merged = { ...d.deliverables };
+        for (const f of deliverableFieldsFor(d.kind)) {
+          if (f.key !== 'notes' && typeof del[f.key] === 'string') merged[f.key] = del[f.key];
+        }
+        return { ...d, source: 'ai', deliverables: merged };
+      });
       setSaveState('saved'); // functions a salvat deja documentul
       setAiMessage({ kind: 'ok', key: 'admin.reqAiDone' });
     } catch (e) {
@@ -253,6 +250,13 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
       {creating && (
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 10, display: 'grid', gap: 8 }}>
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+            <label style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
+              {t('admin.reqFormKind')}
+              <select style={field} value={newReq.kind} onChange={(e) => setNewReq((r) => ({ ...r, kind: e.target.value as RequestKind }))}>
+                <option value="campaign">{t('admin.reqKindCampaign')}</option>
+                <option value="content">{t('admin.reqKindContent')}</option>
+              </select>
+            </label>
             <label style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
               {t('admin.reqFormTitle')}
               <input style={field} value={newReq.title} maxLength={120} placeholder={t('admin.reqFormTitlePh')} onChange={(e) => setNewReq((r) => ({ ...r, title: e.target.value }))} />
@@ -290,6 +294,9 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
           <div key={r.id} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 13 }}>{r.data.title || '—'}</strong>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, borderRadius: 4, padding: '1px 7px', background: r.data.kind === 'content' ? '#f3e8ff' : '#e8f0fe', color: r.data.kind === 'content' ? '#7c3aed' : '#2563eb' }}>
+                {t(KIND_KEY[r.data.kind])}
+              </span>
               {r.data.objective && <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t(`onboarding.objective.${r.data.objective}`)}</span>}
               {r.data.budget && <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>· {r.data.budget}</span>}
               <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '1px 9px', background: r.data.status === 'done' ? '#e8f5ec' : '#eef4ff', color: r.data.status === 'done' ? '#1e7e34' : '#2563eb' }}>
@@ -337,7 +344,7 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
                   <textarea style={{ ...field, minHeight: 40, resize: 'vertical', fontFamily: 'inherit' }} value={draft.offer} maxLength={500} onChange={(e) => { setDraft((d) => (d ? { ...d, offer: e.target.value } : d)); setSaveState('idle'); }} />
                 </label>
 
-                {DELIVERABLE_FIELDS.map((f) => (
+                {deliverableFieldsFor(draft.kind).map((f) => (
                   <label key={f.key} style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {t(f.labelKey)}
@@ -364,7 +371,7 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
                   <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void save(r.id)}>
                     {saveState === 'saving' ? t('admin.reqSaving') : saveState === 'saved' ? t('admin.reqSaved') : t('admin.reqSave')}
                   </button>
-                  {(draft.deliverables.adTexts || draft.deliverables.videoScripts || draft.deliverables.campaignStructure) && (
+                  {deliverableFieldsFor(draft.kind).some((f) => f.key !== 'notes' && draft.deliverables[f.key].trim()) && (
                     <button className="btn" style={{ padding: '6px 16px', fontSize: 12, color: copiedKey === 'all' ? '#1e7e34' : undefined }} onClick={() => copyText('all', buildCopyAll(draft))}>
                       {copiedKey === 'all' ? t('admin.copied') : `📋 ${t('admin.copyAll')}`}
                     </button>
