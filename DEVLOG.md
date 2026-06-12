@@ -204,3 +204,14 @@ normaliser, secretele niciodată în chat/repo.
 > Bootstrap-ul consumat — Andrei e primul admin (claim activ). Fluxul de acces e de-acum:
 > cerere pe /admin → aprobare/respingere din panou, de către un admin existent.
 > SESIUNEA 1b închisă integral. Următoarea sesiune: felia 2 — Verticala 1 Marketing AI.
+
+**23:45 - Task Completed — pipeline de lead-uri în /admin** („continuă cu ce poți dezvolta acum")
+> Model: Claude Fable 5
+> Changes: status de pipeline pe fiecare lead (Nou → Contactat → Câștigat/Pierdut) cu select
+> inline + statusUpdatedAt; filtre cu contoare (Toate/pe status) + badge „X noi" + evidențierea
+> rândurilor noi; note interne per lead (textarea în detaliu, plafonate 4000, notesUpdatedAt);
+> export CSV al listei filtrate (BOM + separator ';' pentru Excel RO, headerele prin t());
+> types/lead.ts (coerceLeadStatus/coerceLeadNotes) + 5 checks noi în test-normalisers.
+> Rules: deja acoperit (update pe leads = doar admin). Verificat: build + 5 suites + prerender +
+> boot-smoke verzi. DEPLOYED: https://dataread-e1bd6.web.app/admin
+> Verificarea vizuală a panoului rămâne la Andrei (singura sesiune cu claim de admin).

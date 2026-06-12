@@ -56,6 +56,14 @@ check('onboarding: valori valide trec', (() => {
   return o.companyName === 'Firma SRL' && o.industry === 'horeca' && o.adBudget === 'b250_500' && o.packageInterest === 'growth';
 })());
 
+// ── lead pipeline (status + note, scrise de admini) ──────────────────────────────────────────
+import { coerceLeadNotes, coerceLeadStatus } from '../src/types/lead';
+check("lead status: 'contacted' trece", coerceLeadStatus('contacted') === 'contacted');
+check("lead status: 'won' trece", coerceLeadStatus('won') === 'won');
+check('lead status: gunoi → new', coerceLeadStatus('hacked') === 'new' && coerceLeadStatus(null) === 'new' && coerceLeadStatus(42) === 'new');
+check('lead notes: non-string → gol', coerceLeadNotes(42) === '' && coerceLeadNotes(null) === '');
+check('lead notes: tăiate la plafon', coerceLeadNotes('x'.repeat(9000)).length === 4000);
+
 // ── coerceToOnboardingDraft (calea localStorage) ─────────────────────────────────────────────
 check('draft: null → null', coerceToOnboardingDraft(null) === null);
 check('draft: JSON stricat → null, fără throw', coerceToOnboardingDraft('{broken json!') === null);

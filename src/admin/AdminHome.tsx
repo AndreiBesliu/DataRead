@@ -18,7 +18,27 @@ import { auth, db } from '../firebase';
 import { useAuthStore } from '../store/authStore';
 import { coerceToClientProfile, type ClientProfile } from '../types/client';
 import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
+import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import AuthPanel from '../app/AuthPanel';
+
+/** Cheia i18n a fiecărui status de pipeline. */
+const STATUS_KEY: Record<LeadStatus, string> = {
+  new: 'admin.statusNew',
+  contacted: 'admin.statusContacted',
+  won: 'admin.statusWon',
+  lost: 'admin.statusLost',
+};
+
+const STATUS_COLOR: Record<LeadStatus, string> = {
+  new: 'var(--accent, #2563eb)',
+  contacted: '#b07b1e',
+  won: '#1e7e34',
+  lost: '#8a93a3',
+};
+
+function csvEscape(v: string): string {
+  return `"${v.replace(/"/g, '""')}"`;
+}
 
 interface ClientRow {
   uid: string;
@@ -36,6 +56,8 @@ interface LeadRow {
   id: string;
   data: OnboardingData;
   createdAt: unknown;
+  status: LeadStatus;
+  notes: string;
 }
 
 function fmtTs(v: unknown): string {
@@ -152,6 +174,9 @@ export default function AdminHome() {
   const [openLead, setOpenLead] = useState<string | null>(null);
   const [openClient, setOpenClient] = useState<string | null>(null);
   const [clientDetail, setClientDetail] = useState<OnboardingData | null | 'loading'>(null);
+  const [leadFilter, setLeadFilter] = useState<'all' | LeadStatus>('all');
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   // Verifică claim-ul; un refresh forțat prinde claim-ul abia setat de trigger (bootstrap/aprobare).
   useEffect(() => {
@@ -193,13 +218,22 @@ export default function AdminHome() {
     }, (err) => console.warn('admin requests listener:', err));
   }, [isAdmin]);
 
-  // Lead-urile formularului public.
+  // Lead-urile formularului public (+ câmpurile de pipeline scrise de admini).
   useEffect(() => {
     if (isAdmin !== true) return;
     const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'), limit(200));
     return onSnapshot(q, (snap) => {
       const out: LeadRow[] = [];
-      snap.forEach((d) => out.push({ id: d.id, data: coerceToOnboarding(d.data()), createdAt: d.data().createdAt }));
+      snap.forEach((d) => {
+        const raw = d.data();
+        out.push({
+          id: d.id,
+          data: coerceToOnboarding(raw),
+          createdAt: raw.createdAt,
+          status: coerceLeadStatus(raw.status),
+          notes: coerceLeadNotes(raw.notes),
+        });
+      });
       setLeads(out);
     }, (err) => {
       console.warn('admin leads listener:', err);
@@ -239,6 +273,73 @@ export default function AdminHome() {
     } catch (e) {
       console.warn('reject failed:', e);
     }
+  };
+
+  const setLeadStatus = async (id: string, status: LeadStatus) => {
+    try {
+      await updateDoc(doc(db, 'leads', id), { status, statusUpdatedAt: serverTimestamp() });
+    } catch (e) {
+      console.warn('lead status update failed:', e);
+    }
+  };
+
+  const toggleLead = (l: LeadRow) => {
+    if (openLead === l.id) {
+      setOpenLead(null);
+      return;
+    }
+    setOpenLead(l.id);
+    setNotesDraft(l.notes);
+    setNotesState('idle');
+  };
+
+  const saveNotes = async (id: string) => {
+    setNotesState('saving');
+    try {
+      await updateDoc(doc(db, 'leads', id), {
+        notes: notesDraft.slice(0, LEAD_NOTES_MAX),
+        notesUpdatedAt: serverTimestamp(),
+      });
+      setNotesState('saved');
+    } catch (e) {
+      console.warn('notes save failed:', e);
+      setNotesState('idle');
+    }
+  };
+
+  const exportCsv = (rows: LeadRow[]) => {
+    const header = [
+      t('admin.colDate'), t('admin.colCompany'), t('admin.fCui'), t('admin.fWebsite'),
+      t('admin.fContact'), t('admin.colEmail'), t('admin.colPhone'), t('admin.fIndustry'),
+      t('admin.fObjectives'), t('admin.fBudget'), t('admin.fPackage'), t('admin.colStatus'),
+      t('admin.notesLabel'), t('admin.fDescription'),
+    ];
+    const lines = rows.map((l) =>
+      [
+        fmtTs(l.createdAt),
+        l.data.companyName,
+        l.data.cui,
+        l.data.website,
+        l.data.contactName,
+        l.data.contactEmail,
+        l.data.contactPhone,
+        l.data.industry ? t(`onboarding.industries.${l.data.industry}`) : '',
+        l.data.objectives.map((o) => t(`onboarding.objective.${o}`)).join(', '),
+        l.data.adBudget ? t(`onboarding.budget.${l.data.adBudget}`) : '',
+        l.data.packageInterest ? t(`pachete.${l.data.packageInterest}.name`) : '',
+        t(STATUS_KEY[l.status]),
+        l.notes,
+        l.data.description,
+      ].map(csvEscape).join(';')
+    );
+    // BOM pentru diacritice corecte în Excel; separator ';' (convenția RO).
+    const csv = '﻿' + [header.map(csvEscape).join(';'), ...lines].join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dataread-leads.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const toggleClientDetail = async (uid: string) => {
@@ -308,51 +409,133 @@ export default function AdminHome() {
         </div>
       )}
 
-      {/* Lead-urile din formularul public /start. */}
-      <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('admin.leadsTitle')}</h2>
-      {leads === null && <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.loading')}</p>}
-      {leads !== null && leads.length === 0 && <p style={{ color: 'var(--fg-1)', fontSize: 14, marginBottom: 28 }}>{t('admin.leadsEmpty')}</p>}
-      {leads !== null && leads.length > 0 && (
-        <div style={sectionBox}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-0)' }}>
-                <th style={td}>{t('admin.colDate')}</th>
-                <th style={td}>{t('admin.colCompany')}</th>
-                <th style={td}>{t('admin.colEmail')}</th>
-                <th style={td}>{t('admin.colPhone')}</th>
-                <th style={td}>{t('admin.fPackage')}</th>
-                <th style={td}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((l) => (
-                <Fragment key={l.id}>
-                  <tr>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTs(l.createdAt)}</td>
-                    <td style={td}>{l.data.companyName || '—'}</td>
-                    <td style={td}>{l.data.contactEmail || '—'}</td>
-                    <td style={td}>{l.data.contactPhone || '—'}</td>
-                    <td style={td}>{l.data.packageInterest ? t(`pachete.${l.data.packageInterest}.name`) : '—'}</td>
-                    <td style={td}>
-                      <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setOpenLead(openLead === l.id ? null : l.id)}>
-                        {openLead === l.id ? t('admin.hideDetail') : t('admin.viewDetail')}
-                      </button>
-                    </td>
-                  </tr>
-                  {openLead === l.id && (
-                    <tr>
-                      <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={6}>
-                        <OnboardingDetail detail={l.data} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Lead-urile din formularul public /start — pipeline-ul operațional. */}
+      {(() => {
+        const all = leads ?? [];
+        const counts = { all: all.length } as Record<'all' | LeadStatus, number>;
+        for (const s of LEAD_STATUSES) counts[s] = all.filter((l) => l.status === s).length;
+        const visible = leadFilter === 'all' ? all : all.filter((l) => l.status === leadFilter);
+        return (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 10px' }}>
+              <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.leadsTitle')}</h2>
+              {counts.new > 0 && (
+                <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '2px 10px' }}>
+                  {t('admin.leadsNewCount', { count: counts.new })}
+                </span>
+              )}
+              {all.length > 0 && (
+                <button className="btn" style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }} onClick={() => exportCsv(visible)}>
+                  ⬇ {t('admin.exportCsv')}
+                </button>
+              )}
+            </div>
+
+            {leads === null && <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.loading')}</p>}
+            {leads !== null && leads.length === 0 && <p style={{ color: 'var(--fg-1)', fontSize: 14, marginBottom: 28 }}>{t('admin.leadsEmpty')}</p>}
+
+            {leads !== null && leads.length > 0 && (
+              <>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {(['all', ...LEAD_STATUSES] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setLeadFilter(f)}
+                      style={{
+                        border: leadFilter === f ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        background: leadFilter === f ? 'var(--accent)' : 'var(--bg-1)',
+                        color: leadFilter === f ? '#fff' : 'var(--fg-1)',
+                        borderRadius: 999,
+                        padding: '3px 12px',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {f === 'all' ? t('admin.filterAll') : t(STATUS_KEY[f])} ({counts[f]})
+                    </button>
+                  ))}
+                </div>
+
+                <div style={sectionBox}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-0)' }}>
+                        <th style={td}>{t('admin.colDate')}</th>
+                        <th style={td}>{t('admin.colCompany')}</th>
+                        <th style={td}>{t('admin.colEmail')}</th>
+                        <th style={td}>{t('admin.colPhone')}</th>
+                        <th style={td}>{t('admin.fPackage')}</th>
+                        <th style={td}>{t('admin.colStatus')}</th>
+                        <th style={td}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((l) => (
+                        <Fragment key={l.id}>
+                          <tr style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : undefined}>
+                            <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTs(l.createdAt)}</td>
+                            <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>{l.data.companyName || '—'}</td>
+                            <td style={td}>{l.data.contactEmail || '—'}</td>
+                            <td style={td}>{l.data.contactPhone || '—'}</td>
+                            <td style={td}>{l.data.packageInterest ? t(`pachete.${l.data.packageInterest}.name`) : '—'}</td>
+                            <td style={td}>
+                              <select
+                                value={l.status}
+                                onChange={(e) => void setLeadStatus(l.id, e.target.value as LeadStatus)}
+                                style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px', fontSize: 12, fontWeight: 700, color: STATUS_COLOR[l.status], background: 'var(--bg-1)' }}
+                              >
+                                {LEAD_STATUSES.map((s) => (
+                                  <option key={s} value={s}>{t(STATUS_KEY[s])}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={td}>
+                              <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => toggleLead(l)}>
+                                {openLead === l.id ? t('admin.hideDetail') : t('admin.viewDetail')}
+                              </button>
+                            </td>
+                          </tr>
+                          {openLead === l.id && (
+                            <tr>
+                              <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={7}>
+                                <OnboardingDetail detail={l.data} />
+                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                                  <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                                    {t('admin.notesLabel')}
+                                    <textarea
+                                      value={notesDraft}
+                                      maxLength={LEAD_NOTES_MAX}
+                                      placeholder={t('admin.notesPlaceholder')}
+                                      onChange={(e) => {
+                                        setNotesDraft(e.target.value);
+                                        setNotesState('idle');
+                                      }}
+                                      style={{ minHeight: 70, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, fontWeight: 400, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-1)' }}
+                                    />
+                                  </label>
+                                  <button
+                                    className="btn btn-primary"
+                                    style={{ marginTop: 8, padding: '5px 14px', fontSize: 12 }}
+                                    disabled={notesState === 'saving'}
+                                    onClick={() => void saveNotes(l.id)}
+                                  >
+                                    {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Clienți cu cont (dormant până revine self-serve-ul Stripe). */}
       <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('admin.clientsTitle')}</h2>
