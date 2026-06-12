@@ -90,15 +90,15 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   Statusuri: `none | active | expired`.
 - `functions/index.js`: secțiuni separate — admin (claims + bootstrap) / entitlement / (viitor) AI.
   Runtime **Node 22** gen-2; trigger-ele primesc EXPLICIT `{ region: 'europe-central2' }`.
-- **Verticala 1 Marketing AI — IMPLEMENTATĂ, în așteptarea cheii:** callable-ul
-  `aiGenerateCampaign` (functions/index.js, secțiunea [3]) e complet: admin-only, quota lunară în
-  `aiUsage/{uid}` (200/lună), citește lead-ul + cererea server-side, model `claude-opus-4-8` cu
-  adaptive thinking + ieșire structurată (`output_config.format`, schema CAMPAIGN_SCHEMA), scrie
-  livrabilele pe `leads/{id}/requests/{reqId}` (source: 'ai', notele manuale rămân). Butonul
-  „Generează cu AI" din /admin e live și arată „neactivat" cât timp callable-ul nu e deployat.
-  **ACTIVARE (3 pași, după rotirea cheii):** 1) Andrei: `firebase functions:secrets:set
-  ANTHROPIC_API_KEY` 2) în functions/index.js: `AI_ENABLED = true` 3) `npm run deploy:functions`.
-  Cu AI_ENABLED=false callable-ul nu se exportă, deci deploy-urile nu cer secretul.
+- **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
+  la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
+  lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
+  (schema CAMPAIGN_SCHEMA: adTexts/videoScripts/campaignStructure), scrie livrabilele pe
+  `leads/{id}/requests/{reqId}` cu merge (notele manuale rămân; source: 'ai'). Butonul „Generează
+  cu AI" din /admin e funcțional. `ANTHROPIC_API_KEY` = Secret Manager v1 (decizie Andrei: cheia
+  inițială; ROTIREA rămâne în backlog înainte de scalare — la rotire: secrets:set cu cheia nouă +
+  `npm run deploy:functions`). Comutatorul `AI_ENABLED` din functions/index.js stinge tot fluxul
+  la nevoie (flip + deploy).
 
 ## Capcane cunoscute
 

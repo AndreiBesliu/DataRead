@@ -145,7 +145,7 @@ exports.onSubscriptionWrite = onDocumentWritten(
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
-const AI_ENABLED = false; // ← flip pe true după functions:secrets:set ANTHROPIC_API_KEY
+const AI_ENABLED = true; // activat 12.06.2026 — ANTHROPIC_API_KEY e în Secret Manager (v1)
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const AI_MODEL = 'claude-opus-4-8'; // cel mai capabil model disponibil (vezi CLAUDE.md → AI)

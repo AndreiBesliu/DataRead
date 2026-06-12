@@ -255,3 +255,12 @@ normaliser, secretele niciodată în chat/repo.
 > ACTIVARE = 3 pași în CLAUDE.md: secrets:set → AI_ENABLED=true → deploy:functions.
 > Verificat: build + 5 suites + prerender + boot-smoke verzi; functions/index.js se încarcă OK cu
 > comutatorul stins. DEPLOYED (hosting). Functions NU redeployate (suprafața exportată neschimbată).
+
+**01:15 - Task Completed — VERTICALA 1 MARKETING AI ACTIVATA** (decizia lui Andrei: mergem cu cheia data)
+> Model: Claude Fable 5
+> Changes: ANTHROPIC_API_KEY setat in Secret Manager (v1, prin fisier temporar sters imediat);
+> smoke-test cheie+model reusit (claude-opus-4-8 a raspuns, 32 in / 11 out tokens);
+> AI_ENABLED=true; deploy functions: aiGenerateCampaign CREAT la europe-central2 cu accesul la
+> secret acordat automat service account-ului. Fluxul complet e LIVE: /admin -> lead -> cerere ->
+> Generaza cu AI -> livrabile in editor. Rotirea cheii ramane in backlog (recomandata inainte de
+> volum; pasii in CLAUDE.md). Verificarea finala (apasarea butonului) = Andrei, singurul admin.
