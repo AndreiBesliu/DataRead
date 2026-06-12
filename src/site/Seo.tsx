@@ -56,6 +56,10 @@ export default function Seo({ titleKey, descriptionKey, noindex }: Props) {
     upsertMeta('property', 'og:description', t(descriptionKey));
     upsertMeta('property', 'og:url', url(lang));
     upsertMeta('property', 'og:type', 'website');
+    upsertMeta('property', 'og:site_name', t('app.name'));
+    upsertMeta('property', 'og:image', `${SITE_ORIGIN}/og.png`);
+    upsertMeta('name', 'twitter:card', 'summary_large_image');
+    upsertMeta('name', 'twitter:image', `${SITE_ORIGIN}/og.png`);
 
     if (noindex) {
       upsertMeta('name', 'robots', 'noindex');

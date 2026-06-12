@@ -215,3 +215,12 @@ normaliser, secretele niciodată în chat/repo.
 > Rules: deja acoperit (update pe leads = doar admin). Verificat: build + 5 suites + prerender +
 > boot-smoke verzi. DEPLOYED: https://dataread-e1bd6.web.app/admin
 > Verificarea vizuală a panoului rămâne la Andrei (singura sesiune cu claim de admin).
+
+**23:58 - Task Completed — identitate la share: favicon + Open Graph**
+> Model: Claude Fable 5
+> Changes: favicon.svg (monograma DR — roșu pe navy cu inel albastru); og.png 1200×630 generat
+> pe tema bannerului (wordmark + „Date. Strategie. Creștere." + headline + DATAREAD.RO);
+> Seo.tsx emite og:image/og:site_name/twitter:card pe toate paginile (intră și în HTML-ul
+> prerenderizat); theme-color #0a1228. Linkurile share-uite pe WhatsApp/Facebook/LinkedIn arată
+> acum cardul de brand. Verificat live: og.png 200, og:image prezent în HTML-ul static.
+> DEPLOYED: https://dataread-e1bd6.web.app
