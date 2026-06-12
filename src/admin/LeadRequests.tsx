@@ -11,7 +11,8 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import { OBJECTIVES, type Objective } from '../types/onboarding';
 import {
   DELIVERABLE_FIELDS,
@@ -59,6 +60,8 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
   const [openReq, setOpenReq] = useState<string | null>(null);
   const [draft, setDraft] = useState<MarketingRequest | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState<{ kind: 'ok' | 'err'; key: string } | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'leads', leadId, 'requests'), orderBy('createdAt', 'desc'));
@@ -157,6 +160,55 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
     setSaveState('idle');
   };
 
+  /** Verticala 1: cere backend-ului să genereze livrabilele cu AI (callable aiGenerateCampaign).
+   *  Functions citește lead-ul + cererea din Firestore și scrie rezultatul pe cerere; aici doar
+   *  pornim apelul și aducem rezultatul în editor. Dacă functions-ul nu e deployat încă (cheia
+   *  Anthropic nesetată), arătăm mesajul de „neactivat" — integrarea nu e dependență critică. */
+  const generateWithAi = async (id: string) => {
+    const hasContent =
+      !!draft && (draft.deliverables.adTexts || draft.deliverables.videoScripts || draft.deliverables.campaignStructure);
+    if (hasContent && !window.confirm(t('admin.reqAiOverwriteConfirm'))) return;
+    setAiBusy(true);
+    setAiMessage(null);
+    try {
+      const fn = httpsCallable<{ leadId: string; requestId: string }, { deliverables?: Record<string, string> }>(
+        functions,
+        'aiGenerateCampaign'
+      );
+      const { data } = await fn({ leadId, requestId: id });
+      const del = data?.deliverables ?? {};
+      setDraft((d) =>
+        d
+          ? {
+              ...d,
+              source: 'ai',
+              deliverables: {
+                ...d.deliverables,
+                adTexts: typeof del.adTexts === 'string' ? del.adTexts : d.deliverables.adTexts,
+                videoScripts: typeof del.videoScripts === 'string' ? del.videoScripts : d.deliverables.videoScripts,
+                campaignStructure:
+                  typeof del.campaignStructure === 'string' ? del.campaignStructure : d.deliverables.campaignStructure,
+              },
+            }
+          : d
+      );
+      setSaveState('saved'); // functions a salvat deja documentul
+      setAiMessage({ kind: 'ok', key: 'admin.reqAiDone' });
+    } catch (e) {
+      const code = String((e as { code?: string }).code ?? '');
+      // 'functions/not-found' (sau 'internal' din preflight-ul CORS) = callable-ul nu e deployat → neactivat.
+      const key = code.endsWith('not-found') || code.endsWith('internal')
+        ? 'admin.reqAiNotReady'
+        : code.endsWith('resource-exhausted')
+          ? 'admin.reqAiQuota'
+          : 'admin.reqAiError';
+      console.warn('aiGenerateCampaign failed:', e);
+      setAiMessage({ kind: 'err', key });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   return (
     <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -234,13 +286,24 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
                       <option key={s} value={s}>{t(s === 'done' ? 'admin.reqStatusDone' : 'admin.reqStatusOpen')}</option>
                     ))}
                   </select>
-                  <button className="btn" style={{ padding: '5px 12px', fontSize: 12, opacity: 0.55, cursor: 'not-allowed' }} disabled title={t('admin.reqAiSoonHint')}>
-                    {t('admin.reqAiSoon')}
+                  <button
+                    className="btn"
+                    style={{ padding: '5px 12px', fontSize: 12 }}
+                    disabled={aiBusy}
+                    onClick={() => void generateWithAi(r.id)}
+                  >
+                    {aiBusy ? t('admin.reqAiBusy') : t('admin.reqAiGenerate')}
                   </button>
                   <button className="btn" style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r.id)}>
                     {t('admin.reqDelete')}
                   </button>
                 </div>
+
+                {aiMessage && (
+                  <div role={aiMessage.kind === 'err' ? 'alert' : 'status'} style={{ fontSize: 12, color: aiMessage.kind === 'err' ? '#c0392b' : '#1e7e34', background: aiMessage.kind === 'err' ? '#fdf0ef' : '#e8f5ec', border: `1px solid ${aiMessage.kind === 'err' ? '#f0c4c0' : '#b5dcc0'}`, borderRadius: 6, padding: '6px 10px' }}>
+                    {t(aiMessage.key)}
+                  </div>
+                )}
 
                 <label style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
                   {t('admin.reqFormOffer')}

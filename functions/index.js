@@ -133,11 +133,165 @@ exports.onSubscriptionWrite = onDocumentWritten(
   }
 );
 
-// ───────────────────────── [3] AI — Verticala 1 (felia 2, REZERVAT) ─────────────────────────
-// Aici intră callables-urile AI, FĂRĂ restructurare:
-//   const { onCall, HttpsError } = require('firebase-functions/v2/https');
-//   const { defineSecret } = require('firebase-functions/params');
-//   const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');   // setat de Andrei, Secret Manager
-//   exports.aiGenerateCampaign = onCall({ region: REGION, secrets: [ANTHROPIC_API_KEY] }, …)
-// Reguli: cheia NU atinge niciodată clientul; quota per utilizator în aiUsage/{uid};
-// endpoint-urile din spec (/ai/generate, /campaign/generate) devin callables.
+// ───────────────────────── [3] AI — Verticala 1 Marketing AI ─────────────────────────
+// Callable-ul aiGenerateCampaign: citește lead-ul + cererea SERVER-SIDE, cere modelului Claude
+// un pachet de livrabile (texte reclame / scripturi video / structură campanie Meta) cu ieșire
+// structurată garantată de schemă, și le scrie înapoi pe cerere (source: 'ai'). Cheia trăiește
+// EXCLUSIV în Secret Manager; quota lunară per operator în aiUsage/{uid}.
+//
+// ACTIVARE (după ce Andrei rotește cheia): 1) `firebase functions:secrets:set ANTHROPIC_API_KEY`
+// 2) AI_ENABLED = true mai jos  3) `npm run deploy:functions`. Cu AI_ENABLED=false, callable-ul
+// nu e exportat, deci deploy-ul nu cere secretul.
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
+
+const AI_ENABLED = false; // ← flip pe true după functions:secrets:set ANTHROPIC_API_KEY
+
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const AI_MODEL = 'claude-opus-4-8'; // cel mai capabil model disponibil (vezi CLAUDE.md → AI)
+const AI_MONTHLY_LIMIT = 200; // generări/lună per operator — generos, dar nu nelimitat
+
+// Schema livrabilelor — output_config.format garantează JSON valid pe această formă.
+const CAMPAIGN_SCHEMA = {
+  type: 'object',
+  properties: {
+    adTexts: {
+      type: 'string',
+      description: '3-5 variante de texte de reclamă Meta în română, fiecare cu hook, corp și CTA, separate clar.',
+    },
+    videoScripts: {
+      type: 'string',
+      description: '2 scripturi de video scurt (15-30s, Reels/TikTok) în română, cu indicații de cadre și text pe ecran.',
+    },
+    campaignStructure: {
+      type: 'string',
+      description: 'Structura campaniei Meta în română: obiectiv, ad set-uri cu audiențe/targeting/plasamente și împărțirea bugetului.',
+    },
+  },
+  required: ['adTexts', 'videoScripts', 'campaignStructure'],
+  additionalProperties: false,
+};
+
+const OBJECTIVE_RO = { leads: 'lead-uri / cereri de ofertă', sales: 'vânzări online', awareness: 'notorietate / brand', traffic: 'trafic pe site', other: 'alt obiectiv' };
+
+function buildCampaignPrompt(lead, req) {
+  const l = lead || {};
+  const r = req || {};
+  const objectives = Array.isArray(l.objectives) ? l.objectives.map((o) => OBJECTIVE_RO[o] || o).join(', ') : '';
+  return [
+    'Pregătește livrabilele unei campanii de marketing pentru clientul de mai jos.',
+    '',
+    '== FIRMA CLIENTULUI ==',
+    `Nume: ${l.companyName || '-'}`,
+    `Industrie: ${l.industry || '-'}${l.industryOther ? ` (${l.industryOther})` : ''}`,
+    `Descriere și public țintă: ${l.description || '-'}`,
+    `Website: ${l.website || '-'}`,
+    `Social: ${[l.facebook, l.instagram, l.tiktok].filter(Boolean).join(', ') || '-'}`,
+    `Obiectivele declarate ale firmei: ${objectives || '-'}`,
+    '',
+    '== CEREREA DE CAMPANIE ==',
+    `Titlu: ${r.title || '-'}`,
+    `Oferta / produsul promovat: ${r.offer || '-'}`,
+    `Buget: ${r.budget || 'nespecificat'}`,
+    `Obiectivul campaniei: ${OBJECTIVE_RO[r.objective] || r.objective || '-'}`,
+    '',
+    'Cerințe: totul în limba ROMÂNĂ, concret și gata de folosit (fără placeholder-e), adaptat',
+    'firmei și ofertei de mai sus. Textele de reclamă scurte și percutante, conforme cu politicile',
+    'Meta. Structura campaniei realistă pentru bugetul dat.',
+  ].join('\n');
+}
+
+/** Quota lunară per operator (tranzacție pe aiUsage/{uid}). Aruncă resource-exhausted la depășire. */
+async function consumeAiQuota(uid) {
+  const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const ref = admin.firestore().collection('aiUsage').doc(uid);
+  await admin.firestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : {};
+    const count = data.month === month ? data.count || 0 : 0;
+    if (count >= AI_MONTHLY_LIMIT) {
+      throw new HttpsError('resource-exhausted', 'Limita lunară de generări AI a fost atinsă.');
+    }
+    tx.set(ref, { month, count: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+  });
+}
+
+if (AI_ENABLED) {
+  exports.aiGenerateCampaign = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) {
+        throw new HttpsError('permission-denied', 'Doar operatorii pot genera campanii.');
+      }
+      const { leadId, requestId } = request.data || {};
+      if (typeof leadId !== 'string' || !leadId || typeof requestId !== 'string' || !requestId) {
+        throw new HttpsError('invalid-argument', 'leadId și requestId sunt obligatorii.');
+      }
+
+      await consumeAiQuota(request.auth.uid);
+
+      // Datele vin din Firestore, nu din client — clientul trimite doar ID-uri.
+      const db = admin.firestore();
+      const reqRef = db.collection('leads').doc(leadId).collection('requests').doc(requestId);
+      const [leadSnap, reqSnap] = await Promise.all([db.collection('leads').doc(leadId).get(), reqRef.get()]);
+      if (!leadSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
+      if (!reqSnap.exists) throw new HttpsError('not-found', 'Cererea nu există.');
+
+      // Import leneș: SDK-ul se încarcă doar în containerul acestui callable.
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+
+      let response;
+      try {
+        response = await client.messages.create({
+          model: AI_MODEL,
+          max_tokens: 16000,
+          thinking: { type: 'adaptive' },
+          system:
+            'Ești strategul de marketing și copywriterul senior al agenției DataRead. Scrii pentru ' +
+            'firme mici și mijlocii din România: concret, persuasiv, fără jargon corporatist gol.',
+          output_config: { format: { type: 'json_schema', schema: CAMPAIGN_SCHEMA } },
+          messages: [{ role: 'user', content: buildCampaignPrompt(leadSnap.data(), reqSnap.data()) }],
+        });
+      } catch (err) {
+        logger.error('anthropic call failed', { err: String(err) });
+        throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
+      }
+
+      if (response.stop_reason === 'refusal') {
+        throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează oferta.');
+      }
+      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+      let out;
+      try {
+        out = JSON.parse(text);
+      } catch (err) {
+        logger.error('ai response unparsable', { stop: response.stop_reason });
+        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
+      }
+
+      const deliverables = {
+        adTexts: String(out.adTexts || '').slice(0, 8000),
+        videoScripts: String(out.videoScripts || '').slice(0, 8000),
+        campaignStructure: String(out.campaignStructure || '').slice(0, 8000),
+      };
+
+      // set + merge pe căi imbricate: notele scrise manual rămân neatinse.
+      await reqRef.set(
+        {
+          deliverables,
+          source: 'ai',
+          status: 'open',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          aiGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          aiGeneratedBy: request.auth.uid,
+        },
+        { merge: true }
+      );
+
+      logger.info('campaign generated', { leadId, requestId, by: request.auth.uid, usage: response.usage });
+      return { deliverables };
+    }
+  );
+}

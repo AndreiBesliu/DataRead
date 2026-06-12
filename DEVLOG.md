@@ -237,3 +237,21 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: build + 5 suites (99 checks) + prerender + boot-smoke verzi.
 > DEPLOYED (hosting + rules). Fluxul Fazei 1 e complet: lead → contactare (status+note) →
 > cerere de marketing → livrabile → Livrat.
+
+**00:55 - Task Completed — Felia 2: integrarea AI completă, în spatele comutatorului**
+> Model: Claude Fable 5
+> Răspuns la întrebarea lui Andrei („de ce nu putem folosi cheia dată în chat?"): explicat că e
+> doar igienă (cheia din chat = expusă permanent, rotirea = 1 min), iar la observația lui corectă
+> că „dezvoltarea nu e specifică ANTHROPIC_API_KEY" — construită TOATĂ integrarea acum:
+> Changes: functions/index.js secțiunea [3] completă: callable `aiGenerateCampaign` (admin-only,
+> validare leadId/requestId, quota lunară 200/op în aiUsage/{uid} prin tranzacție, citește lead +
+> cerere SERVER-side, model claude-opus-4-8 cu adaptive thinking + system prompt de copywriter RO
+> + ieșire structurată json_schema {adTexts, videoScripts, campaignStructure}, handling refusal/
+> parse-fail, scrie livrabilele cu merge — notele manuale rămân, source:'ai', aiGeneratedAt/By;
+> timeoutSeconds 300). TOTUL în spatele `AI_ENABLED=false` — neexportat, deci deploy-urile nu cer
+> secretul. @anthropic-ai/sdk ^0.104.1 instalat în functions. Client: butonul „Generează cu AI"
+> LIVE în LeadRequests (confirm la suprascriere, busy state, rezultatul intră direct în editor,
+> mapare erori: not-found/internal→„neactivat încă", resource-exhausted→quota, altfel generic).
+> ACTIVARE = 3 pași în CLAUDE.md: secrets:set → AI_ENABLED=true → deploy:functions.
+> Verificat: build + 5 suites + prerender + boot-smoke verzi; functions/index.js se încarcă OK cu
+> comutatorul stins. DEPLOYED (hosting). Functions NU redeployate (suprafața exportată neschimbată).
