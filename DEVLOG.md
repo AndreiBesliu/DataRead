@@ -278,3 +278,10 @@ normaliser, secretele niciodată în chat/repo.
 > notele interne), cu feedback Copiat 2s.
 > Verificat: build + 5 suites + prerender + boot-smoke verzi. DEPLOYED (hosting + rules).
 > Verificarea vizuala in /admin = Andrei (refresh).
+
+**10:10 - MILESTONE CONFIRMAT de Andrei (screenshot): VERTICALA 1 FUNCTIONEAZA END-TO-END**
+> Fluxul complet in productie: formular public -> lead (Firma test, HoReCa) -> cerere de
+> marketing -> Genereaza cu AI -> texte reclame + scripturi video (cu timing pe cadre) +
+> structura campanie Meta (a interpretat corect bugetul mic si a recomandat Instant Forms),
+> totul in romana, adaptat firmei -> Salvat + Copiaza tot. Control center-ul (stats, cautare,
+> stergere, copy) vizibil si functional in screenshot. Primul ciclu complet al platformei.
