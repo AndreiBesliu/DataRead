@@ -54,6 +54,11 @@ service cloud.firestore {
         && request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() <= 30
         && request.resource.data.description is string && request.resource.data.description.size() <= 2000
         && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
+
+      // Cererile de marketing ale lead-ului (Verticala 1) — exclusiv zona operatorilor.
+      match /requests/{reqId} {
+        allow read, create, update, delete: if isAdmin();
+      }
     }
 
     // ───────── Izolare multi-tenant: tot ce aparține unui client stă sub clients/{uid}/** ─────────

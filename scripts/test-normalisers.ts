@@ -64,6 +64,23 @@ check('lead status: gunoi → new', coerceLeadStatus('hacked') === 'new' && coer
 check('lead notes: non-string → gol', coerceLeadNotes(42) === '' && coerceLeadNotes(null) === '');
 check('lead notes: tăiate la plafon', coerceLeadNotes('x'.repeat(9000)).length === 4000);
 
+// ── cereri de marketing (Verticala 1, semi-manual) ───────────────────────────────────────────
+import { coerceToMarketingRequest, emptyRequest } from '../src/types/request';
+check('request: non-obiect → empty', JSON.stringify(coerceToMarketingRequest('x')) === JSON.stringify(emptyRequest()));
+check('request: defaults corecte', (() => {
+  const r = emptyRequest();
+  return r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.adTexts === '';
+})());
+check('request: tipuri greșite → defaults', (() => {
+  const r = coerceToMarketingRequest({ title: 42, status: 'archived', source: 'robot', objective: 'spam', deliverables: 'x' });
+  return r.title === '' && r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.notes === '';
+})());
+check('request: valori valide trec', (() => {
+  const r = coerceToMarketingRequest({ title: 'Campanie vară', offer: 'Meniu nou', budget: '500 €', objective: 'sales', status: 'done', source: 'ai', deliverables: { adTexts: 'text1' } });
+  return r.title === 'Campanie vară' && r.objective === 'sales' && r.status === 'done' && r.source === 'ai' && r.deliverables.adTexts === 'text1' && r.deliverables.videoScripts === '';
+})());
+check('request: livrabile tăiate la plafon', coerceToMarketingRequest({ deliverables: { campaignStructure: 'x'.repeat(20000) } }).deliverables.campaignStructure.length === 8000);
+
 // ── coerceToOnboardingDraft (calea localStorage) ─────────────────────────────────────────────
 check('draft: null → null', coerceToOnboardingDraft(null) === null);
 check('draft: JSON stricat → null, fără throw', coerceToOnboardingDraft('{broken json!') === null);

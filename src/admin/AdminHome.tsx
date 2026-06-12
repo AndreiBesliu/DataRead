@@ -19,6 +19,7 @@ import { useAuthStore } from '../store/authStore';
 import { coerceToClientProfile, type ClientProfile } from '../types/client';
 import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
+import LeadRequests from './LeadRequests';
 import AuthPanel from '../app/AuthPanel';
 
 /** Cheia i18n a fiecărui status de pipeline. */
@@ -523,6 +524,7 @@ export default function AdminHome() {
                                     {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
                                   </button>
                                 </div>
+                                {user && <LeadRequests leadId={l.id} adminUid={user.uid} />}
                               </td>
                             </tr>
                           )}
