@@ -62,6 +62,33 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMessage, setAiMessage] = useState<{ kind: 'ok' | 'err'; key: string } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyText = (key: string, text: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
+      })
+      .catch((e) => console.warn('clipboard failed:', e));
+  };
+
+  /** Pachetul complet de livrabile, formatat pentru trimiterea către client (fără notele interne). */
+  const buildCopyAll = (d: MarketingRequest): string => {
+    const parts = [`=== ${d.title} ===`, `Ofertă: ${d.offer}`];
+    if (d.budget) parts.push(`Buget: ${d.budget}`);
+    if (d.objective) parts.push(`Obiectiv: ${t(`onboarding.objective.${d.objective}`)}`);
+    const sections: Array<[string, string]> = [
+      [t('admin.reqAdTexts'), d.deliverables.adTexts],
+      [t('admin.reqVideoScripts'), d.deliverables.videoScripts],
+      [t('admin.reqCampaignStructure'), d.deliverables.campaignStructure],
+    ];
+    for (const [label, text] of sections) {
+      if (text.trim()) parts.push('', `— ${label} —`, text.trim());
+    }
+    return parts.join('\n');
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'leads', leadId, 'requests'), orderBy('createdAt', 'desc'));
@@ -312,7 +339,18 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
 
                 {DELIVERABLE_FIELDS.map((f) => (
                   <label key={f.key} style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
-                    {t(f.labelKey)}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {t(f.labelKey)}
+                      {f.key !== 'notes' && draft.deliverables[f.key].trim() && (
+                        <button
+                          type="button"
+                          onClick={() => copyText(f.key, draft.deliverables[f.key])}
+                          style={{ border: '1px solid var(--border)', background: 'var(--bg-1)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: copiedKey === f.key ? '#1e7e34' : 'var(--fg-1)' }}
+                        >
+                          {copiedKey === f.key ? t('admin.copied') : t('admin.copy')}
+                        </button>
+                      )}
+                    </span>
                     <textarea
                       style={{ ...field, minHeight: f.key === 'notes' ? 50 : 90, resize: 'vertical', fontFamily: 'inherit' }}
                       value={draft.deliverables[f.key]}
@@ -322,9 +360,16 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
                   </label>
                 ))}
 
-                <button className="btn btn-primary" style={{ justifySelf: 'start', padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void save(r.id)}>
-                  {saveState === 'saving' ? t('admin.reqSaving') : saveState === 'saved' ? t('admin.reqSaved') : t('admin.reqSave')}
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void save(r.id)}>
+                    {saveState === 'saving' ? t('admin.reqSaving') : saveState === 'saved' ? t('admin.reqSaved') : t('admin.reqSave')}
+                  </button>
+                  {(draft.deliverables.adTexts || draft.deliverables.videoScripts || draft.deliverables.campaignStructure) && (
+                    <button className="btn" style={{ padding: '6px 16px', fontSize: 12, color: copiedKey === 'all' ? '#1e7e34' : undefined }} onClick={() => copyText('all', buildCopyAll(draft))}>
+                      {copiedKey === 'all' ? t('admin.copied') : `📋 ${t('admin.copyAll')}`}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

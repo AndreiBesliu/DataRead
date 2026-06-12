@@ -264,3 +264,17 @@ normaliser, secretele niciodată în chat/repo.
 > secret acordat automat service account-ului. Fluxul complet e LIVE: /admin -> lead -> cerere ->
 > Generaza cu AI -> livrabile in editor. Rotirea cheii ramane in backlog (recomandata inainte de
 > volum; pasii in CLAUDE.md). Verificarea finala (apasarea butonului) = Andrei, singurul admin.
+
+**09:55 - Task Completed — control center /admin (statistici, cautare, stergere, copy livrabile)**
+> Model: Claude Fable 5
+> Context: primul lead de test inregistrat de Andrei prin formularul public (pipeline confirmat
+> vizual); directiva: "haide sa continuam sa dezvoltam".
+> Changes: rand de statistici operationale sub header (total lead-uri, noi/contactate/castigate,
+> rata de conversie castigate/decise, generarile AI ale operatorului pe luna curenta — citite din
+> aiUsage cu regula noua read-only pentru admini); cautare client-side in lead-uri (firma/contact/
+> email/telefon, filtrele de status se aplica pe setul cautat); stergere lead cu confirmare care
+> curata intai subcolectia requests (Firestore nu face cascade); butoane Copiaza pe fiecare
+> livrabil + "Copiaza tot" formatat pentru livrarea catre client (titlu+oferta+sectiuni, fara
+> notele interne), cu feedback Copiat 2s.
+> Verificat: build + 5 suites + prerender + boot-smoke verzi. DEPLOYED (hosting + rules).
+> Verificarea vizuala in /admin = Andrei (refresh).

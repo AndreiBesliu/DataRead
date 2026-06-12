@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -176,8 +178,10 @@ export default function AdminHome() {
   const [openClient, setOpenClient] = useState<string | null>(null);
   const [clientDetail, setClientDetail] = useState<OnboardingData | null | 'loading'>(null);
   const [leadFilter, setLeadFilter] = useState<'all' | LeadStatus>('all');
+  const [leadSearch, setLeadSearch] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [aiCount, setAiCount] = useState<number | null>(null);
 
   // Verifică claim-ul; un refresh forțat prinde claim-ul abia setat de trigger (bootstrap/aprobare).
   useEffect(() => {
@@ -242,6 +246,25 @@ export default function AdminHome() {
     });
   }, [isAdmin]);
 
+  // Contorul de generări AI al operatorului curent (luna în curs) — pentru statistici.
+  useEffect(() => {
+    if (isAdmin !== true || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'aiUsage', user.uid));
+        const data = snap.exists() ? snap.data() : null;
+        const month = new Date().toISOString().slice(0, 7);
+        if (!cancelled) setAiCount(data && data.month === month && typeof data.count === 'number' ? data.count : 0);
+      } catch {
+        if (!cancelled) setAiCount(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, user]);
+
   // Clienții (conturi — relevant când revine self-serve).
   useEffect(() => {
     if (isAdmin !== true) return;
@@ -292,6 +315,19 @@ export default function AdminHome() {
     setOpenLead(l.id);
     setNotesDraft(l.notes);
     setNotesState('idle');
+  };
+
+  /** Șterge definitiv lead-ul + subcolecția lui de cereri (Firestore nu face cascade). */
+  const deleteLead = async (id: string) => {
+    if (!window.confirm(t('admin.leadDeleteConfirm'))) return;
+    try {
+      const reqs = await getDocs(collection(db, 'leads', id, 'requests'));
+      await Promise.all(reqs.docs.map((d) => deleteDoc(d.ref)));
+      await deleteDoc(doc(db, 'leads', id));
+      if (openLead === id) setOpenLead(null);
+    } catch (e) {
+      console.warn('lead delete failed:', e);
+    }
   };
 
   const saveNotes = async (id: string) => {
@@ -377,10 +413,29 @@ export default function AdminHome() {
 
   return (
     <main data-page="admin-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('admin.title')}</h1>
         <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{user.email}</span>
       </header>
+
+      {/* Statistici operaționale — derivate live din lead-uri + contorul AI al operatorului. */}
+      {(() => {
+        const all = leads ?? [];
+        const won = all.filter((l) => l.status === 'won').length;
+        const lost = all.filter((l) => l.status === 'lost').length;
+        const decided = won + lost;
+        const chip: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 999, padding: '4px 14px', fontSize: 13, fontWeight: 600 };
+        return (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+            <span style={chip}>{t('admin.leadsTitle').split(' ')[0]}: {all.length}</span>
+            <span style={{ ...chip, color: 'var(--accent, #2563eb)' }}>{t(STATUS_KEY.new)}: {all.filter((l) => l.status === 'new').length}</span>
+            <span style={{ ...chip, color: '#b07b1e' }}>{t(STATUS_KEY.contacted)}: {all.filter((l) => l.status === 'contacted').length}</span>
+            <span style={{ ...chip, color: '#1e7e34' }}>{t(STATUS_KEY.won)}: {won}</span>
+            {decided > 0 && <span style={chip}>{t('admin.statsConversion')}: {Math.round((won / decided) * 100)}%</span>}
+            {aiCount !== null && <span style={chip}>🤖 {t('admin.statsAi', { count: aiCount })}</span>}
+          </div>
+        );
+      })()}
 
       {/* Cereri de acces backend. */}
       <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('admin.requestsTitle')}</h2>
@@ -412,7 +467,15 @@ export default function AdminHome() {
 
       {/* Lead-urile din formularul public /start — pipeline-ul operațional. */}
       {(() => {
-        const all = leads ?? [];
+        const q = leadSearch.trim().toLowerCase();
+        const all = (leads ?? []).filter(
+          (l) =>
+            !q ||
+            [l.data.companyName, l.data.contactName, l.data.contactEmail, l.data.contactPhone]
+              .join(' ')
+              .toLowerCase()
+              .includes(q)
+        );
         const counts = { all: all.length } as Record<'all' | LeadStatus, number>;
         for (const s of LEAD_STATUSES) counts[s] = all.filter((l) => l.status === s).length;
         const visible = leadFilter === 'all' ? all : all.filter((l) => l.status === leadFilter);
@@ -437,6 +500,13 @@ export default function AdminHome() {
 
             {leads !== null && leads.length > 0 && (
               <>
+                <input
+                  type="search"
+                  value={leadSearch}
+                  onChange={(e) => setLeadSearch(e.target.value)}
+                  placeholder={t('admin.searchPlaceholder')}
+                  style={{ width: '100%', maxWidth: 420, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, marginBottom: 10, background: 'var(--bg-1)' }}
+                />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                   {(['all', ...LEAD_STATUSES] as const).map((f) => (
                     <button
@@ -525,6 +595,11 @@ export default function AdminHome() {
                                   </button>
                                 </div>
                                 {user && <LeadRequests leadId={l.id} adminUid={user.uid} />}
+                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10, textAlign: 'right' }}>
+                                  <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void deleteLead(l.id)}>
+                                    {t('admin.leadDelete')}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           )}
