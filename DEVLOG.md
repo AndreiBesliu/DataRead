@@ -199,3 +199,8 @@ normaliser, secretele niciodată în chat/repo.
 > recrearea declanșează bootstrap-ul; (2) RequestAccess e acum self-healing: „Reverifică" re-asigură
 > și documentul de cerere (recreează dacă lipsește), iar după înregistrare rulează automat două
 > reverificări (la 4s și 10s) — bootstrap-ul nu mai cere nicio acțiune manuală. Deploy hosting ✓.
+
+**23:20 - CONFIRMAT de Andrei: a intrat în backend** ✓
+> Bootstrap-ul consumat — Andrei e primul admin (claim activ). Fluxul de acces e de-acum:
+> cerere pe /admin → aprobare/respingere din panou, de către un admin existent.
+> SESIUNEA 1b închisă integral. Următoarea sesiune: felia 2 — Verticala 1 Marketing AI.
