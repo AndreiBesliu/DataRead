@@ -72,3 +72,107 @@ export function themeStyle(id: string): CSSProperties {
     : th.vars['bg-0'];
   return style as CSSProperties;
 }
+
+// ---- Temă personalizată (configurator) -------------------------------------
+// Andrei (13.06.2026): pentru admin se personalizează DOAR design-ul — culori,
+// imagine de fundal, animații decor — NU layout-ul/structura. Tema custom se
+// construiește pornind de la un preset și suprascriind doar aceste atribute.
+
+export const CUSTOM_THEME_ID = 'custom';
+
+export type ThemeAnimation = 'none' | 'pulse' | 'sheen' | 'drift';
+export const THEME_ANIMATIONS: ThemeAnimation[] = ['none', 'pulse', 'sheen', 'drift'];
+
+/** Cheile de culoare editabile, în ordinea afișării în editor. */
+export const THEME_COLOR_KEYS: (keyof AdminTheme['vars'])[] = [
+  'bg-0', 'bg-1', 'fg-0', 'fg-1', 'border', 'accent', 'accent-dark', 'accent-contrast',
+];
+
+export interface CustomTheme {
+  schema: 1;
+  /** Preset-ul de pornire (pentru reset / fallback la culori). */
+  base: string;
+  label: string;
+  vars: AdminTheme['vars'];
+  /** Grilă de puncte pe fundal. */
+  digital: boolean;
+  /** URL imagine de fundal (https; gol = fără). */
+  bgImage: string;
+  animation: ThemeAnimation;
+}
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+// URL de imagine sigur pentru CSS url("…"): https, fără spații/ghilimele/paranteze.
+const SAFE_IMG_URL = /^https:\/\/[^\s"')]+$/i;
+
+export function defaultCustomTheme(baseId: string = DEFAULT_ADMIN_THEME): CustomTheme {
+  const b = themeById(baseId);
+  return { schema: 1, base: b.id, label: 'Tema mea', vars: { ...b.vars }, digital: !!b.digital, bgImage: '', animation: 'none' };
+}
+
+/** Normaliser UNIC — orice intrare stricată → temă validă, fără a arunca. */
+export function coerceToCustomTheme(raw: unknown): CustomTheme {
+  if (!raw || typeof raw !== 'object') return defaultCustomTheme();
+  const o = raw as Record<string, unknown>;
+  const base = typeof o.base === 'string' && ADMIN_THEMES.some((t) => t.id === o.base) ? o.base : DEFAULT_ADMIN_THEME;
+  const bt = themeById(base);
+  const rv = (o.vars && typeof o.vars === 'object' ? o.vars : {}) as Record<string, unknown>;
+  const vars = { ...bt.vars };
+  for (const k of THEME_COLOR_KEYS) {
+    const v = rv[k];
+    if (typeof v === 'string' && HEX6.test(v)) vars[k] = v;
+  }
+  const animation = THEME_ANIMATIONS.includes(o.animation as ThemeAnimation) ? (o.animation as ThemeAnimation) : 'none';
+  const bgRaw = typeof o.bgImage === 'string' ? o.bgImage.trim() : '';
+  const bgImage = SAFE_IMG_URL.test(bgRaw) ? bgRaw.slice(0, 500) : '';
+  const label = typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : 'Tema mea';
+  const digital = typeof o.digital === 'boolean' ? o.digital : !!bt.digital;
+  return { schema: 1, base, label, vars, digital, bgImage, animation };
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  if (!HEX6.test(hex)) return [0, 0, 0];
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Stilul wrapperului pentru o temă personalizată (variabile + fundal compus din straturi). */
+export function customThemeStyle(c: CustomTheme): CSSProperties {
+  const style: Record<string, string | number> = { minHeight: '100vh', color: c.vars['fg-0'] };
+  for (const k of THEME_COLOR_KEYS) style[`--${k}`] = c.vars[k];
+
+  const images: string[] = [];
+  const sizes: string[] = [];
+  const positions: string[] = [];
+  const repeats: string[] = [];
+  const attachments: string[] = [];
+
+  if (c.digital) {
+    images.push(`radial-gradient(${c.vars.border} 1px, transparent 1px)`);
+    sizes.push('24px 24px'); positions.push('0 0'); repeats.push('repeat'); attachments.push('scroll');
+  }
+  if (c.bgImage) {
+    const [r, g, b] = hexToRgb(c.vars['bg-0']);
+    // Văl de lizibilitate: mai opac sus (unde stă header-ul/conținutul dens), mai transparent jos
+    // ca imaginea să rămână vizibilă fără a sacrifica contrastul textului.
+    images.push(`linear-gradient(rgba(${r},${g},${b},0.80), rgba(${r},${g},${b},0.52))`);
+    sizes.push('auto'); positions.push('0 0'); repeats.push('repeat'); attachments.push('fixed');
+    images.push(`url("${c.bgImage}")`);
+    sizes.push('cover'); positions.push('center'); repeats.push('no-repeat'); attachments.push('fixed');
+  }
+
+  style.backgroundColor = c.vars['bg-0'];
+  if (images.length) {
+    style.backgroundImage = images.join(', ');
+    style.backgroundSize = sizes.join(', ');
+    style.backgroundPosition = positions.join(', ');
+    style.backgroundRepeat = repeats.join(', ');
+    style.backgroundAttachment = attachments.join(', ');
+  }
+  return style as CSSProperties;
+}
+
+/** Clasa CSS pentru stratul decorativ animat (gol = fără animație). */
+export function themeAnimClass(a: ThemeAnimation): string {
+  return a === 'none' ? '' : `anim-${a}`;
+}

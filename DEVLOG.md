@@ -401,7 +401,29 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED: functions (onRequestWrite creat) + firestore:rules + hosting.
 > NOTA: portalul de client are acum cele 3 fețe cerute — performanță + raport + livrabile.
 
+**2026-06-13 - Task Completed — creator de teme admin extins (culori/imagine/animații)**
+> Model: Claude Fable 5
+> Directiva Andrei: peste configuratorul cu preset-uri, un creator de temă personalizată — DOAR
+> design (culori, imagine de fundal, animație de decor), NU layout/structură.
+> Changes: themes.ts — CustomTheme (schema 1) + coerceToCustomTheme (normaliser unic: gunoi →
+> temă validă, respinge bgImage nesigur pt CSS url(), animație necunoscută → none) + customThemeStyle
+> (compune fundalul în straturi: grilă + văl de lizibilitate gradient 0.80→0.52 peste imagine +
+> culoare) + themeAnimClass + THEME_COLOR_KEYS/THEME_ANIMATIONS. useAdminTheme rescris: gestionează
+> și tema custom (localStorage dataread_admin_theme_custom, încărcat prin coerce) + acceptă id-ul
+> 'custom'. ThemeEditor.tsx nou (modal: nume, „pornește de la" preset, 8 color pickers cu hex,
+> URL imagine, toggle grilă, select animație, reset, live preview — wrapperul folosește
+> customThemeStyle deci se vede instant). AdminHome: opțiune „Personalizată" în picker + buton
+> „Editează tema" + strat decorativ fix .admin-fx (z-index 0, sub <main> la z-index 1). styles.css:
+> keyframes drift/pulse/sheen (folosesc var(--accent), pointer-events none) + swatch color input +
+> guard prefers-reduced-motion. i18n admin.themeEditor (ro/en). test-themes +12 checks (coerce,
+> securitate bgImage, customThemeStyle straturi).
+> Verificat: build + 7 suites (21 checks teme) + prerender + boot-smoke verzi; randare vizuală
+> confirmată (Playwright headless, imagine servită pe http): conținut lizibil deasupra imaginii +
+> aurora, panou editor cu contrast bun. DEPLOYED: hosting.
+> NOTĂ: aceasta e fundația pentru viitorul sistem Landing Pages (același motor de design, dar pt
+> clienți cu conținut variabil).
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
-- [ ] Creator de teme admin extins (culori/background/animații; fără layout) peste configuratorul actual
+- [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13
 - [x] Livrabile în portalul de client (cu note interne separate) — pasul 2 al portalului ✅ 2026-06-13

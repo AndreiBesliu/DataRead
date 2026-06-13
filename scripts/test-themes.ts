@@ -1,5 +1,15 @@
-// Suite headless: integritatea registrului de teme + fallback-ul.
-import { ADMIN_THEMES, DEFAULT_ADMIN_THEME, themeById, themeStyle } from '../src/theme/themes';
+// Suite headless: integritatea registrului de teme + fallback-ul + tema personalizată.
+import {
+  ADMIN_THEMES,
+  DEFAULT_ADMIN_THEME,
+  THEME_COLOR_KEYS,
+  coerceToCustomTheme,
+  customThemeStyle,
+  defaultCustomTheme,
+  themeAnimClass,
+  themeById,
+  themeStyle,
+} from '../src/theme/themes';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -24,6 +34,33 @@ check('themeStyle light = fără grid', (() => {
   const s = themeStyle('light') as Record<string, string>;
   return s.background === '#f6f7f9';
 })());
+
+// ---- Temă personalizată (coerce + style) ----
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+check('defaultCustomTheme = schema 1 + culori valide', (() => {
+  const d = defaultCustomTheme();
+  return d.schema === 1 && d.base === DEFAULT_ADMIN_THEME && THEME_COLOR_KEYS.every((k) => HEX.test(d.vars[k]));
+})());
+check('coerce(null) → default', coerceToCustomTheme(null).base === DEFAULT_ADMIN_THEME);
+check('coerce(gunoi) nu aruncă → culori valide', (() => {
+  const c = coerceToCustomTheme({ vars: { 'bg-0': 'nu-e-hex', accent: 123 }, base: 'inexistent', animation: 'turbo', bgImage: 42 });
+  return THEME_COLOR_KEYS.every((k) => HEX.test(c.vars[k])) && c.animation === 'none' && c.bgImage === '' && c.base === DEFAULT_ADMIN_THEME;
+})());
+check('coerce păstrează override valid de culoare', coerceToCustomTheme({ vars: { accent: '#abcdef' } }).vars.accent === '#abcdef');
+check('coerce respinge bgImage nesigur (javascript:)', coerceToCustomTheme({ bgImage: 'javascript:alert(1)' }).bgImage === '');
+check('coerce respinge bgImage cu ghilimele (CSS break-out)', coerceToCustomTheme({ bgImage: 'https://x/a") url(evil' }).bgImage === '');
+check('coerce acceptă https valid', coerceToCustomTheme({ bgImage: 'https://ex.com/bg.jpg' }).bgImage === 'https://ex.com/bg.jpg');
+check('coerce acceptă animație validă', coerceToCustomTheme({ animation: 'drift' }).animation === 'drift');
+check('customThemeStyle pune variabilele + backgroundColor', (() => {
+  const s = customThemeStyle(coerceToCustomTheme({ vars: { 'bg-0': '#101010' } })) as Record<string, string>;
+  return s['--bg-0'] === '#101010' && s.backgroundColor === '#101010';
+})());
+check('customThemeStyle cu imagine → straturi de fundal', (() => {
+  const s = customThemeStyle(coerceToCustomTheme({ bgImage: 'https://ex.com/b.png', digital: true })) as Record<string, string>;
+  return typeof s.backgroundImage === 'string' && s.backgroundImage.includes('url("https://ex.com/b.png")') && s.backgroundImage.includes('radial-gradient');
+})());
+check('themeAnimClass: none → gol, restul → anim-*', themeAnimClass('none') === '' && themeAnimClass('drift') === 'anim-drift');
 
 if (failures) {
   console.error(`${failures} checks failed`);

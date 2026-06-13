@@ -239,3 +239,72 @@ h3 {
 .admin-scope a {
   color: var(--accent);
 }
+
+/* Selectorul de culoare din editorul de teme: arată ca un swatch curat. */
+.admin-scope input[type='color'] {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  background: transparent;
+}
+.admin-scope input[type='color']::-webkit-color-swatch-wrapper { padding: 2px; }
+.admin-scope input[type='color']::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+/* Configurator de teme: strat decorativ animat — fix, sub conținut, fără interacțiune.
+   Andrei (13.06.2026): animații de DECOR, nu layout. Conținutul (<main>) e la z-index 1. */
+.admin-scope { position: relative; }
+.admin-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.admin-fx::before { content: ''; position: absolute; }
+
+/* Aurora: două pete de accent care plutesc lent. */
+.admin-fx.anim-drift::before {
+  inset: -25%;
+  background:
+    radial-gradient(38% 38% at 28% 30%, var(--accent) 0%, transparent 60%),
+    radial-gradient(34% 34% at 72% 64%, var(--accent-dark) 0%, transparent 60%);
+  opacity: 0.13;
+  filter: blur(46px);
+  animation: admin-drift 26s ease-in-out infinite alternate;
+}
+@keyframes admin-drift {
+  from { transform: translate(-4%, -3%) scale(1); }
+  to { transform: translate(4%, 3%) scale(1.12); }
+}
+
+/* Puls: un halou de accent care respiră în partea de sus. */
+.admin-fx.anim-pulse::before {
+  inset: 0;
+  background: radial-gradient(62% 52% at 50% 0%, var(--accent) 0%, transparent 70%);
+  opacity: 0.06;
+  animation: admin-pulse 7s ease-in-out infinite;
+}
+@keyframes admin-pulse {
+  0%, 100% { opacity: 0.04; }
+  50% { opacity: 0.13; }
+}
+
+/* Sclipire: o dungă de lumină care traversează diagonal. */
+.admin-fx.anim-sheen::before {
+  top: 0;
+  left: -55%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent 0%, var(--accent) 50%, transparent 100%);
+  opacity: 0.05;
+  transform: skewX(-18deg);
+  animation: admin-sheen 11s linear infinite;
+}
+@keyframes admin-sheen {
+  from { left: -60%; }
+  to { left: 170%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-fx::before { animation: none !important; }
+}

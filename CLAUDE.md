@@ -92,6 +92,15 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`
   pe wrapperul view-ului de admin; componentele se reskinează automat (folosesc deja variabilele).
   Default = Midnight (dark digital). Portalul de client (/app) rămâne pe tema default deocamdată.
+- **Creator de teme personalizate (configurator extins):** opțiunea „Personalizată" + butonul
+  „Editează tema" deschid `ThemeEditor` — se modifică DOAR design-ul (cele 8 culori, imagine de
+  fundal prin URL https, animație de decor: aurora/puls/sclipire, grilă), NICIODATĂ layout/
+  structură (decizie Andrei, 13.06). Tema custom = `CustomTheme` (schema 1) cu `coerceToCustomTheme`
+  (normaliser unic; respinge URL-uri nesigure pt. CSS `url()`), persistată în
+  `dataread_admin_theme_custom`; randată prin `customThemeStyle` (fundal în straturi: grilă + văl de
+  lizibilitate gradient peste imagine + culoare) + stratul decorativ animat `.admin-fx` (z-index 0,
+  sub `<main>`). Asta e fundația viitorului sistem **Landing Pages** (același motor de design,
+  pentru clienți cu conținut variabil).
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
   `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (portal client, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage

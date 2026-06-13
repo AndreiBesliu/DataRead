@@ -24,7 +24,8 @@ import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type 
 import LeadRequests from './LeadRequests';
 import MarketingCenter from './MarketingCenter';
 import { useAdminTheme } from '../theme/useAdminTheme';
-import { ADMIN_THEMES, themeStyle } from '../theme/themes';
+import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeStyle } from '../theme/themes';
+import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
 type AdminView = 'leads' | 'marketing';
@@ -191,7 +192,8 @@ export default function AdminHome() {
   const [aiCount, setAiCount] = useState<number | null>(null);
   const [view, setView] = useState<AdminView>('leads');
   const [linkSelect, setLinkSelect] = useState('');
-  const [themeId, setThemeId] = useAdminTheme();
+  const { themeId, setThemeId, custom, setCustom } = useAdminTheme();
+  const [editingTheme, setEditingTheme] = useState(false);
 
   // Opțiunile de client pentru Marketing Center (din lead-urile deja abonate).
   const leadOptions = useMemo(
@@ -470,9 +472,14 @@ export default function AdminHome() {
   const td: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', fontSize: 14, textAlign: 'left' };
   const sectionBox: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto', marginBottom: 28 };
 
+  const isCustom = themeId === CUSTOM_THEME_ID;
+  const scopeStyle = isCustom ? customThemeStyle(custom) : themeStyle(themeId);
+  const animClass = isCustom ? themeAnimClass(custom.animation) : '';
+
   return (
-    <div className="admin-scope" style={themeStyle(themeId)}>
-    <main data-page="admin-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
+    <div className="admin-scope" style={scopeStyle}>
+    {animClass ? <div className={`admin-fx ${animClass}`} aria-hidden="true" /> : null}
+    <main data-page="admin-home" style={{ position: 'relative', zIndex: 1, maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('admin.title')}</h1>
         <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{user.email}</span>
@@ -484,8 +491,17 @@ export default function AdminHome() {
             style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, background: 'var(--bg-1)', color: 'var(--fg-0)' }}
           >
             {ADMIN_THEMES.map((th) => <option key={th.id} value={th.id}>{th.label}</option>)}
+            <option value={CUSTOM_THEME_ID}>{t('admin.themeEditor.custom')}</option>
           </select>
         </label>
+        {isCustom ? (
+          <button
+            onClick={() => setEditingTheme(true)}
+            style={{ border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: 6, padding: '5px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          >
+            {t('admin.themeEditor.edit')}
+          </button>
+        ) : null}
       </header>
 
       {/* Statistici operaționale — derivate live din lead-uri + contorul AI al operatorului. */}
@@ -781,6 +797,7 @@ export default function AdminHome() {
       )}
       </>)}
     </main>
+    {editingTheme ? <ThemeEditor value={custom} onChange={setCustom} onClose={() => setEditingTheme(false)} /> : null}
     </div>
   );
 }
