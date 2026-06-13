@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { useEntitlementStore } from '../store/entitlementStore';
@@ -9,7 +11,99 @@ import { createCheckoutSession, createPortalLink } from '../services/billing';
 import { reportError } from '../services/errorReporting';
 import type { ClientProfile } from '../types/client';
 import { getPackage, isValidPackageId } from '../config/packages';
+import { coerceToCampaign, coerceToReport, kpisFromTotals, type CampaignDef, type ClientReport } from '../analytics/kpi';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
+
+const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
+const portalMoney = (n: number) => `€${n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}`;
+const portalRoas = (n: number | null) => (n === null ? '—' : `${n.toFixed(2)}×`);
+
+/** Portalul de marketing al clientului: campaniile LUI (scoped pe clientUid prin rules) cu KPI +
+ *  raportul lunar (oglindit în clients/{uid} de functions). Read-only — operatorii gestionează tot. */
+function MarketingPortal({ uid }: { uid: string }) {
+  const { t } = useTranslation();
+  const [camps, setCamps] = useState<Array<{ id: string; data: CampaignDef }> | null>(null);
+  const [report, setReport] = useState<ClientReport | null>(null);
+
+  useEffect(() => {
+    const off1 = onSnapshot(
+      query(collection(db, 'campaigns'), where('clientUid', '==', uid)),
+      (snap) => {
+        const out: Array<{ id: string; data: CampaignDef }> = [];
+        snap.forEach((d) => {
+          const c = coerceToCampaign(d.data());
+          if (c) out.push({ id: d.id, data: c });
+        });
+        setCamps(out);
+      },
+      () => setCamps([])
+    );
+    const off2 = onSnapshot(
+      doc(db, 'clients', uid),
+      (snap) => setReport(coerceToReport(snap.data()?.marketingReport)),
+      () => {}
+    );
+    return () => {
+      off1();
+      off2();
+    };
+  }, [uid]);
+
+  if (camps === null) return null;
+  const hasData = camps.length > 0 || report !== null;
+
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 20, marginBottom: 12 }}>{t('appHome.portalTitle')}</h2>
+      {!hasData && <p style={{ color: 'var(--fg-1)' }}>{t('appHome.portalNotLinked')}</p>}
+
+      {report && (
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 16px', marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>{t('appHome.portalReportTitle')}</h3>
+          {[['reportSummary', report.summary], ['reportHighlights', report.highlights], ['reportRecommendations', report.recommendations]].map(([k, body]) =>
+            body.trim() ? (
+              <div key={k} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--fg-1)' }}>{t(`admin.${k}`)}</div>
+                <div style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{body}</div>
+              </div>
+            ) : null
+          )}
+        </div>
+      )}
+
+      {camps.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 16, margin: '0 0 10px' }}>{t('appHome.portalCampaigns')}</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+            {camps.map(({ id, data }) => {
+              const k = kpisFromTotals(data.totals);
+              const cell = (label: string, val: string, hero?: boolean) => (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div>
+                  <div style={{ fontSize: hero ? 18 : 14, fontWeight: 700, color: hero ? 'var(--accent, #2563eb)' : 'var(--fg-0)' }}>{val}</div>
+                </div>
+              );
+              return (
+                <div key={id} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <strong style={{ fontSize: 15 }}>{data.name}</strong>
+                    <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{PLATFORM_LABEL[data.platform] ?? data.platform}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                    {cell(t('admin.kpiRoas'), portalRoas(k.roas), true)}
+                    {cell(t('admin.kpiSpend'), portalMoney(k.spend))}
+                    {cell(t('admin.kpiLeads'), String(k.leads))}
+                    {cell(t('admin.kpiCpl'), k.cpl === null ? '—' : portalMoney(k.cpl))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function fmtDate(ms: number): string {
   try {
@@ -167,17 +261,10 @@ export default function AppHome() {
           </div>
         </Card>
 
-        {/* Secțiunile Verticalei 1 — pregătite structural, populate în felia 2. */}
-        <Card title={t('appHome.requestsTitle')}>
-          <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('appHome.comingSoon')}</p>
-        </Card>
-        <Card title={t('appHome.resultsTitle')}>
-          <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('appHome.comingSoon')}</p>
-        </Card>
-        <Card title={t('appHome.insightsTitle')}>
-          <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('appHome.comingSoon')}</p>
-        </Card>
       </div>
+
+      {/* Portalul de marketing — datele reale ale clientului (read-only). */}
+      <MarketingPortal uid={user.uid} />
     </main>
   );
 }

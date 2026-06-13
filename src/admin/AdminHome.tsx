@@ -64,6 +64,8 @@ interface LeadRow {
   createdAt: unknown;
   status: LeadStatus;
   notes: string;
+  clientUid: string;
+  clientEmail: string;
 }
 
 function fmtTs(v: unknown): string {
@@ -186,6 +188,7 @@ export default function AdminHome() {
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiCount, setAiCount] = useState<number | null>(null);
   const [view, setView] = useState<AdminView>('leads');
+  const [linkSelect, setLinkSelect] = useState('');
 
   // Opțiunile de client pentru Marketing Center (din lead-urile deja abonate).
   const leadOptions = useMemo(
@@ -247,6 +250,8 @@ export default function AdminHome() {
           createdAt: raw.createdAt,
           status: coerceLeadStatus(raw.status),
           notes: coerceLeadNotes(raw.notes),
+          clientUid: typeof raw.clientUid === 'string' ? raw.clientUid : '',
+          clientEmail: typeof raw.clientEmail === 'string' ? raw.clientEmail : '',
         });
       });
       setLeads(out);
@@ -348,6 +353,30 @@ export default function AdminHome() {
       if (openLead === id) setOpenLead(null);
     } catch (e) {
       console.warn('lead delete failed:', e);
+    }
+  };
+
+  // Conectează un cont de client la lead → portalul clientului îi arată campaniile.
+  // Backfill: clientUid se denormalizează pe campaniile existente ale lead-ului (rules le citesc).
+  const linkClient = async (leadId: string, clientUid: string, clientEmail: string) => {
+    if (!clientUid) return;
+    try {
+      await updateDoc(doc(db, 'leads', leadId), { clientUid, clientEmail });
+      const camps = await getDocs(query(collection(db, 'campaigns'), where('leadId', '==', leadId)));
+      await Promise.all(camps.docs.map((c) => updateDoc(c.ref, { clientUid })));
+      setLinkSelect('');
+    } catch (e) {
+      console.warn('link client failed:', e);
+    }
+  };
+
+  const unlinkClient = async (leadId: string) => {
+    try {
+      await updateDoc(doc(db, 'leads', leadId), { clientUid: '', clientEmail: '' });
+      const camps = await getDocs(query(collection(db, 'campaigns'), where('leadId', '==', leadId)));
+      await Promise.all(camps.docs.map((c) => updateDoc(c.ref, { clientUid: '' })));
+    } catch (e) {
+      console.warn('unlink client failed:', e);
     }
   };
 
@@ -642,6 +671,28 @@ export default function AdminHome() {
                                   </button>
                                 </div>
                                 {user && <LeadRequests leadId={l.id} adminUid={user.uid} />}
+
+                                {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
+                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                                  <strong style={{ fontSize: 13 }}>{t('admin.linkClientTitle')}</strong>
+                                  {l.clientUid ? (
+                                    <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: 13 }}>✓ {t('admin.linkConnected')} <strong>{l.clientEmail || l.clientUid}</strong></span>
+                                      <button className="btn" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => void unlinkClient(l.id)}>{t('admin.linkUnlink')}</button>
+                                    </div>
+                                  ) : clients && clients.length > 0 ? (
+                                    <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <select value={linkSelect} onChange={(e) => setLinkSelect(e.target.value)} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, background: 'var(--bg-1)' }}>
+                                        <option value="">{t('admin.linkPick')}</option>
+                                        {clients.map((c) => <option key={c.uid} value={c.uid}>{c.profile.email || c.uid}</option>)}
+                                      </select>
+                                      <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }} disabled={!linkSelect} onClick={() => { const c = clients.find((x) => x.uid === linkSelect); void linkClient(l.id, linkSelect, c?.profile.email || ''); }}>{t('admin.linkBtn')}</button>
+                                    </div>
+                                  ) : (
+                                    <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.linkNoAccounts')}</p>
+                                  )}
+                                </div>
+
                                 <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10, textAlign: 'right' }}>
                                   <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void deleteLead(l.id)}>
                                     {t('admin.leadDelete')}

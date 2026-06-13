@@ -62,6 +62,7 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
           <span>{t('footer.rights')}</span>
           <Link to={p('/legal/termeni')} style={{ color: 'var(--fg-1)' }}>{t('footer.terms')}</Link>
           <Link to={p('/legal/confidentialitate')} style={{ color: 'var(--fg-1)' }}>{t('footer.privacy')}</Link>
+          <Link to="/app" style={{ color: 'var(--fg-1)' }}>{t('footer.clientLogin')}</Link>
           <span style={{ marginLeft: 'auto', color: '#dbe4f5', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>DATAREAD.RO</span>
         </div>
       </footer>

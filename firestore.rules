@@ -113,10 +113,16 @@ service cloud.firestore {
     // Marketing Center: campaniile (colecție de nivel superior, cu leadId) + metricile zilnice.
     // Exclusiv zona operatorilor. Conectorii Meta/Google Ads API vor scrie tot aici, prin
     // Admin SDK (ocolește rules) — vezi docs/CONNECTORS-ADS-API.md.
+    // Portal client (multi-tenant): clientul logat citește DOAR campaniile lui (clientUid == uid).
+    // Scrierea rămâne exclusiv a operatorilor. Metricile moștenesc accesul prin campania-părinte.
     match /campaigns/{campaignId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read: if isAdmin() || (request.auth != null && resource.data.clientUid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
       match /metrics/{date} {
-        allow read, create, update, delete: if isAdmin();
+        allow read: if isAdmin() ||
+          (request.auth != null &&
+           get(/databases/$(database)/documents/campaigns/$(campaignId)).data.clientUid == request.auth.uid);
+        allow create, update, delete: if isAdmin();
       }
     }
 

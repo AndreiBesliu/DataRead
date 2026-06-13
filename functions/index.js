@@ -428,10 +428,17 @@ if (AI_ENABLED) {
         highlights: String(out.highlights || '').slice(0, 6000),
         recommendations: String(out.recommendations || '').slice(0, 6000),
       };
+      const reportAt = admin.firestore.FieldValue.serverTimestamp();
       await db.collection('leads').doc(leadId).set(
-        { marketingReport: report, marketingReportAt: admin.firestore.FieldValue.serverTimestamp(), marketingReportBy: request.auth.uid },
+        { marketingReport: report, marketingReportAt: reportAt, marketingReportBy: request.auth.uid },
         { merge: true }
       );
+      // Mirror în subarborele clientului (dacă lead-ul e conectat la un cont) — clientul îl
+      // citește din portal fără să atingă documentul de lead (notele interne rămân izolate).
+      const clientUid = (leadSnap.data() || {}).clientUid;
+      if (typeof clientUid === 'string' && clientUid) {
+        await db.collection('clients').doc(clientUid).set({ marketingReport: report, marketingReportAt: reportAt }, { merge: true });
+      }
 
       logger.info('client report generated', { leadId, campaigns: camps.length, by: request.auth.uid, usage: response.usage });
       return { report };
