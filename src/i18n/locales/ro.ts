@@ -225,6 +225,7 @@ const ro = {
   },
   admin: {
     title: 'Administrare',
+    theme: 'Temă',
     accessTitle: 'Acces backend',
     accessBody: 'Contul tău nu are încă acces de administrare. Cererea ta a fost înregistrată și așteaptă aprobarea unui administrator.',
     accessRecheck: 'Reverifică accesul',

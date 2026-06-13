@@ -223,6 +223,7 @@ const en: typeof ro = {
   },
   admin: {
     title: 'Administration',
+    theme: 'Theme',
     accessTitle: 'Backend access',
     accessBody: 'Your account has no admin access yet. Your request was recorded and awaits approval by an administrator.',
     accessRecheck: 'Recheck access',

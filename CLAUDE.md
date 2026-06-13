@@ -79,8 +79,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   trigger → claim). Bootstrap: UID-ul lui Andrei (`IMBKFBkONkOB7VVZCmqgS90JdBi2`, constantă în
   functions) e auto-aprobat la prima cerere, DOAR cât timp nu există niciun admin.
 - **Design:** tema bannerului oficial (navy #0a1228, roșu #e02639, albastru electric #2e7fff,
-  diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public. Backend-ul
-  (/app, /admin) rămâne pe tema deschisă default — design de decis mai târziu.
+  diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public.
+- **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech
+  (Midnight/Carbon/Matrix/Ocean/Light) — `src/theme/themes.ts` (seturi de variabile CSS + grid
+  dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`
+  pe wrapperul view-ului de admin; componentele se reskinează automat (folosesc deja variabilele).
+  Default = Midnight (dark digital). Portalul de client (/app) rămâne pe tema default deocamdată.
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
   `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (dormant, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage

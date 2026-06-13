@@ -360,3 +360,14 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED: functions (aiClientReport creat) + hosting.
 > NOTA: modulul Soft Marketing din spec e acum COMPLET (5.1-5.6 + Analytics + Optimization +
 > Raport); ramane doar Ads Management API (Faza 3, blocat pe verificarea Meta Business).
+
+**2026-06-13 - Task Completed — design digital + configurator de teme pentru admin**
+> Model: Claude Fable 5
+> Directiva Andrei: design mai digital/tehnologic + configurator de teme pentru admin.
+> Changes: src/theme/themes.ts (5 preset-uri ca seturi de variabile CSS — Midnight/Carbon/Matrix/
+> Ocean dark "digital" cu grid de puncte pe fundal, + Light; toate folosesc variabilele deja
+> consumate de componente, deci reskin instant fara a atinge UI-ul); useAdminTheme (persista in
+> localStorage dataread_admin_theme, valideaza); selector de tema in header-ul /admin; wrapper
+> themeStyle() peste view-ul de admin; default = Midnight (dark digital). test-themes (9 checks:
+> integritate registru, hex valid, fallback). Portalul client /app ramane pe default deocamdata.
+> Verificat: build + 7 suites + prerender + boot-smoke verzi. DEPLOYED: hosting.

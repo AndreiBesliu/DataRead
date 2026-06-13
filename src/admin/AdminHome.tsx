@@ -23,6 +23,8 @@ import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
 import MarketingCenter from './MarketingCenter';
+import { useAdminTheme } from '../theme/useAdminTheme';
+import { ADMIN_THEMES, themeStyle } from '../theme/themes';
 import AuthPanel from '../app/AuthPanel';
 
 type AdminView = 'leads' | 'marketing';
@@ -189,6 +191,7 @@ export default function AdminHome() {
   const [aiCount, setAiCount] = useState<number | null>(null);
   const [view, setView] = useState<AdminView>('leads');
   const [linkSelect, setLinkSelect] = useState('');
+  const [themeId, setThemeId] = useAdminTheme();
 
   // Opțiunile de client pentru Marketing Center (din lead-urile deja abonate).
   const leadOptions = useMemo(
@@ -462,10 +465,21 @@ export default function AdminHome() {
   const sectionBox: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto', marginBottom: 28 };
 
   return (
+    <div style={themeStyle(themeId)}>
     <main data-page="admin-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('admin.title')}</h1>
         <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{user.email}</span>
+        <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--fg-1)' }}>
+          🎨 {t('admin.theme')}
+          <select
+            value={themeId}
+            onChange={(e) => setThemeId(e.target.value)}
+            style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, background: 'var(--bg-1)', color: 'var(--fg-0)' }}
+          >
+            {ADMIN_THEMES.map((th) => <option key={th.id} value={th.id}>{th.label}</option>)}
+          </select>
+        </label>
       </header>
 
       {/* Statistici operaționale — derivate live din lead-uri + contorul AI al operatorului. */}
@@ -761,5 +775,6 @@ export default function AdminHome() {
       )}
       </>)}
     </main>
+    </div>
   );
 }
