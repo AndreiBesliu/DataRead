@@ -423,6 +423,27 @@ normaliser, secretele niciodată în chat/repo.
 > NOTĂ: aceasta e fundația pentru viitorul sistem Landing Pages (același motor de design, dar pt
 > clienți cu conținut variabil).
 
+**2026-06-13 - Task Started — Landing Pages Studio (felia LP v1)**
+> Model: Claude Fable 5
+> Plan aprobat (C:\Users\besli\.claude\plans\dapper-kindling-crown.md): IDE în /admin (editor cod +
+> preview live + agent AI) → pagini servite la /p/{slug} de o Cloud Function = „nexus pentru trafic
+> și date" (logging server-side prioritar), formular opțional per LP, design refolosit din CustomTheme.
+> 6 faze: P1 date+rules, P2 Studio, P3 AI, P4 servire+SSR, P5 tracking+submissions+dashboard, P6 sync.
+
+**2026-06-13 - Task Completed — LP P1: date + rules + coerce + teste**
+> Model: Claude Fable 5
+> Changes: src/types/landingPage.ts (LandingPage schema 1, doc ID = slug; coerceToLandingPage unic
+> — status corupt → 'draft' = niciodată public din greșeală; html plafonat 200KB; design delegat la
+> coerceToCustomTheme; invariant hasForm===form.enabled; sanitizeSlug cu diacritice→ASCII via
+> \p{Diacritic}; LpFormConfig/LpFormField; coerceToLpSubmission + sanitizeSubmissionValues pur —
+> aruncă chei necunoscute, plafonează, semnalează required). src/analytics/lpStats.ts (PUR ca kpi.ts:
+> LpStatsDay rollup zilnic, coerceToLpStatsDay, sumLpStats, lpKpis convRate/ctaRate/engagement/
+> avgScroll/avgTime cu numitor 0 → null, topEntries, bucketKey whitelist→'other' anti-bloat).
+> firestore.rules: bloc landingPages/{slug} (read public DOAR dacă published; create/update validat
+> admin; delete separat; submissions create:false = doar submitLpForm; visits/stats write:false =
+> doar functions). scripts/test-landing.ts (24 checks: coerce, slug, submission, math rollup).
+> Verificat: build (typecheck) + 8/8 suites verzi. DEPLOYED: firestore:rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13

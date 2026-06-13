@@ -132,6 +132,36 @@ service cloud.firestore {
       }
     }
 
+    // ───────── Landing Pages (LP Studio) ─────────
+    // Operatorii construiesc pagini publice de campanie (cod HTML + design). Doc ID = slug.
+    // Pagina e servită de funcția serveLp (Admin SDK), dar permitem citirea publică a celor
+    // PUBLICATE (defense-in-depth). Drafturile + scrierea = doar operatorii. Submission-urile și
+    // telemetria se scriu EXCLUSIV prin functions (Admin SDK ocolește rules).
+    match /landingPages/{slug} {
+      allow read: if isAdmin() || resource.data.status == 'published';
+      // request.resource.data e null la delete → validarea stă doar pe create/update.
+      allow create, update: if isAdmin()
+        && request.resource.data.schema == 1
+        && request.resource.data.slug is string && request.resource.data.slug.size() <= 60
+        && request.resource.data.title is string && request.resource.data.title.size() <= 140
+        && request.resource.data.html is string && request.resource.data.html.size() <= 200000
+        && request.resource.data.status in ['draft', 'published'];
+      allow delete: if isAdmin();
+
+      match /submissions/{subId} {
+        allow read, update, delete: if isAdmin();
+        allow create: if false; // doar prin functions/submitLpForm (Admin SDK, validare completă)
+      }
+      match /visits/{visitId} {
+        allow read: if isAdmin();
+        allow write: if false; // doar functions (serveLp)
+      }
+      match /stats/{date} {
+        allow read: if isAdmin();
+        allow write: if false; // doar functions (rollup-uri incrementate server-side)
+      }
+    }
+
     // ───────── Stripe (extensia firestore-stripe-payments) ─────────
     // Extensia scrie cu Admin SDK (ocolește rules); clientul doar citește ce-i aparține și
     // creează checkout_sessions (extensia completează `url`).
