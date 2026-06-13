@@ -10,11 +10,12 @@ import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firest
 import { db } from '../firebase';
 import { customThemeCss } from '../theme/themes';
 import ThemeControls from '../theme/ThemeControls';
+import LpAiPanel from './LpAiPanel';
 import { sanitizeSlug, type LandingPage } from '../types/landingPage';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design';
+type EditorTab = 'code' | 'design' | 'ai';
 
 function composeDoc(lp: LandingPage): string {
   return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${lp.html}</body></html>`;
@@ -194,8 +195,9 @@ export default function LpEditor({
           <div style={{ display: 'flex', gap: 6, borderBottom: '2px solid var(--border)', marginBottom: 10 }}>
             <button onClick={() => setTab('code')} style={tabBtn(tab === 'code')}>{t('admin.lpStudio.tabCode')}</button>
             <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
+            <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button>
           </div>
-          {tab === 'code' ? (
+          {tab === 'code' && (
             <textarea
               value={draft.html}
               onChange={(e) => setHtml(e.target.value)}
@@ -215,11 +217,22 @@ export default function LpEditor({
               placeholder={t('admin.lpStudio.codePlaceholder')}
               style={{ ...field, width: '100%', height: 460, resize: 'vertical', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre', overflowWrap: 'normal', tabSize: 2 }}
             />
-          ) : (
+          )}
+          {tab === 'design' && (
             <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px 16px', maxHeight: 460, overflowY: 'auto' }}>
               <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} />
               <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
             </div>
+          )}
+          {tab === 'ai' && (
+            <LpAiPanel
+              html={draft.html}
+              lang={draft.lang}
+              onApply={(generated) => {
+                setHtml(generated);
+                setTab('code');
+              }}
+            />
           )}
         </div>
 

@@ -649,4 +649,129 @@ if (AI_ENABLED) {
       return { deliverables };
     }
   );
+
+  // ── Agentul AI din LP Studio: generează/editează codul unei Landing Page (felia LP P3) ──
+  // Spre deosebire de aiGenerateCampaign, NU scrie în Firestore — întoarce {html} la editor, iar
+  // operatorul revizuiește și salvează. Quota = același bucket lunar aiUsage.
+  const LP_PAGE_SCHEMA = {
+    type: 'object',
+    properties: {
+      html: {
+        type: 'string',
+        description:
+          'Pagină HTML COMPLETĂ și self-contained (un singur document cu <style> inline; fără ' +
+          'fișiere externe). Pentru culori folosește EXCLUSIV variabilele CSS injectate de server: ' +
+          'var(--bg-0) (fundal), var(--bg-1) (suprafețe/carduri), var(--fg-0) (text principal), ' +
+          'var(--fg-1) (text secundar), var(--border), var(--accent), var(--accent-dark), ' +
+          'var(--accent-contrast) (text pe accent). Marchează butoanele CTA cu atributul data-cta. ' +
+          'Dacă pagina are formular, folosește <form data-lp-form> cu input-uri cu atribut name. ' +
+          'NU include niciun <script> de tracking (îl adaugă serverul). Imagini doar prin URL https. ' +
+          'Conținut persuasiv, concret, în limba cerută, fără jargon corporatist gol.',
+      },
+    },
+    required: ['html'],
+    additionalProperties: false,
+  };
+
+  const LP_SYSTEM =
+    'Ești designerul și copywriterul senior de landing pages al agenției DataRead. Construiești ' +
+    'pagini de campanie pentru firme mici și mijlocii din România — moderne, rapide, orientate pe ' +
+    'conversie. Scrii HTML curat, semantic, responsive (mobile-first), cu CSS inline în <style>.';
+
+  const lpStr = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+  function buildLpGeneratePrompt(brief) {
+    const lang = brief.lang === 'en' ? 'engleză' : 'română';
+    const lines = [
+      `Construiește o landing page completă, în limba ${lang}.`,
+      `Ofertă / produs / serviciu promovat: ${lpStr(brief.offer, 1000) || '(nespecificat)'}`,
+      brief.audience ? `Public țintă: ${lpStr(brief.audience, 1000)}` : '',
+      brief.goal ? `Obiectivul paginii: ${lpStr(brief.goal, 200)}` : '',
+      brief.tone ? `Ton: ${lpStr(brief.tone, 200)}` : '',
+      brief.includeForm
+        ? 'Include un formular de contact <form data-lp-form> cu câmpuri relevante (nume, email, telefon) și un buton de trimitere clar.'
+        : 'Fără formular pe pagină (CTA-urile duc la acțiune, marcate cu data-cta).',
+      'Structură bogată: hero cu titlu + subtitlu + CTA principal, secțiuni de beneficii, ' +
+        'dovadă socială / testimoniale, eventual FAQ, și un CTA final. Folosește variabilele de temă.',
+    ];
+    return lines.filter(Boolean).join('\n');
+  }
+
+  function buildLpEditPrompt(html, instruction, lang) {
+    const langName = lang === 'en' ? 'engleză' : 'română';
+    return (
+      `Aceasta este pagina HTML curentă a unei landing page (limba ${langName}):\n\n` +
+      '```html\n' + lpStr(html, 200000) + '\n```\n\n' +
+      `Aplică următoarea instrucțiune: ${lpStr(instruction, 2000)}\n\n` +
+      'Întoarce pagina HTML COMPLETĂ, modificată. Păstrează tot ce nu vizează instrucțiunea. ' +
+      'Respectă aceleași reguli tehnice (self-contained, variabilele de temă --accent etc., ' +
+      'data-cta pe CTA-uri, fără <script> de tracking, imagini doar https).'
+    );
+  }
+
+  async function runLpModel(prompt) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+    let response;
+    try {
+      response = await client.messages.create({
+        model: AI_MODEL,
+        max_tokens: 32000,
+        thinking: { type: 'adaptive' },
+        system: LP_SYSTEM,
+        output_config: { format: { type: 'json_schema', schema: LP_PAGE_SCHEMA } },
+        messages: [{ role: 'user', content: prompt }],
+      });
+    } catch (err) {
+      logger.error('anthropic LP call failed', { err: String(err) });
+      throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
+    }
+    if (response.stop_reason === 'refusal') {
+      throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează.');
+    }
+    const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+    let out;
+    try {
+      out = JSON.parse(text);
+    } catch (err) {
+      logger.error('LP ai response unparsable', { stop: response.stop_reason });
+      throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
+    }
+    return { html: String(out.html || '').slice(0, 200000), usage: response.usage };
+  }
+
+  exports.aiGenerateLandingPage = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+      const brief = (request.data && request.data.brief) || {};
+      if (typeof brief.offer !== 'string' || !brief.offer.trim()) {
+        throw new HttpsError('invalid-argument', 'Oferta este obligatorie pentru generare.');
+      }
+      await consumeAiQuota(request.auth.uid);
+      const { html, usage } = await runLpModel(buildLpGeneratePrompt(brief));
+      logger.info('LP generated', { by: request.auth.uid, usage });
+      return { html };
+    }
+  );
+
+  exports.aiEditLandingPage = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+      const { html, instruction, lang } = request.data || {};
+      if (typeof html !== 'string' || !html.trim()) {
+        throw new HttpsError('invalid-argument', 'Nu există cod de editat.');
+      }
+      if (typeof instruction !== 'string' || !instruction.trim()) {
+        throw new HttpsError('invalid-argument', 'Instrucțiunea este obligatorie.');
+      }
+      await consumeAiQuota(request.auth.uid);
+      const res = await runLpModel(buildLpEditPrompt(html, instruction, lang));
+      logger.info('LP edited', { by: request.auth.uid, usage: res.usage });
+      return { html: res.html };
+    }
+  );
 }

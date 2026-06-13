@@ -461,6 +461,21 @@ normaliser, secretele niciodată în chat/repo.
 > HTML de operator + design injectat = pagină coerentă, accent custom pe CTA, carduri/grilă tematice).
 > DEPLOYED: hosting. (Servirea reală la /p/{slug} vine în P4; agentul AI în P3.)
 
+**2026-06-13 - Task Completed — LP P3: agentul AI în Studio (generate + edit)**
+> Model: Claude Fable 5
+> Changes: functions/index.js (în blocul AI_ENABLED) — aiGenerateLandingPage({brief: offer/audience/
+> goal/tone/includeForm/lang}) și aiEditLandingPage({html,instruction,lang}), admin-only, quota
+> aiUsage, model claude-opus-4-8 + adaptive thinking + output structurat LP_PAGE_SCHEMA ({html}),
+> max_tokens 32000, runLpModel helper comun. Spre deosebire de aiGenerateCampaign, NU scriu în
+> Firestore — întorc {html} la editor (operatorul revizuiește + salvează). System prompt = designer/
+> copywriter LP pt IMM RO; promptul cere pagină self-contained cu variabilele de temă (--accent etc.),
+> data-cta pe CTA, <form data-lp-form> opțional, fără <script> tracking, imagini https.
+> LpAiPanel.tsx (tab 🤖 AI în LpEditor): mod Generează (brief) | Modifică (instrucțiune pe codul
+> curent); rezultatul → setHtml + comută pe tabul Cod; mapare erori (resource-exhausted→quota etc.);
+> confirmare la suprascriere. i18n admin.lpStudio.ai* (ro+en).
+> Verificat: functions load + build + 8/8 suites + prerender + boot-smoke verzi.
+> DEPLOYED: functions (aiGenerateLandingPage + aiEditLandingPage create la europe-central2) + hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13
