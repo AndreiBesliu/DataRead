@@ -329,7 +329,115 @@ function buildInsightPrompt(lead, camp, metrics) {
   ].join('\n');
 }
 
+// ── Raport lunar de performanță pentru client (din toate campaniile lui) ──
+const REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', description: 'Rezumat în română pentru client: ce s-a făcut luna aceasta și rezultatul general, 2-4 fraze, ton clar fără jargon.' },
+    highlights: { type: 'string', description: 'Puncte cheie în română, câte unul pe linie, cu cifre concrete (ROAS, lead-uri, cheltuit).' },
+    recommendations: { type: 'string', description: 'Recomandări pentru luna următoare în română, câte una pe linie.' },
+  },
+  required: ['summary', 'highlights', 'recommendations'],
+  additionalProperties: false,
+};
+
+function campKpiLine(camp) {
+  const t = camp.totals || {};
+  const div = (a, b) => (b > 0 ? a / b : null);
+  const roas = div(Number(t.revenue) || 0, Number(t.spend) || 0);
+  const cpl = div(Number(t.spend) || 0, Number(t.leads) || 0);
+  return `- ${camp.name || '(fără nume)'} [${camp.platform || '-'}, ${camp.status || '-'}]: cheltuit ${r2(Number(t.spend) || 0)}€, venit ${r2(Number(t.revenue) || 0)}€, ROAS ${r2(roas)}, lead-uri ${Number(t.leads) || 0}, CPL ${r2(cpl)}€`;
+}
+
+function buildClientReportPrompt(lead, camps) {
+  const o = { spend: 0, revenue: 0, leads: 0 };
+  for (const c of camps) {
+    const t = c.totals || {};
+    o.spend += Number(t.spend) || 0;
+    o.revenue += Number(t.revenue) || 0;
+    o.leads += Number(t.leads) || 0;
+  }
+  const div = (a, b) => (b > 0 ? a / b : null);
+  return [
+    'Scrie un RAPORT LUNAR DE PERFORMANȚĂ pentru clientul de mai jos — text pe care agenția i-l',
+    'trimite direct clientului.',
+    '',
+    leadContextBlock(lead),
+    '',
+    '== CAMPANIILE CLIENTULUI ==',
+    camps.map(campKpiLine).join('\n') || '(fără campanii)',
+    '',
+    '== TOTAL ==',
+    `Cheltuit: ${r2(o.spend)}€ · Venit: ${r2(o.revenue)}€ · ROAS general: ${r2(div(o.revenue, o.spend))} · Lead-uri: ${o.leads}`,
+    '',
+    'Cerințe: limba ROMÂNĂ, ton profesionist dar prietenos, adresat clientului (nu intern). Folosește',
+    'cifrele reale. Rezumatul = imaginea de ansamblu; highlights = realizările cu cifre; recomandările',
+    '= ce propunem pentru luna viitoare. Fără promisiuni nerealiste.',
+  ].join('\n');
+}
+
 if (AI_ENABLED) {
+  exports.aiClientReport = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot genera rapoarte.');
+      const { leadId } = request.data || {};
+      if (typeof leadId !== 'string' || !leadId) throw new HttpsError('invalid-argument', 'leadId e obligatoriu.');
+
+      const db = admin.firestore();
+      const leadSnap = await db.collection('leads').doc(leadId).get();
+      if (!leadSnap.exists) throw new HttpsError('not-found', 'Clientul nu există.');
+      const campsSnap = await db.collection('campaigns').where('leadId', '==', leadId).get();
+      const camps = campsSnap.docs.map((d) => d.data());
+      if (camps.length === 0) throw new HttpsError('failed-precondition', 'Clientul nu are campanii de raportat.');
+
+      await consumeAiQuota(request.auth.uid);
+
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+
+      let response;
+      try {
+        response = await client.messages.create({
+          model: AI_MODEL,
+          max_tokens: 10000,
+          thinking: { type: 'adaptive' },
+          system:
+            'Ești account managerul agenției DataRead. Scrii rapoarte de performanță clare și oneste ' +
+            'pentru clienții firmelor mici și mijlocii din România.',
+          output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
+          messages: [{ role: 'user', content: buildClientReportPrompt(leadSnap.data(), camps) }],
+        });
+      } catch (err) {
+        logger.error('anthropic report failed', { err: String(err) });
+        throw new HttpsError('internal', 'Generarea raportului a eșuat. Reîncearcă.');
+      }
+
+      if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat raportul.');
+      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+      let out;
+      try {
+        out = JSON.parse(text);
+      } catch (err) {
+        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
+      }
+
+      const report = {
+        summary: String(out.summary || '').slice(0, 6000),
+        highlights: String(out.highlights || '').slice(0, 6000),
+        recommendations: String(out.recommendations || '').slice(0, 6000),
+      };
+      await db.collection('leads').doc(leadId).set(
+        { marketingReport: report, marketingReportAt: admin.firestore.FieldValue.serverTimestamp(), marketingReportBy: request.auth.uid },
+        { merge: true }
+      );
+
+      logger.info('client report generated', { leadId, campaigns: camps.length, by: request.auth.uid, usage: response.usage });
+      return { report };
+    }
+  );
+
   exports.aiAnalyzeCampaign = onCall(
     { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
     async (request) => {

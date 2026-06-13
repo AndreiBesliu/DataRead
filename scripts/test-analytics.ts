@@ -6,6 +6,7 @@ import {
   coerceToCampaign,
   coerceToDailyMetric,
   coerceToInsight,
+  coerceToReport,
   coerceToTotals,
   emptyTotals,
   type DailyMetric,
@@ -117,6 +118,17 @@ check('insight: valid trece', (() => {
 check('insight: câmpuri lipsă → string gol, nu crash', (() => {
   const i = coerceToInsight({ verdict: 'pause' });
   return i?.verdict === 'pause' && i.headline === '' && i.reasoning === '';
+})());
+
+// Raport client coerce.
+check('raport: null/gol → null', coerceToReport(null) === null && coerceToReport({}) === null);
+check('raport: cu conținut → obiect', (() => {
+  const r = coerceToReport({ summary: 'Luna bună', highlights: '', recommendations: 'Scalează' });
+  return r?.summary === 'Luna bună' && r.recommendations === 'Scalează' && r.highlights === '';
+})());
+check('raport: tipuri greșite → stringuri goale (dar păstrat dacă măcar unul are text)', (() => {
+  const r = coerceToReport({ summary: 42, highlights: 'x', recommendations: null });
+  return r?.summary === '' && r.highlights === 'x';
 })());
 
 if (failures) {

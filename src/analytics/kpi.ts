@@ -149,6 +149,21 @@ export function coerceToInsight(v: unknown): AiInsight | null {
   return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions: s(d.actions) };
 }
 
+// Raportul lunar de performanță prezentat clientului (generat de AI din campaniile lui).
+export interface ClientReport {
+  summary: string;
+  highlights: string;
+  recommendations: string;
+}
+
+export function coerceToReport(v: unknown): ClientReport | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  const s = (x: unknown) => (typeof x === 'string' ? x.slice(0, 6000) : '');
+  const r = { summary: s(d.summary), highlights: s(d.highlights), recommendations: s(d.recommendations) };
+  return r.summary || r.highlights || r.recommendations ? r : null;
+}
+
 export function coerceToTotals(v: unknown): Totals {
   const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
   return { spend: num(d.spend), impressions: num(d.impressions), clicks: num(d.clicks), leads: num(d.leads), revenue: num(d.revenue) };

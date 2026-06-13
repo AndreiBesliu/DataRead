@@ -5,6 +5,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -24,10 +25,12 @@ import {
   coerceToCampaign,
   coerceToDailyMetric,
   coerceToInsight,
+  coerceToReport,
   emptyTotals,
   kpisFromTotals,
   sumMetrics,
   type AiInsight,
+  type ClientReport,
   type CampaignDef,
   type CampaignStatus,
   type DailyMetric,
@@ -313,6 +316,98 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
   );
 }
 
+/** Raportul lunar de performanță al unui client — agregat pe campaniile lui + generator AI. */
+function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: CampaignRow[] }) {
+  const { t } = useTranslation();
+  const [report, setReport] = useState<ClientReport | null>(null);
+  const [reportAt, setReportAt] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const loadReport = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'leads', leadId));
+      const d = snap.exists() ? snap.data() : {};
+      setReport(coerceToReport(d.marketingReport));
+      setReportAt(d.marketingReportAt ?? null);
+    } catch {
+      /* read best-effort */
+    }
+  };
+
+  useEffect(() => {
+    void loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
+
+  const generate = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const fn = httpsCallable<{ leadId: string }, { report?: ClientReport }>(functions, 'aiClientReport');
+      await fn({ leadId });
+      await loadReport();
+    } catch (e) {
+      const code = String((e as { code?: string }).code ?? '');
+      setErr(
+        code.endsWith('failed-precondition') ? 'admin.reportNoCampaigns'
+          : code.endsWith('not-found') || code.endsWith('internal') ? 'admin.reportNotReady'
+          : 'admin.reportError'
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyReport = () => {
+    if (!report) return;
+    const txt = [t('admin.reportSummary'), report.summary, '', t('admin.reportHighlights'), report.highlights, '', t('admin.reportRecommendations'), report.recommendations].join('\n');
+    navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
+  };
+
+  const kpis = kpisFromTotals(addTotals(campaigns.map((c) => c.data.totals)));
+  const section = (label: string, body: string) =>
+    body.trim() ? (
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--fg-1)' }}>{label}</div>
+        <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{body}</div>
+      </div>
+    ) : null;
+
+  return (
+    <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+      <KpiCards kpis={kpis} />
+      <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>
+        {campaigns.map((c) => {
+          const k = kpisFromTotals(c.data.totals);
+          return <div key={c.id}>• {c.data.name} [{PLATFORM_SHORT[c.data.platform]}] — {money(k.spend)} · ROAS {roasFmt(k.roas)}</div>;
+        })}
+      </div>
+      <div>
+        <button className="btn btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} disabled={busy} onClick={() => void generate()}>
+          {busy ? t('admin.reportBusy') : t('admin.reportGenerate')}
+        </button>
+        {err && <span role="alert" style={{ marginLeft: 10, fontSize: 12, color: '#c0392b' }}>{t(err)}</span>}
+      </div>
+      {report && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', background: 'var(--bg-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <strong style={{ fontSize: 14 }}>{t('admin.reportTitle')}</strong>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.reportAt')} {fmtTs(reportAt)}</span>
+          </div>
+          {section(t('admin.reportSummary'), report.summary)}
+          {section(t('admin.reportHighlights'), report.highlights)}
+          {section(t('admin.reportRecommendations'), report.recommendations)}
+          <button className="btn" style={{ padding: '5px 14px', fontSize: 12, color: copied ? '#1e7e34' : undefined }} onClick={copyReport}>
+            {copied ? t('admin.copied') : t('admin.reportCopyAll')}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Panoul Marketing Center — campaniile tuturor clienților, agregat + drill-down per campanie. */
 export default function MarketingCenter({ leads }: { leads: Array<{ id: string; label: string }> }) {
   const { t } = useTranslation();
@@ -324,6 +419,8 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
   const [newC, setNewC] = useState({ leadId: '', name: '', platform: 'meta' as Platform });
   const [formError, setFormError] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'campaign' | 'client'>('campaign');
+  const [openClient, setOpenClient] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'campaigns'), orderBy('createdAt', 'desc'));
@@ -402,6 +499,18 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
   );
   const aggregate = kpisFromTotals(addTotals(visible.map((c) => c.data.totals)));
 
+  // Gruparea pe client (view-ul „pe client").
+  const clientGroups: Array<{ key: string; clientName: string; campaigns: CampaignRow[] }> = [];
+  {
+    const map = new Map<string, { key: string; clientName: string; campaigns: CampaignRow[] }>();
+    for (const c of visible) {
+      const key = c.leadId || c.id;
+      if (!map.has(key)) map.set(key, { key, clientName: c.clientName || '—', campaigns: [] });
+      map.get(key)!.campaigns.push(c);
+    }
+    clientGroups.push(...map.values());
+  }
+
   const chipSel: CSSProperties = { padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'var(--bg-1)' };
   const td: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', fontSize: 14, textAlign: 'left' };
 
@@ -420,6 +529,19 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
       <p style={{ color: 'var(--fg-1)', fontSize: 14, marginTop: 0 }}>{t('admin.mcSubtitle')}</p>
       <div style={{ fontSize: 12, color: 'var(--fg-1)', background: 'var(--bg-1)', border: '1px dashed var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 16 }}>
         ℹ️ {t('admin.apiSoon')}
+      </div>
+
+      {/* Comutator view: pe campanie vs pe client. */}
+      <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+        {(['campaign', 'client'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setViewMode(v)}
+            style={{ border: 'none', padding: '6px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: viewMode === v ? 'var(--accent, #2563eb)' : 'var(--bg-1)', color: viewMode === v ? '#fff' : 'var(--fg-1)' }}
+          >
+            {v === 'campaign' ? t('admin.viewByCampaign') : t('admin.viewByClient')}
+          </button>
+        ))}
       </div>
 
       {/* Agregatul pe campaniile filtrate. */}
@@ -471,7 +593,30 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
       {campaigns === null && <p style={{ color: 'var(--fg-1)' }}>…</p>}
       {campaigns !== null && visible.length === 0 && <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.campEmpty')}</p>}
 
-      {visible.length > 0 && (
+      {/* View pe client: grupare cu KPI agregat + raport lunar AI. */}
+      {viewMode === 'client' && visible.length > 0 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {clientGroups.map((g) => {
+            const k = kpisFromTotals(addTotals(g.campaigns.map((c) => c.data.totals)));
+            return (
+              <div key={g.key} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 15 }}>{g.clientName}</strong>
+                  <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>{t('admin.clientCampaignsCount', { count: g.campaigns.length })}</span>
+                  <span style={{ fontSize: 13 }}>{money(k.spend)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: k.roas !== null && k.roas >= 1 ? '#1e7e34' : 'var(--fg-1)' }}>ROAS {roasFmt(k.roas)}</span>
+                  <button className="btn" style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: 12 }} onClick={() => setOpenClient(openClient === g.key ? null : g.key)}>
+                    {openClient === g.key ? t('admin.hideDetail') : t('admin.viewDetail')}
+                  </button>
+                </div>
+                {openClient === g.key && g.campaigns[0]?.leadId && <ClientReportPanel leadId={g.campaigns[0].leadId} campaigns={g.campaigns} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {viewMode === 'campaign' && visible.length > 0 && (
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>

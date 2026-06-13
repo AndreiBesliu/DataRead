@@ -346,3 +346,17 @@ normaliser, secretele niciodată în chat/repo.
 > not-found/internal->neactivat.
 > Verificat: build + 6 suites + prerender + boot-smoke + functions load verzi.
 > DEPLOYED: functions (aiAnalyzeCampaign creat) + hosting.
+
+**2026-06-13 - Task Completed — Raport pe client (agregare + raport lunar AI)**
+> Model: Claude Fable 5
+> Livrabilul lunar pe care agentia il prezinta clientului — aduna tot modulul de marketing.
+> Changes: view toggle "Pe campanie | Pe client" in Marketing Center; gruparea campaniilor pe
+> client cu KPI agregat (addTotals -> kpisFromTotals); ClientReportPanel cu lista campaniilor +
+> ROAS, buton raport, card cu rezumat/realizari/recomandari + copy; callable aiClientReport
+> (admin-only, quota, citeste lead + toate campaniile clientului server-side, REPORT_SCHEMA
+> structurat, ton pentru client) scris pe leads/{id}.marketingReport (Admin SDK ocoleste rules);
+> coerceToReport + 3 checks. Rapoartele persista pe lead si se incarca la redeschidere.
+> Verificat: build + 6 suites + prerender + boot-smoke + functions load verzi.
+> DEPLOYED: functions (aiClientReport creat) + hosting.
+> NOTA: modulul Soft Marketing din spec e acum COMPLET (5.1-5.6 + Analytics + Optimization +
+> Raport); ramane doar Ads Management API (Faza 3, blocat pe verificarea Meta Business).
