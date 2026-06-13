@@ -514,6 +514,8 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED: functions:serveLp (actualizat) + hosting. **Felia LP v1 e funcțional COMPLETĂ.**
 
 ### Backlog (adaugat 2026-06-13)
-- [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
+- [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
+- [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
+- [ ] Izolare LP pe subdomeniu (pages.dataread.ro) înainte de autori ne-de-încredere
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13
 - [x] Livrabile în portalul de client (cu note interne separate) — pasul 2 al portalului ✅ 2026-06-13

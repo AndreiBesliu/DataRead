@@ -126,6 +126,22 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   inițială; ROTIREA rămâne în backlog înainte de scalare — la rotire: secrets:set cu cheia nouă +
   `npm run deploy:functions`). Comutatorul `AI_ENABLED` din functions/index.js stinge tot fluxul
   la nevoie (flip + deploy).
+- **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
+  editor de cod (textarea HTML) + preview live (iframe sandbox FĂRĂ same-origin) + agent AI
+  (`aiGenerateLandingPage`/`aiEditLandingPage` — întorc `{html}`, NU scriu în Firestore; quota
+  `aiUsage`) + panou design (refolosește `CustomTheme` via `ThemeControls`) + config formular +
+  dashboard analytics. Colecția `landingPages/{slug}` (doc ID = slug, unic prin construcție),
+  `schema:1`, coerce unic în `src/types/landingPage.ts`; design = `CustomTheme`; cod = un singur HTML
+  self-contained ≤200KB. **Servire:** funcția `serveLp` (onRequest, europe-central2), legată prin
+  rewrite Hosting `/p/** → serveLp` (gen-2, pinTag) ÎNAINTE de catch-all. serveLp = „nexus de trafic":
+  randează SSR (SEO din doc + design injectat ca variabile CSS prin `lpThemeCss` = port JS al
+  `customThemeCss`), `Cache-Control: no-store` (ca fiecare hit să se logheze), CSP restrictivă, și
+  LOGHEAZĂ fiecare vizită → rollup zilnic `landingPages/{slug}/stats/{YYYY-MM-DD}` (increment) + doc
+  brut `visits`. Beacon injectat (scroll/timp/CTA → `/p/_track`) + formular opțional per LP
+  (`/p/_submit` → `submissions` + opțional lead în pipeline). Motor analytics pur:
+  `src/analytics/lpStats.ts`. Submissions/visits/stats = scrise DOAR de functions (rules:
+  create/write false). Amânat: builder vizual drag&drop; servire pe subdomeniu (izolare XSS pt.
+  autori ne-de-încredere); cod >200KB în Storage; `/en/p/**`.
 
 ## Capcane cunoscute
 
