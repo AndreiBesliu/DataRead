@@ -465,7 +465,7 @@ export default function AdminHome() {
   const sectionBox: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto', marginBottom: 28 };
 
   return (
-    <div style={themeStyle(themeId)}>
+    <div className="admin-scope" style={themeStyle(themeId)}>
     <main data-page="admin-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('admin.title')}</h1>

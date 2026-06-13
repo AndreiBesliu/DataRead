@@ -212,3 +212,30 @@ h3 {
 .theme-banner textarea::placeholder {
   color: #5e7099;
 }
+
+/* Scope-ul de teme al backend-ului (/admin): leagă TOATE controalele de formular de variabilele
+   temei, ca textul să rămână lizibil pe orice temă (altfel input/select aveau text închis pe
+   fundal închis). Aplicat pe wrapperul cu clasa .admin-scope. */
+.admin-scope input,
+.admin-scope select,
+.admin-scope textarea {
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border-color: var(--border);
+}
+
+.admin-scope option {
+  color: var(--fg-0);
+  background: var(--bg-1);
+}
+
+.admin-scope input::placeholder,
+.admin-scope textarea::placeholder {
+  color: var(--fg-1);
+  opacity: 0.8;
+}
+
+/* Linkurile din backend folosesc accentul temei (altfel rămâneau pe albastrul default). */
+.admin-scope a {
+  color: var(--accent);
+}

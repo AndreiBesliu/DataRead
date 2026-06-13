@@ -371,3 +371,19 @@ normaliser, secretele niciodată în chat/repo.
 > themeStyle() peste view-ul de admin; default = Midnight (dark digital). test-themes (9 checks:
 > integritate registru, hex valid, fallback). Portalul client /app ramane pe default deocamdata.
 > Verificat: build + 7 suites + prerender + boot-smoke verzi. DEPLOYED: hosting.
+
+**2026-06-13 - Task Completed — fix contrast controale pe teme + directie viitoare**
+> Model: Claude Fable 5
+> Andrei: unele texte nu se vad bine pe unele teme. Cauza: input/select/textarea aveau text
+> inchis pe fundal inchis (culoarea nu era legata de tema). Fix global: clasa .admin-scope pe
+> wrapperul de admin + reguli CSS (input/select/textarea/option/a -> var(--fg-0)/var(--accent),
+> placeholder var(--fg-1)). Verificat vizual (screenshot standalone Midnight+Matrix): text lizibil.
+> DEPLOYED: hosting.
+> DIRECTIE VIITOARE notata (memorie + backlog): sistem de creare Landing Pages, refolosit pt
+> customizarea temelor admin. Landing Pages = pt CLIENTI, continut diferit punctual; tema admin =
+> DOAR culori/imagini background/animatii decor/design, FARA alterare layout/structura.
+
+### Backlog (adaugat 2026-06-13)
+- [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
+- [ ] Creator de teme admin extins (culori/background/animații; fără layout) peste configuratorul actual
+- [ ] Livrabile în portalul de client (cu note interne separate) — pasul 2 al portalului
