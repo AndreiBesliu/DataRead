@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -22,7 +22,10 @@ import { coerceToClientProfile, type ClientProfile } from '../types/client';
 import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
+import MarketingCenter from './MarketingCenter';
 import AuthPanel from '../app/AuthPanel';
+
+type AdminView = 'leads' | 'marketing';
 
 /** Cheia i18n a fiecărui status de pipeline. */
 const STATUS_KEY: Record<LeadStatus, string> = {
@@ -182,6 +185,13 @@ export default function AdminHome() {
   const [notesDraft, setNotesDraft] = useState('');
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiCount, setAiCount] = useState<number | null>(null);
+  const [view, setView] = useState<AdminView>('leads');
+
+  // Opțiunile de client pentru Marketing Center (din lead-urile deja abonate).
+  const leadOptions = useMemo(
+    () => (leads ?? []).map((l) => ({ id: l.id, label: l.data.companyName || l.data.contactName || l.data.contactEmail || l.id })),
+    [leads]
+  );
 
   // Verifică claim-ul; un refresh forțat prinde claim-ul abia setat de trigger (bootstrap/aprobare).
   useEffect(() => {
@@ -327,6 +337,13 @@ export default function AdminHome() {
         await Promise.all(vers.docs.map((v) => deleteDoc(v.ref)));
         await deleteDoc(r.ref);
       }
+      // Campaniile clientului (colecție de nivel superior) + metricile lor.
+      const camps = await getDocs(query(collection(db, 'campaigns'), where('leadId', '==', id)));
+      for (const c of camps.docs) {
+        const ms = await getDocs(collection(c.ref, 'metrics'));
+        await Promise.all(ms.docs.map((mm) => deleteDoc(mm.ref)));
+        await deleteDoc(c.ref);
+      }
       await deleteDoc(doc(db, 'leads', id));
       if (openLead === id) setOpenLead(null);
     } catch (e) {
@@ -441,6 +458,32 @@ export default function AdminHome() {
         );
       })()}
 
+      {/* Taburi: Lead-uri vs Marketing Center. */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
+        {(['leads', 'marketing'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              border: 'none',
+              background: 'none',
+              padding: '8px 14px',
+              marginBottom: -2,
+              fontSize: 15,
+              fontWeight: view === v ? 800 : 600,
+              color: view === v ? 'var(--accent, #2563eb)' : 'var(--fg-1)',
+              borderBottom: view === v ? '2px solid var(--accent, #2563eb)' : '2px solid transparent',
+              cursor: 'pointer',
+            }}
+          >
+            {v === 'leads' ? t('admin.navLeads') : t('admin.navMarketing')}
+          </button>
+        ))}
+      </div>
+
+      {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
+
+      {view === 'leads' && (<>
       {/* Cereri de acces backend. */}
       <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('admin.requestsTitle')}</h2>
       {requests.length === 0 ? (
@@ -665,6 +708,7 @@ export default function AdminHome() {
           </table>
         </div>
       )}
+      </>)}
     </main>
   );
 }

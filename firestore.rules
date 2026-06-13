@@ -110,6 +110,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Marketing Center: campaniile (colecție de nivel superior, cu leadId) + metricile zilnice.
+    // Exclusiv zona operatorilor. Conectorii Meta/Google Ads API vor scrie tot aici, prin
+    // Admin SDK (ocolește rules) — vezi docs/CONNECTORS-ADS-API.md.
+    match /campaigns/{campaignId} {
+      allow read, create, update, delete: if isAdmin();
+      match /metrics/{date} {
+        allow read, create, update, delete: if isAdmin();
+      }
+    }
+
     // ───────── Stripe (extensia firestore-stripe-payments) ─────────
     // Extensia scrie cu Admin SDK (ocolește rules); clientul doar citește ce-i aparține și
     // creează checkout_sessions (extensia completează `url`).

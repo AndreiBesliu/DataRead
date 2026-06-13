@@ -314,3 +314,21 @@ normaliser, secretele niciodată în chat/repo.
 > si subcolectiile versions (Firestore nu face cascade).
 > Verificat: build + 5 suites + prerender + boot-smoke + functions load — verzi.
 > DEPLOYED: functions + rules + hosting.
+
+**2026-06-13 - Task Completed — Marketing Center (analytics campanii multi-platforma)**
+> Model: Claude Fable 5
+> Directiva Andrei: sistem in backend pentru monitorizarea campaniilor (ROAS + analytics complex),
+> Meta SI alte platforme, intr-un panou dedicat "Marketing Center".
+> Arhitectura (acelasi pattern ca AI/Stripe — construim tot, integrarea externa e optionala):
+> motor KPI pur src/analytics/kpi.ts (ROAS/CPL/CTR/CPC/CPM/conversie, totaluri denormalizate,
+> coerce campanie+metrica, platform-agnostic) + suita test-analytics (24 checks). Model:
+> campaigns/{id} top-level (leadId + clientName + totals rollup) + metrics/{YYYY-MM-DD} (upsert pe
+> data = idempotent, pregatit pentru conectori API; camp source manual|meta|google|tiktok).
+> Panou Marketing Center = tab nou in /admin (Lead-uri | Marketing Center): KPI agregat pe
+> campaniile filtrate, filtre platforma/status/cautare, creare campanie cu selector de client,
+> drill-down per campanie (KPI cards + sparkline SVG pur + tabel zile cu intrare/editare/stergere
+> manuala + CSV + ROAS pe zi), status inline, stergere campanie. Intrarea MANUALA a datelor e
+> sursa de azi; conectorii Meta/Google Ads scriu in acelasi model — docs/CONNECTORS-ADS-API.md
+> (pasii Andrei: Meta Business verification ~saptamani, tokenuri in Secret Manager).
+> Rules: campaigns + metrics admin-only; deleteLead curata si campaniile clientului.
+> Verificat: build + 6 suites + prerender + boot-smoke verzi. DEPLOYED: hosting + rules.

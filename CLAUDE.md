@@ -90,6 +90,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   Statusuri: `none | active | expired`.
 - `functions/index.js`: secțiuni separate — admin (claims + bootstrap) / entitlement / (viitor) AI.
   Runtime **Node 22** gen-2; trigger-ele primesc EXPLICIT `{ region: 'europe-central2' }`.
+- **Marketing Center** (tab în /admin): monitorizare campanii pe toate platformele (meta/google/
+  tiktok/other). Colecția de nivel superior `campaigns/{id}` (cu `leadId` + `clientName`
+  denormalizat + `totals` rollup) + `campaigns/{id}/metrics/{YYYY-MM-DD}` (o zi de performanță,
+  upsert pe dată). Motorul de KPI: `src/analytics/kpi.ts` PUR (ROAS/CPL/CTR/CPC/CPM/conversie),
+  testat în `scripts/test-analytics.ts`. v1 = introducere MANUALĂ a datelor; conectorii Meta/
+  Google Ads API scriu în același model (faza următoare — `docs/CONNECTORS-ADS-API.md`, cere
+  verificare Meta Business = săptămâni). `source` pe metrică distinge manual vs API.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
