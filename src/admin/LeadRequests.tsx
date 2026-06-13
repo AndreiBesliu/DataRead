@@ -65,7 +65,7 @@ function fmtTs(v: unknown): string {
 /** Cererile de marketing ale unui lead (Verticala 1, semi-manual). Adminul creează cererea
  *  (ofertă + buget + obiectiv) și scrie livrabilele; în felia 2, „Generează cu AI" va completa
  *  ACELEAȘI câmpuri prin callable-ul aiGenerateCampaign (source: 'ai'). */
-export default function LeadRequests({ leadId, adminUid }: { leadId: string; adminUid: string }) {
+export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: string; adminUid: string; clientUid?: string }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [creating, setCreating] = useState(false);
@@ -135,6 +135,7 @@ export default function LeadRequests({ leadId, adminUid }: { leadId: string; adm
         status: 'open',
         source: 'manual',
         deliverables: { adTexts: '', videoScripts: '', campaignStructure: '', calendar: '', posts: '', ideas: '', notes: '' },
+        clientUid: clientUid || '', // moștenit de la lead → trigger-ul oglindește livrabilele în portal
         createdBy: adminUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

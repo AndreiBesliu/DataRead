@@ -383,7 +383,25 @@ normaliser, secretele niciodată în chat/repo.
 > customizarea temelor admin. Landing Pages = pt CLIENTI, continut diferit punctual; tema admin =
 > DOAR culori/imagini background/animatii decor/design, FARA alterare layout/structura.
 
+**2026-06-13 - Task Completed — livrabile client-safe în portal (pasul 2, fără note interne)**
+> Model: Claude Fable 5
+> Clientul își vede livrabilele (texte reclame, scripturi video, structură campanie, calendar/
+> postări/idei) în /app, dar notele interne ale agenției NU se scurg niciodată.
+> Changes: trigger nou onRequestWrite (mereu activ, NU în blocul AI) pe leads/{id}/requests/{reqId}
+> care oglindește DOAR câmpurile din CLIENT_SAFE_DELIVERABLES (adTexts/videoScripts/
+> campaignStructure/calendar/posts/ideas — `notes` exclus explicit) în clients/{uid}/deliverables/
+> {reqId}, folosind diff-ul before/after pe clientUid (gestionează create/update/delete/relink/
+> unlink, șterge oglinda când lipsește conținut sau se schimbă clientul). clientUid denormalizat pe
+> cereri: AdminHome.linkClient/unlinkClient parcurge cererile setând/golind clientUid; LeadRequests
+> primește clientUid și îl pune pe cererile noi. firestore.rules: clients/{uid}/deliverables read
+> owner|admin, write false (doar Admin SDK). AppHome.MarketingPortal: secțiune nouă „Livrabilele
+> tale" (onSnapshot pe deliverables, ordonat updatedAt desc, filtrează notes din randare).
+> i18n appHome.portalDeliverables (ro/en).
+> Verificat: build + 7 suites + prerender (12 pagini) + boot-smoke + functions load verzi.
+> DEPLOYED: functions (onRequestWrite creat) + firestore:rules + hosting.
+> NOTA: portalul de client are acum cele 3 fețe cerute — performanță + raport + livrabile.
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [ ] Creator de teme admin extins (culori/background/animații; fără layout) peste configuratorul actual
-- [ ] Livrabile în portalul de client (cu note interne separate) — pasul 2 al portalului
+- [x] Livrabile în portalul de client (cu note interne separate) — pasul 2 al portalului ✅ 2026-06-13

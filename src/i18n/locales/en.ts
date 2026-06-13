@@ -210,6 +210,7 @@ const en: typeof ro = {
     portalNoCampaigns: 'No active campaigns yet. Check back soon.',
     portalReportTitle: 'Your monthly report',
     portalCampaigns: 'Your campaigns',
+    portalDeliverables: 'Your deliverables',
     subscriptionPending: 'Confirming your payment…',
     subscriptionExpired: 'Subscription expired — resync or contact us.',
     subscriptionRenews: 'Renews: {{date}}',

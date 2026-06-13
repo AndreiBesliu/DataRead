@@ -212,6 +212,7 @@ const ro = {
     portalNoCampaigns: 'Încă nu sunt campanii active. Revino curând.',
     portalReportTitle: 'Raportul tău lunar',
     portalCampaigns: 'Campaniile tale',
+    portalDeliverables: 'Livrabilele tale',
     subscriptionPending: 'Se confirmă plata…',
     subscriptionExpired: 'Abonament expirat — resincronizează sau contactează-ne.',
     subscriptionRenews: 'Se reînnoiește: {{date}}',

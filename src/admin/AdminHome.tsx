@@ -367,6 +367,9 @@ export default function AdminHome() {
       await updateDoc(doc(db, 'leads', leadId), { clientUid, clientEmail });
       const camps = await getDocs(query(collection(db, 'campaigns'), where('leadId', '==', leadId)));
       await Promise.all(camps.docs.map((c) => updateDoc(c.ref, { clientUid })));
+      // Cererile primesc clientUid → trigger-ul onRequestWrite oglindește livrabilele în portal.
+      const reqs = await getDocs(collection(db, 'leads', leadId, 'requests'));
+      await Promise.all(reqs.docs.map((r) => updateDoc(r.ref, { clientUid })));
       setLinkSelect('');
     } catch (e) {
       console.warn('link client failed:', e);
@@ -378,6 +381,9 @@ export default function AdminHome() {
       await updateDoc(doc(db, 'leads', leadId), { clientUid: '', clientEmail: '' });
       const camps = await getDocs(query(collection(db, 'campaigns'), where('leadId', '==', leadId)));
       await Promise.all(camps.docs.map((c) => updateDoc(c.ref, { clientUid: '' })));
+      // Golirea clientUid pe cereri → trigger-ul șterge oglinda livrabilelor din portalul fostului client.
+      const reqs = await getDocs(collection(db, 'leads', leadId, 'requests'));
+      await Promise.all(reqs.docs.map((r) => updateDoc(r.ref, { clientUid: '' })));
     } catch (e) {
       console.warn('unlink client failed:', e);
     }
@@ -684,7 +690,7 @@ export default function AdminHome() {
                                     {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
                                   </button>
                                 </div>
-                                {user && <LeadRequests leadId={l.id} adminUid={user.uid} />}
+                                {user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
 
                                 {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
                                 <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>

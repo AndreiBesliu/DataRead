@@ -86,6 +86,12 @@ service cloud.firestore {
         && request.resource.data.schema == 1;
       allow delete: if false;
 
+      // Livrabilele client-safe (oglindite de functions, FĂRĂ note interne) — clientul le citește.
+      match /deliverables/{reqId} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false; // doar functions (Admin SDK)
+      }
+
       match /onboarding/{docId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)

@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { deliverableFieldsFor, type RequestKind } from '../types/request';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { useEntitlementStore } from '../store/entitlementStore';
@@ -24,6 +25,7 @@ function MarketingPortal({ uid }: { uid: string }) {
   const { t } = useTranslation();
   const [camps, setCamps] = useState<Array<{ id: string; data: CampaignDef }> | null>(null);
   const [report, setReport] = useState<ClientReport | null>(null);
+  const [deliv, setDeliv] = useState<Array<{ id: string; kind: RequestKind; title: string; deliverables: Record<string, string> }>>([]);
 
   useEffect(() => {
     const off1 = onSnapshot(
@@ -43,14 +45,31 @@ function MarketingPortal({ uid }: { uid: string }) {
       (snap) => setReport(coerceToReport(snap.data()?.marketingReport)),
       () => {}
     );
+    const off3 = onSnapshot(
+      query(collection(db, 'clients', uid, 'deliverables'), orderBy('updatedAt', 'desc')),
+      (snap) => {
+        const out: Array<{ id: string; kind: RequestKind; title: string; deliverables: Record<string, string> }> = [];
+        snap.forEach((d) => {
+          const x = d.data();
+          const del: Record<string, string> = {};
+          if (x.deliverables && typeof x.deliverables === 'object') {
+            for (const [k, v] of Object.entries(x.deliverables as Record<string, unknown>)) if (typeof v === 'string') del[k] = v;
+          }
+          out.push({ id: d.id, kind: x.kind === 'content' ? 'content' : 'campaign', title: typeof x.title === 'string' ? x.title : '', deliverables: del });
+        });
+        setDeliv(out);
+      },
+      () => setDeliv([])
+    );
     return () => {
       off1();
       off2();
+      off3();
     };
   }, [uid]);
 
   if (camps === null) return null;
-  const hasData = camps.length > 0 || report !== null;
+  const hasData = camps.length > 0 || report !== null || deliv.length > 0;
 
   return (
     <section style={{ marginTop: 28 }}>
@@ -98,6 +117,30 @@ function MarketingPortal({ uid }: { uid: string }) {
                 </div>
               );
             })}
+          </div>
+        </>
+      )}
+
+      {deliv.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 16, margin: '24px 0 10px' }}>{t('appHome.portalDeliverables')}</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {deliv.map((d) => (
+              <div key={d.id} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 15 }}>{d.title || '—'}</strong>
+                  <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t(d.kind === 'content' ? 'admin.reqKindContent' : 'admin.reqKindCampaign')}</span>
+                </div>
+                {deliverableFieldsFor(d.kind)
+                  .filter((f) => f.key !== 'notes' && d.deliverables[f.key]?.trim())
+                  .map((f) => (
+                    <div key={f.key} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)' }}>{t(f.labelKey)}</div>
+                      <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{d.deliverables[f.key]}</div>
+                    </div>
+                  ))}
+              </div>
+            ))}
           </div>
         </>
       )}

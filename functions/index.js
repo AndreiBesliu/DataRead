@@ -133,6 +133,46 @@ exports.onSubscriptionWrite = onDocumentWritten(
   }
 );
 
+// ── Portal client: oglindește livrabilele client-safe (FĂRĂ note interne) în subarborele ──
+// clientului. Trigger pe orice scriere de cerere (manual / AI / restaurare). Folosește diff-ul
+// before/after pe clientUid ca să gestioneze create/update/delete/relink/unlink fără cod special.
+const CLIENT_SAFE_DELIVERABLES = ['adTexts', 'videoScripts', 'campaignStructure', 'calendar', 'posts', 'ideas'];
+
+exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/{reqId}', region: REGION }, async (event) => {
+  try {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    const reqId = event.params.reqId;
+    const beforeUid = before && typeof before.clientUid === 'string' ? before.clientUid : '';
+    const afterUid = after && typeof after.clientUid === 'string' ? after.clientUid : '';
+
+    const del = (after && typeof after.deliverables === 'object' && after.deliverables) || {};
+    const safe = {};
+    for (const k of CLIENT_SAFE_DELIVERABLES) {
+      if (typeof del[k] === 'string' && del[k].trim()) safe[k] = del[k];
+    }
+    const hasContent = Object.keys(safe).length > 0;
+    const db = admin.firestore();
+
+    // Șterge oglinda veche dacă: s-a deconectat, s-a schimbat clientul, s-a golit conținutul, sau cererea a fost ștearsă.
+    if (beforeUid && (beforeUid !== afterUid || !hasContent || !after)) {
+      await db.collection('clients').doc(beforeUid).collection('deliverables').doc(reqId).delete().catch(() => {});
+    }
+    // Scrie/actualizează oglinda client-safe (notele interne NU sunt incluse).
+    if (afterUid && hasContent) {
+      await db.collection('clients').doc(afterUid).collection('deliverables').doc(reqId).set({
+        kind: after.kind === 'content' ? 'content' : 'campaign',
+        title: typeof after.title === 'string' ? after.title : '',
+        deliverables: safe,
+        leadId: event.params.leadId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    logger.error('onRequestWrite mirror failed', { reqId: event.params.reqId, err: String(err) });
+  }
+});
+
 // ───────────────────────── [3] AI — Verticala 1 Marketing AI ─────────────────────────
 // Callable-ul aiGenerateCampaign: citește lead-ul + cererea SERVER-SIDE, cere modelului Claude
 // un pachet de livrabile (texte reclame / scripturi video / structură campanie Meta) cu ieșire

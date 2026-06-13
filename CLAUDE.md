@@ -72,8 +72,15 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 
 - **Site-ul public NU are login (decizie Andrei, 11.06.2026):** intrarea clienților e formularul
   public `/start` (fără cont) → colecția `leads` (create anonim, validat strict; citit doar de
-  admini). Doar `/admin` (backend-ul) are autentificare. Zona `/app` (cont client + checkout
-  Stripe) rămâne în cod, DORMANTĂ și nelegată din site, până revine self-serve-ul.
+  admini). Doar `/admin` (backend-ul) are autentificare. Self-serve-ul public (checkout Stripe din
+  site) rămâne DORMANT și nelegat din site până revine.
+- **Portal client `/app` (cont propriu, ACTIV):** clientul se autentifică (self-signup), iar adminul
+  îl conectează la lead-ul lui din `/admin` (setează `clientUid`). Portalul are 3 fețe scoped
+  multi-tenant: **performanță** (campaniile lui, `campaigns where clientUid==uid`), **raport**
+  (`clients/{uid}.marketingReport`, oglindit de `aiClientReport`) și **livrabile**
+  (`clients/{uid}/deliverables/{reqId}`, oglindite de trigger-ul `onRequestWrite` DOAR cu câmpurile
+  din `CLIENT_SAFE_DELIVERABLES` — notele interne ale agenției NU se scurg). Clientul citește doar
+  ale lui; oglinzile le scrie exclusiv Admin SDK (rules: write false).
 - **Acces backend prin cereri aprobate:** o logare pe `/admin` fără claim înregistrează automat
   `adminRequests/{uid}` (pending); un admin existent aprobă din `/admin` (creează `admins/{uid}` →
   trigger → claim). Bootstrap: UID-ul lui Andrei (`IMBKFBkONkOB7VVZCmqgS90JdBi2`, constantă în
@@ -86,7 +93,7 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   pe wrapperul view-ului de admin; componentele se reskinează automat (folosesc deja variabilele).
   Default = Midnight (dark digital). Portalul de client (/app) rămâne pe tema default deocamdată.
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
-  `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (dormant, noindex) + `/admin`.
+  `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (portal client, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage
   (regulă pentru prerender).
 - Entitlements: extensia Stripe scrie `customers/{uid}/subscriptions` → functions
