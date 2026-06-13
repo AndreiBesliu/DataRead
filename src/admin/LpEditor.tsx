@@ -11,11 +11,13 @@ import { db } from '../firebase';
 import { customThemeCss } from '../theme/themes';
 import ThemeControls from '../theme/ThemeControls';
 import LpAiPanel from './LpAiPanel';
+import LpFormConfigPanel from './LpFormConfig';
+import LpAnalytics from './LpAnalytics';
 import { sanitizeSlug, type LandingPage } from '../types/landingPage';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
   return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${lp.html}</body></html>`;
@@ -189,64 +191,74 @@ export default function LpEditor({
       {slugTaken ? <p style={{ color: '#c0392b', fontSize: 12, margin: '0 0 8px' }}>{t('admin.lpStudio.slugTaken')}</p> : null}
       {err ? <p style={{ color: '#c0392b', fontSize: 12, margin: '0 0 8px' }}>{err}</p> : null}
 
-      {/* Cod/Design + preview */}
-      <div style={{ display: 'flex', gap: 14, alignItems: 'stretch', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 420px', minWidth: 320 }}>
-          <div style={{ display: 'flex', gap: 6, borderBottom: '2px solid var(--border)', marginBottom: 10 }}>
-            <button onClick={() => setTab('code')} style={tabBtn(tab === 'code')}>{t('admin.lpStudio.tabCode')}</button>
-            <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
-            <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button>
-          </div>
-          {tab === 'code' && (
-            <textarea
-              value={draft.html}
-              onChange={(e) => setHtml(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Tab') {
-                  e.preventDefault();
-                  const ta = e.currentTarget;
-                  const s = ta.selectionStart;
-                  const en = ta.selectionEnd;
-                  setHtml(draft.html.slice(0, s) + '  ' + draft.html.slice(en));
-                  requestAnimationFrame(() => {
-                    ta.selectionStart = ta.selectionEnd = s + 2;
-                  });
-                }
-              }}
-              spellCheck={false}
-              placeholder={t('admin.lpStudio.codePlaceholder')}
-              style={{ ...field, width: '100%', height: 460, resize: 'vertical', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre', overflowWrap: 'normal', tabSize: 2 }}
-            />
-          )}
-          {tab === 'design' && (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px 16px', maxHeight: 460, overflowY: 'auto' }}>
-              <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} />
-              <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
-            </div>
-          )}
-          {tab === 'ai' && (
-            <LpAiPanel
-              html={draft.html}
-              lang={draft.lang}
-              onApply={(generated) => {
-                setHtml(generated);
-                setTab('code');
-              }}
-            />
-          )}
-        </div>
-
-        <div style={{ flex: '1 1 420px', minWidth: 320 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', padding: '6px 0 12px' }}>{t('admin.lpStudio.preview')}</div>
-          <iframe
-            title="preview"
-            srcDoc={previewDoc}
-            sandbox="allow-forms allow-popups allow-scripts"
-            referrerPolicy="no-referrer"
-            style={{ width: '100%', height: 460, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }}
-          />
-        </div>
+      {/* Bara de taburi */}
+      <div style={{ display: 'flex', gap: 6, borderBottom: '2px solid var(--border)', marginBottom: 12, flexWrap: 'wrap' }}>
+        <button onClick={() => setTab('code')} style={tabBtn(tab === 'code')}>{t('admin.lpStudio.tabCode')}</button>
+        <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
+        <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button>
+        <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
+        {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
+
+      {tab === 'analytics' && !isNew ? (
+        <LpAnalytics slug={docId as string} />
+      ) : (
+        <div style={{ display: 'flex', gap: 14, alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 420px', minWidth: 320 }}>
+            {tab === 'code' && (
+              <textarea
+                value={draft.html}
+                onChange={(e) => setHtml(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const ta = e.currentTarget;
+                    const s = ta.selectionStart;
+                    const en = ta.selectionEnd;
+                    setHtml(draft.html.slice(0, s) + '  ' + draft.html.slice(en));
+                    requestAnimationFrame(() => {
+                      ta.selectionStart = ta.selectionEnd = s + 2;
+                    });
+                  }
+                }}
+                spellCheck={false}
+                placeholder={t('admin.lpStudio.codePlaceholder')}
+                style={{ ...field, width: '100%', height: 460, resize: 'vertical', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre', overflowWrap: 'normal', tabSize: 2 }}
+              />
+            )}
+            {tab === 'design' && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px 16px', maxHeight: 460, overflowY: 'auto' }}>
+                <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} />
+                <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
+              </div>
+            )}
+            {tab === 'ai' && (
+              <LpAiPanel
+                html={draft.html}
+                lang={draft.lang}
+                onApply={(generated) => {
+                  setHtml(generated);
+                  setTab('code');
+                }}
+              />
+            )}
+            {tab === 'form' && (
+              <LpFormConfigPanel value={draft.form} onChange={(form) => setDraft((d) => ({ ...d, form, hasForm: form.enabled }))} />
+            )}
+          </div>
+
+          <div style={{ flex: '1 1 420px', minWidth: 320 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', padding: '6px 0 12px' }}>{t('admin.lpStudio.preview')}</div>
+            <iframe
+              title="preview"
+              srcDoc={previewDoc}
+              sandbox="allow-forms allow-popups allow-scripts"
+              referrerPolicy="no-referrer"
+              style={{ width: '100%', height: 460, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

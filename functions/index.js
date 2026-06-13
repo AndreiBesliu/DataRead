@@ -900,16 +900,173 @@ function composeLpPage(slug, lp, req) {
     `<meta property="og:title" content="${title}">` +
     (desc ? `<meta property="og:description" content="${desc}">` : '') +
     `<meta property="og:url" content="${canonical}">` +
-    `<style>${css}</style></head><body>${body}</body></html>`
+    `<style>${css}</style></head><body>${body}${lpScripts(slug, lp)}</body></html>`
   );
+}
+
+// Șir JS sigur de inserat într-un <script> inline (escapează `<` ca să nu rupă </script>).
+function jsString(s) {
+  return JSON.stringify(String(s == null ? '' : s)).replace(/</g, '\\u003c');
+}
+
+// Scripturile injectate în pagină: beacon de engagement (mereu) + handler de formular (dacă există).
+function lpScripts(slug, lp) {
+  const beacon =
+    '<script>(function(){var s=' + jsString(slug) + ';var m=0,t0=Date.now(),c=0,sent=false;' +
+    'function p(){var h=document.documentElement;var sc=h.scrollTop||document.body.scrollTop||0;' +
+    'var mx=(h.scrollHeight-h.clientHeight)||1;return Math.min(100,Math.round(sc/mx*100));}' +
+    'window.addEventListener("scroll",function(){var x=p();if(x>m)m=x;},{passive:true});' +
+    'document.addEventListener("click",function(e){var el=e.target.closest&&e.target.closest("[data-cta]");if(el)c++;});' +
+    'function send(){if(sent)return;sent=true;try{navigator.sendBeacon("/p/_track",new Blob([JSON.stringify({slug:s,scrollPct:m,timeMs:Date.now()-t0,cta:c})],{type:"application/json"}));}catch(e){}}' +
+    'document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")send();});' +
+    'window.addEventListener("pagehide",send);})();</script>';
+  if (!lp.hasForm) return beacon;
+  const okMsg = (lp.form && lp.form.successMessage) || 'Mulțumim! Te contactăm în curând.';
+  const form =
+    '<script>(function(){var f=document.querySelector("form[data-lp-form]");if(!f)return;var s=' + jsString(slug) + ';' +
+    'var OK=' + jsString(okMsg) + ';var ERR="A apărut o eroare. Reîncearcă.";' +
+    'f.addEventListener("submit",function(e){e.preventDefault();var fd=new FormData(f);var v={};fd.forEach(function(val,k){v[k]=String(val).slice(0,2000);});' +
+    'var u=new URLSearchParams(location.search);' +
+    'fetch("/p/_submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:s,values:v,referrer:document.referrer,utm:{source:u.get("utm_source")||"",medium:u.get("utm_medium")||"",campaign:u.get("utm_campaign")||""}})})' +
+    '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){f.innerHTML="<p style=\\"padding:24px;text-align:center;color:var(--fg-0)\\">"+OK+"</p>";}else{alert(ERR);}}).catch(function(){alert(ERR);});});})();</script>';
+  return beacon + form;
+}
+
+function lpClampNum(v, max) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, max) : 0;
+}
+
+// Port JS al sanitizeSubmissionValues (src/types/landingPage.ts).
+function sanitizeLpValues(raw, fields) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const values = {};
+  const missing = [];
+  for (const f of (Array.isArray(fields) ? fields : []).slice(0, 12)) {
+    if (!f || typeof f.name !== 'string') continue;
+    const v = src[f.name];
+    const val = typeof v === 'string' ? v.trim().slice(0, 2000) : '';
+    if (val) values[f.name] = val;
+    if (f.required && !val) missing.push(f.name);
+  }
+  return { values, missing };
+}
+
+// Mapează euristic valorile formularului pe forma unui lead din pipeline.
+function mapSubmissionToLead(values, fields, slug, lang) {
+  const find = (re) => {
+    for (const f of fields) if (re.test(f.name) && values[f.name]) return values[f.name];
+    return '';
+  };
+  const desc = fields
+    .filter((f) => values[f.name])
+    .map((f) => `${f.label || f.name}: ${values[f.name]}`)
+    .join('\n')
+    .slice(0, 2000);
+  return {
+    schema: 1,
+    companyName: find(/company|firma|companie/).slice(0, 120),
+    cui: '', website: '',
+    contactName: find(/name|nume/).slice(0, 80),
+    contactEmail: find(/email|mail/).slice(0, 120),
+    contactPhone: find(/phone|tel|telefon/).slice(0, 30),
+    industry: '', industryOther: '', objectives: [], adBudget: '',
+    facebook: '', instagram: '', tiktok: '',
+    description: desc,
+    packageInterest: null,
+    locale: lang === 'en' ? 'en' : 'ro',
+    status: 'new',
+    source: `lp:${slug}`.slice(0, 80),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+async function handleTrack(req, res) {
+  const body = req.body || {};
+  const slug = typeof body.slug === 'string' ? body.slug.toLowerCase() : '';
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    res.status(204).end();
+    return;
+  }
+  const scrollPct = lpClampNum(body.scrollPct, 100);
+  const timeMs = lpClampNum(body.timeMs, 3600000);
+  const cta = lpClampNum(body.cta, 50);
+  const engaged = timeMs > 15000 || scrollPct > 50 ? 1 : 0;
+  const day = new Date().toISOString().slice(0, 10);
+  const inc = admin.firestore.FieldValue.increment;
+  try {
+    await admin.firestore().collection('landingPages').doc(slug).collection('stats').doc(day).set(
+      {
+        schema: 1, date: day,
+        beacons: inc(1),
+        scrollDepthSum: inc(scrollPct),
+        timeOnPageSum: inc(timeMs),
+        engaged: inc(engaged),
+        ctaClicks: inc(cta),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    logger.warn('lp track failed', { slug, e: String(e) });
+  }
+  res.status(204).end();
+}
+
+async function handleSubmit(req, res) {
+  const body = req.body || {};
+  const slug = typeof body.slug === 'string' ? body.slug.toLowerCase() : '';
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    res.status(400).json({ ok: false });
+    return;
+  }
+  try {
+    const db = admin.firestore();
+    const snap = await db.collection('landingPages').doc(slug).get();
+    const lp = snap.exists ? snap.data() : null;
+    if (!lp || lp.status !== 'published' || !lp.hasForm) {
+      res.status(400).json({ ok: false });
+      return;
+    }
+    const fields = (lp.form && Array.isArray(lp.form.fields)) ? lp.form.fields : [];
+    const { values, missing } = sanitizeLpValues(body.values, fields);
+    if (missing.length || Object.keys(values).length === 0) {
+      res.status(400).json({ ok: false });
+      return;
+    }
+    const utm = body.utm && typeof body.utm === 'object' ? body.utm : {};
+    const base = db.collection('landingPages').doc(slug);
+    await base.collection('submissions').add({
+      schema: 1, values, status: 'new',
+      utm: { source: String(utm.source || '').slice(0, 200), medium: String(utm.medium || '').slice(0, 200), campaign: String(utm.campaign || '').slice(0, 200), term: '', content: '' },
+      referrer: String(body.referrer || '').slice(0, 300),
+      ua: String(req.headers['user-agent'] || '').slice(0, 300),
+      geoCountry: (req.headers['x-country-code'] || req.headers['x-appengine-country'] || 'XX').toString().slice(0, 4).toUpperCase(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    const day = new Date().toISOString().slice(0, 10);
+    await base.collection('stats').doc(day).set(
+      { schema: 1, date: day, submissions: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    if (lp.form && lp.form.createLead === true) {
+      await db.collection('leads').add(mapSubmissionToLead(values, fields, slug, lp.lang));
+    }
+    res.status(200).json({ ok: true });
+  } catch (e) {
+    logger.error('lp submit failed', { slug, e: String(e) });
+    res.status(500).json({ ok: false });
+  }
 }
 
 exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public' }, async (req, res) => {
   try {
-    const match = (req.path || '').match(/^\/p\/([^/]+)\/?$/);
+    const path = req.path || '';
+    if (path === '/p/_track') return await handleTrack(req, res);
+    if (path === '/p/_submit') return await handleSubmit(req, res);
+    const match = path.match(/^\/p\/([^/]+)\/?$/);
     const slug = match ? decodeURIComponent(match[1]).toLowerCase() : '';
-    // _track/_submit (P5) și slug-urile invalide → 404 deocamdată.
-    if (!slug || slug === '_track' || slug === '_submit' || !/^[a-z0-9-]+$/.test(slug)) {
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
       res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
       return;
     }

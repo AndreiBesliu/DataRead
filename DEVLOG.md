@@ -495,6 +495,24 @@ normaliser, secretele niciodată în chat/repo.
 > confirmă la prima LP creată din /admin; compunerea CSS = identică cu cea verificată vizual în P2.)
 > NOTĂ: /p/_track și /p/_submit (beacon + formular) vin în P5.
 
+**2026-06-13 - Task Completed — LP P5: beacon + submissions + dashboard analytics**
+> Model: Claude Fable 5
+> Changes: serveLp injectează acum în pagină 2 scripturi inline (jsString escapat): beacon de
+> engagement (scroll max + timp + click-uri pe [data-cta] → navigator.sendBeacon('/p/_track') la
+> visibilitychange/pagehide) și, dacă hasForm, handler de formular (<form data-lp-form> → fetch
+> '/p/_submit', afișează successMessage). Ramuri noi în serveLp: handleTrack (increment stats —
+> beacons/scrollDepthSum/timeOnPageSum/engaged/ctaClicks, clamp) și handleSubmit (validează LP
+> publicat+hasForm, sanitizeLpValues după form.fields, scrie submissions/{auto} via Admin SDK,
+> increment stats.submissions, opțional creează lead în pipeline prin mapSubmissionToLead euristic,
+> source 'lp:{slug}'). LpFormConfig.tsx (tab Formular: on/off, câmpuri label/name/tip/required/
+> opțiuni, submitLabel, successMessage, createLead). LpAnalytics.tsx (tab Analytics, doar pt LP
+> salvate: citește rollup-urile stats + submissions, range 7/30/90, KPI cards vizite/conversii/
+> conv%/CTA%/engagement/timp/scroll prin lpStats, sparkline vizite, breakdown surse/referrers/țări/
+> dispozitive via topEntries, tabel trimiteri + export CSV). i18n admin.lpStudio.* (form + analytics,
+> ro+en). CSP permite sendBeacon/fetch doar către 'self'.
+> Verificat: functions load + build + 8/8 suites + prerender + boot-smoke verzi.
+> DEPLOYED: functions:serveLp (actualizat) + hosting. **Felia LP v1 e funcțional COMPLETĂ.**
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13
