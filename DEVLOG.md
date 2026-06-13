@@ -444,6 +444,23 @@ normaliser, secretele niciodată în chat/repo.
 > doar functions). scripts/test-landing.ts (24 checks: coerce, slug, submission, math rollup).
 > Verificat: build (typecheck) + 8/8 suites verzi. DEPLOYED: firestore:rules.
 
+**2026-06-13 - Task Completed — LP P2: Studio (editor cod + preview live + design + CRUD)**
+> Model: Claude Fable 5
+> Changes: tab nou „Landing Pages" în /admin (AdminView 'landing' + VIEW_LABEL_KEY). LandingStudio.tsx
+> (listă landingPages din onSnapshot, sortată client-side după updatedAt; creare/editare/ștergere).
+> LpEditor.tsx — „IDE"-ul: bară meta (titlu, slug editabil doar la creare = doc ID, limbă, save,
+> publish/unpublish, URL live + copy), tab Cod (textarea monospace cu tab=2 spații) | Design
+> (ThemeControls), preview live într-un <iframe sandbox FĂRĂ allow-same-origin> (debounced 400ms,
+> srcDoc = customThemeCss(design) + html-ul operatorului). Salvare: setDoc la creare (doc ID = slug,
+> re-verifică unicitatea), updateDoc la editare; gardă slug gol/duplicat + publicare pagină goală.
+> Refactor design DRY: extras ThemeControls.tsx (refolosit de ThemeEditor + LP design panel,
+> withName/withAnimation opționale); themes.ts — extras customThemeBg (sursă unică) + adăugat
+> customThemeCss (design ca text CSS: variabile pe :root, fundal pe body — pt. preview + viitorul SSR).
+> i18n admin.lpStudio.* + navLanding (ro+en). +2 checks customThemeCss în test-themes.
+> Verificat: build + 8/8 suites + prerender + boot-smoke verzi; randare vizuală confirmată (Playwright:
+> HTML de operator + design injectat = pagină coerentă, accent custom pe CTA, carduri/grilă tematice).
+> DEPLOYED: hosting. (Servirea reală la /p/{slug} vine în P4; agentul AI în P3.)
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13

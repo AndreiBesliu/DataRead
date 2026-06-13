@@ -4,6 +4,7 @@ import {
   DEFAULT_ADMIN_THEME,
   THEME_COLOR_KEYS,
   coerceToCustomTheme,
+  customThemeCss,
   customThemeStyle,
   defaultCustomTheme,
   themeAnimClass,
@@ -61,6 +62,14 @@ check('customThemeStyle cu imagine → straturi de fundal', (() => {
   return typeof s.backgroundImage === 'string' && s.backgroundImage.includes('url("https://ex.com/b.png")') && s.backgroundImage.includes('radial-gradient');
 })());
 check('themeAnimClass: none → gol, restul → anim-*', themeAnimClass('none') === '' && themeAnimClass('drift') === 'anim-drift');
+check('customThemeCss: variabile pe :root + fundal pe body (pt. pagina LP)', (() => {
+  const css = customThemeCss(coerceToCustomTheme({ vars: { accent: '#a855f7' }, digital: true }));
+  return css.includes('--accent:#a855f7') && css.includes(':root{') && css.includes('body{') && css.includes('background-color:');
+})());
+check('customThemeCss cu imagine → url + radial-gradient (grilă)', (() => {
+  const css = customThemeCss(coerceToCustomTheme({ bgImage: 'https://ex.com/b.png', digital: true }));
+  return css.includes('url("https://ex.com/b.png")') && css.includes('radial-gradient');
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);

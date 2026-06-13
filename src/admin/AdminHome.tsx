@@ -23,12 +23,19 @@ import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
 import MarketingCenter from './MarketingCenter';
+import LandingStudio from './LandingStudio';
 import { useAdminTheme } from '../theme/useAdminTheme';
 import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeStyle } from '../theme/themes';
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'marketing';
+type AdminView = 'leads' | 'marketing' | 'landing';
+
+const VIEW_LABEL_KEY: Record<AdminView, string> = {
+  leads: 'admin.navLeads',
+  marketing: 'admin.navMarketing',
+  landing: 'admin.navLanding',
+};
 
 /** Cheia i18n a fiecărui status de pipeline. */
 const STATUS_KEY: Record<LeadStatus, string> = {
@@ -525,7 +532,7 @@ export default function AdminHome() {
 
       {/* Taburi: Lead-uri vs Marketing Center. */}
       <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'marketing'] as const).map((v) => (
+        {(['leads', 'marketing', 'landing'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -541,12 +548,13 @@ export default function AdminHome() {
               cursor: 'pointer',
             }}
           >
-            {v === 'leads' ? t('admin.navLeads') : t('admin.navMarketing')}
+            {t(VIEW_LABEL_KEY[v])}
           </button>
         ))}
       </div>
 
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
+      {view === 'landing' && <LandingStudio adminUid={user.uid} />}
 
       {view === 'leads' && (<>
       {/* Cereri de acces backend. */}

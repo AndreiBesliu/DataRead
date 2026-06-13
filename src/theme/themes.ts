@@ -137,10 +137,18 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 /** Stilul wrapperului pentru o temă personalizată (variabile + fundal compus din straturi). */
-export function customThemeStyle(c: CustomTheme): CSSProperties {
-  const style: Record<string, string | number> = { minHeight: '100vh', color: c.vars['fg-0'] };
-  for (const k of THEME_COLOR_KEYS) style[`--${k}`] = c.vars[k];
+interface BgLayers {
+  backgroundColor: string;
+  backgroundImage: string;
+  backgroundSize: string;
+  backgroundPosition: string;
+  backgroundRepeat: string;
+  backgroundAttachment: string;
+}
 
+/** Straturile de fundal compuse dintr-un CustomTheme (grilă + văl de lizibilitate + imagine +
+ *  culoare). Sursă unică pentru customThemeStyle (CSSProperties) și customThemeCss (text). */
+function customThemeBg(c: CustomTheme): BgLayers {
   const images: string[] = [];
   const sizes: string[] = [];
   const positions: string[] = [];
@@ -161,15 +169,47 @@ export function customThemeStyle(c: CustomTheme): CSSProperties {
     sizes.push('cover'); positions.push('center'); repeats.push('no-repeat'); attachments.push('fixed');
   }
 
-  style.backgroundColor = c.vars['bg-0'];
-  if (images.length) {
-    style.backgroundImage = images.join(', ');
-    style.backgroundSize = sizes.join(', ');
-    style.backgroundPosition = positions.join(', ');
-    style.backgroundRepeat = repeats.join(', ');
-    style.backgroundAttachment = attachments.join(', ');
+  return {
+    backgroundColor: c.vars['bg-0'],
+    backgroundImage: images.join(', '),
+    backgroundSize: sizes.join(', '),
+    backgroundPosition: positions.join(', '),
+    backgroundRepeat: repeats.join(', '),
+    backgroundAttachment: attachments.join(', '),
+  };
+}
+
+export function customThemeStyle(c: CustomTheme): CSSProperties {
+  const style: Record<string, string | number> = { minHeight: '100vh', color: c.vars['fg-0'] };
+  for (const k of THEME_COLOR_KEYS) style[`--${k}`] = c.vars[k];
+  const bg = customThemeBg(c);
+  style.backgroundColor = bg.backgroundColor;
+  if (bg.backgroundImage) {
+    style.backgroundImage = bg.backgroundImage;
+    style.backgroundSize = bg.backgroundSize;
+    style.backgroundPosition = bg.backgroundPosition;
+    style.backgroundRepeat = bg.backgroundRepeat;
+    style.backgroundAttachment = bg.backgroundAttachment;
   }
   return style as CSSProperties;
+}
+
+/** Design-ul ca text CSS — pentru pagina LP (preview iframe + SSR serveLp): variabilele pe :root,
+ *  fundalul pe body. Aceeași compunere ca customThemeStyle. */
+export function customThemeCss(c: CustomTheme): string {
+  const vars = THEME_COLOR_KEYS.map((k) => `--${k}:${c.vars[k]}`).join(';');
+  const bg = customThemeBg(c);
+  const bgDecl = [`background-color:${bg.backgroundColor}`];
+  if (bg.backgroundImage) {
+    bgDecl.push(
+      `background-image:${bg.backgroundImage}`,
+      `background-size:${bg.backgroundSize}`,
+      `background-position:${bg.backgroundPosition}`,
+      `background-repeat:${bg.backgroundRepeat}`,
+      `background-attachment:${bg.backgroundAttachment}`,
+    );
+  }
+  return `:root{${vars}}\nbody{margin:0;min-height:100vh;color:${c.vars['fg-0']};${bgDecl.join(';')}}`;
 }
 
 /** Clasa CSS pentru stratul decorativ animat (gol = fără animație). */
