@@ -332,3 +332,17 @@ normaliser, secretele niciodată în chat/repo.
 > (pasii Andrei: Meta Business verification ~saptamani, tokenuri in Secret Manager).
 > Rules: campaigns + metrics admin-only; deleteLead curata si campaniile clientului.
 > Verificat: build + 6 suites + prerender + boot-smoke verzi. DEPLOYED: hosting + rules.
+
+**2026-06-13 - Task Completed — AI Optimization Engine (analiza AI per campanie, spec 5.5)**
+> Model: Claude Fable 5
+> Inchide bucla analytics+AI: AI-ul citeste cifrele reale ale campaniei si recomanda actiuni.
+> Changes: callable aiAnalyzeCampaign (admin-only, quota aiUsage partajata, citeste campania +
+> ultimele 60 zile de metrici SERVER-side, refuza daca spend=0, model claude-opus-4-8 adaptive +
+> INSIGHT_SCHEMA structurat {verdict scale|maintain|pause|test, headline, reasoning, actions},
+> prompt cu KPI cumulat + trend zilnic + reguli de bun-simt media-buying) → scrie campaign.aiInsight;
+> coerceToInsight + 4 checks in test-analytics; UI in CampaignDetail: buton "Analiza AI" + card cu
+> verdict colorat (verde/albastru/rosu/amber), headline, rationament, actiuni, data; insight-ul
+> persista pe campanie si reapare via onSnapshot. Mapare erori: failed-precondition->nu sunt date,
+> not-found/internal->neactivat.
+> Verificat: build + 6 suites + prerender + boot-smoke + functions load verzi.
+> DEPLOYED: functions (aiAnalyzeCampaign creat) + hosting.

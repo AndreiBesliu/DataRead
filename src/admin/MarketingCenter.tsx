@@ -13,7 +13,8 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -22,15 +23,21 @@ import {
   addTotals,
   coerceToCampaign,
   coerceToDailyMetric,
+  coerceToInsight,
   emptyTotals,
   kpisFromTotals,
   sumMetrics,
+  type AiInsight,
   type CampaignDef,
   type CampaignStatus,
   type DailyMetric,
   type Kpis,
   type Platform,
+  type Verdict,
 } from '../analytics/kpi';
+
+const VERDICT_KEY: Record<Verdict, string> = { scale: 'admin.verdictScale', maintain: 'admin.verdictMaintain', pause: 'admin.verdictPause', test: 'admin.verdictTest' };
+const VERDICT_COLOR: Record<Verdict, string> = { scale: '#1e7e34', maintain: '#2563eb', pause: '#c0392b', test: '#b07b1e' };
 
 const PLATFORM_KEY: Record<Platform, string> = { meta: 'admin.platMeta', google: 'admin.platGoogle', tiktok: 'admin.platTiktok', other: 'admin.platOther' };
 const PLATFORM_SHORT: Record<Platform, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
@@ -57,6 +64,8 @@ interface CampaignRow {
   clientName: string;
   data: CampaignDef;
   createdAt: unknown;
+  insight: AiInsight | null;
+  insightAt: unknown;
 }
 
 /** Sparkline SVG pur (determinist) — seria zilnică de cheltuială. */
@@ -102,13 +111,34 @@ function KpiCards({ kpis }: { kpis: Kpis }) {
 
 const inp: CSSProperties = { width: '100%', padding: '7px 9px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, background: 'var(--bg-1)' };
 
-/** Editorul de metrici al unei campanii — intrare manuală pe zi (upsert pe dată), KPI live + CSV. */
-function CampaignDetail({ campaignId, currency }: { campaignId: string; currency: string }) {
-  void currency;
+/** Editorul de metrici al unei campanii — intrare manuală pe zi (upsert pe dată), KPI live, CSV
+ *  + AI Optimization Engine (recomandare scale/maintain/pause/test pe baza cifrelor reale). */
+function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string; currency: string; insight: AiInsight | null; insightAt: unknown }) {
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<DailyMetric[] | null>(null);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), spend: '', impressions: '', clicks: '', leads: '', revenue: '' });
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState<string | null>(null);
+
+  const analyze = async () => {
+    setAiBusy(true);
+    setAiErr(null);
+    try {
+      const fn = httpsCallable<{ campaignId: string }, { insight?: AiInsight }>(functions, 'aiAnalyzeCampaign');
+      await fn({ campaignId });
+      // Documentul campaniei e actualizat de functions → onSnapshot din părinte aduce insight-ul nou.
+    } catch (e) {
+      const code = String((e as { code?: string }).code ?? '');
+      setAiErr(
+        code.endsWith('failed-precondition') ? 'admin.aiNoData'
+          : code.endsWith('not-found') || code.endsWith('internal') ? 'admin.aiNotReady'
+          : 'admin.aiAnalyzeError'
+      );
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -192,6 +222,28 @@ function CampaignDetail({ campaignId, currency }: { campaignId: string; currency
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 14 }}>
       <KpiCards kpis={kpis} />
+
+      {/* AI Optimization Engine: buton + cardul recomandării. */}
+      <div>
+        <button className="btn btn-primary" style={{ padding: '7px 16px', fontSize: 13 }} disabled={aiBusy} onClick={() => void analyze()}>
+          {aiBusy ? t('admin.aiAnalyzeBusy') : t('admin.aiAnalyze')}
+        </button>
+        {aiErr && <span role="alert" style={{ marginLeft: 10, fontSize: 12, color: '#c0392b' }}>{t(aiErr)}</span>}
+      </div>
+      {insight && (
+        <div style={{ border: `1px solid ${VERDICT_COLOR[insight.verdict]}`, borderLeft: `4px solid ${VERDICT_COLOR[insight.verdict]}`, borderRadius: 8, padding: '12px 14px', background: 'var(--bg-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <span style={{ background: VERDICT_COLOR[insight.verdict], color: '#fff', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, borderRadius: 5, padding: '2px 10px' }}>
+              {t(VERDICT_KEY[insight.verdict])}
+            </span>
+            <strong style={{ fontSize: 14 }}>{insight.headline}</strong>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.aiInsightAt')} {fmtTs(insightAt)}</span>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 8px', whiteSpace: 'pre-wrap' }}>{insight.reasoning}</p>
+          <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{insight.actions}</div>
+        </div>
+      )}
+
       {metrics && metrics.length >= 2 && (
         <div>
           <div style={{ fontSize: 11, color: 'var(--fg-1)', marginBottom: 2 }}>{t('admin.kpiSpend')} / {t('admin.metricDate').toLowerCase()}</div>
@@ -282,7 +334,7 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
         snap.forEach((d) => {
           const raw = d.data();
           const data = coerceToCampaign(raw);
-          if (data) out.push({ id: d.id, leadId: typeof raw.leadId === 'string' ? raw.leadId : '', clientName: typeof raw.clientName === 'string' ? raw.clientName : '', data, createdAt: raw.createdAt });
+          if (data) out.push({ id: d.id, leadId: typeof raw.leadId === 'string' ? raw.leadId : '', clientName: typeof raw.clientName === 'string' ? raw.clientName : '', data, createdAt: raw.createdAt, insight: coerceToInsight(raw.aiInsight), insightAt: raw.aiInsightAt });
         });
         setCampaigns(out);
       },
@@ -462,7 +514,7 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
                     {openId === c.id && (
                       <tr>
                         <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={8}>
-                          <CampaignDetail campaignId={c.id} currency={c.data.currency} />
+                          <CampaignDetail campaignId={c.id} currency={c.data.currency} insight={c.insight} insightAt={c.insightAt} />
                           <div style={{ marginTop: 12, textAlign: 'right' }}>
                             <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void deleteCampaign(c.id)}>{t('admin.campDelete')}</button>
                           </div>

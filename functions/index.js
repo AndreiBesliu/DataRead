@@ -269,7 +269,136 @@ async function consumeAiQuota(uid) {
   });
 }
 
+// ── AI Optimization Engine (spec 5.5): analizează performanța unei campanii și recomandă ──
+const INSIGHT_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: ['scale', 'maintain', 'pause', 'test'], description: 'Recomandarea principală: scale (scalează), maintain (menține), pause (oprește), test (testează variante).' },
+    headline: { type: 'string', description: 'O propoziție scurtă în română cu concluzia.' },
+    reasoning: { type: 'string', description: '2-4 fraze în română care justifică verdictul pe baza cifrelor concrete (ROAS, CPL, CTR).' },
+    actions: { type: 'string', description: '3-5 acțiuni concrete în română, câte una pe linie, numerotate.' },
+  },
+  required: ['verdict', 'headline', 'reasoning', 'actions'],
+  additionalProperties: false,
+};
+
+const r2 = (n) => (n === null ? '—' : Math.round(n * 100) / 100);
+
+function buildInsightPrompt(lead, camp, metrics) {
+  const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
+  for (const m of metrics) {
+    t.spend += Number(m.spend) || 0;
+    t.impressions += Number(m.impressions) || 0;
+    t.clicks += Number(m.clicks) || 0;
+    t.leads += Number(m.leads) || 0;
+    t.revenue += Number(m.revenue) || 0;
+  }
+  const div = (a, b) => (b > 0 ? a / b : null);
+  const kpi = [
+    `Cheltuit total: ${r2(t.spend)} €`,
+    `Venit atribuit: ${r2(t.revenue)} €`,
+    `ROAS: ${r2(div(t.revenue, t.spend))}`,
+    `Lead-uri/conversii: ${t.leads}`,
+    `CPL: ${r2(div(t.spend, t.leads))} €`,
+    `CTR: ${div(t.clicks, t.impressions) === null ? '—' : r2(div(t.clicks, t.impressions) * 100) + '%'}`,
+    `CPC: ${r2(div(t.spend, t.clicks))} €`,
+    `Rata de conversie: ${div(t.leads, t.clicks) === null ? '—' : r2(div(t.leads, t.clicks) * 100) + '%'}`,
+  ].join('\n');
+  // Ultimele ~14 zile, cronologic, pentru trend.
+  const recent = metrics.slice(-14).map((m) => `${m.date}: spend ${r2(Number(m.spend) || 0)}€, leads ${m.leads || 0}, venit ${r2(Number(m.revenue) || 0)}€`).join('\n');
+  return [
+    'Analizează performanța campaniei de marketing de mai jos și dă o recomandare de optimizare.',
+    '',
+    leadContextBlock(lead),
+    '',
+    '== CAMPANIA ==',
+    `Nume: ${camp.name || '-'}`,
+    `Platformă: ${camp.platform || '-'}`,
+    `Status: ${camp.status || '-'}`,
+    '',
+    '== KPI (cumulat) ==',
+    kpi,
+    '',
+    '== EVOLUȚIE ZILNICĂ (recent) ==',
+    recent || '(fără zile introduse)',
+    '',
+    'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test), explică-l raportându-te',
+    'la ROAS/CPL/CTR și la trend, și dă acțiuni concrete. Reguli generale de bun-simț: ROAS sub 1',
+    '= se pierde bani (pauză sau test); ROAS sănătos și stabil = scalează gradual; CTR mic = problemă',
+    'de creativ/audiență; CPL în creștere = oboseală de reclamă. Totul în limba ROMÂNĂ.',
+  ].join('\n');
+}
+
 if (AI_ENABLED) {
+  exports.aiAnalyzeCampaign = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot analiza campanii.');
+      const { campaignId } = request.data || {};
+      if (typeof campaignId !== 'string' || !campaignId) throw new HttpsError('invalid-argument', 'campaignId e obligatoriu.');
+
+      const db = admin.firestore();
+      const campRef = db.collection('campaigns').doc(campaignId);
+      const campSnap = await campRef.get();
+      if (!campSnap.exists) throw new HttpsError('not-found', 'Campania nu există.');
+      const camp = campSnap.data() || {};
+      const totals = camp.totals || {};
+      if (!(Number(totals.spend) > 0)) {
+        throw new HttpsError('failed-precondition', 'Adaugă întâi date de cheltuială ca să poată fi analizată campania.');
+      }
+
+      await consumeAiQuota(request.auth.uid);
+
+      const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
+      const metrics = metricsSnap.docs.map((d) => d.data());
+      const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
+
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+
+      let response;
+      try {
+        response = await client.messages.create({
+          model: AI_MODEL,
+          max_tokens: 8000,
+          thinking: { type: 'adaptive' },
+          system:
+            'Ești analistul de performanță și strategul de media-buying al agenției DataRead. Judeci ' +
+            'campaniile pe cifre (ROAS, CPL, CTR), nu pe impresii, și dai recomandări acționabile.',
+          output_config: { format: { type: 'json_schema', schema: INSIGHT_SCHEMA } },
+          messages: [{ role: 'user', content: buildInsightPrompt(leadSnap && leadSnap.exists ? leadSnap.data() : {}, camp, metrics) }],
+        });
+      } catch (err) {
+        logger.error('anthropic analyze failed', { err: String(err) });
+        throw new HttpsError('internal', 'Analiza AI a eșuat. Reîncearcă în câteva momente.');
+      }
+
+      if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat analiza.');
+      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+      let out;
+      try {
+        out = JSON.parse(text);
+      } catch (err) {
+        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
+      }
+
+      const insight = {
+        verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
+        headline: String(out.headline || '').slice(0, 4000),
+        reasoning: String(out.reasoning || '').slice(0, 4000),
+        actions: String(out.actions || '').slice(0, 4000),
+      };
+      await campRef.set(
+        { aiInsight: insight, aiInsightAt: admin.firestore.FieldValue.serverTimestamp(), aiInsightBy: request.auth.uid },
+        { merge: true }
+      );
+
+      logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: request.auth.uid, usage: response.usage });
+      return { insight };
+    }
+  );
+
   exports.aiGenerateCampaign = onCall(
     { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
     async (request) => {

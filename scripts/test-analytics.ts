@@ -5,6 +5,7 @@ import {
   kpisFromTotals,
   coerceToCampaign,
   coerceToDailyMetric,
+  coerceToInsight,
   coerceToTotals,
   emptyTotals,
   type DailyMetric,
@@ -104,6 +105,18 @@ check('emptyTotals e zero', JSON.stringify(emptyTotals()) === JSON.stringify({ s
 check('campanie: totals coerce-uit din doc', (() => {
   const c = coerceToCampaign({ name: 'X', totals: { spend: 120, leads: 4 } });
   return c?.totals.spend === 120 && c.totals.leads === 4 && c.totals.revenue === 0;
+})());
+
+// AI insight coerce.
+check('insight: null → null', coerceToInsight(null) === null);
+check('insight: verdict invalid → null', coerceToInsight({ verdict: 'explode', headline: 'x' }) === null);
+check('insight: valid trece', (() => {
+  const i = coerceToInsight({ verdict: 'scale', headline: 'Merge bine', reasoning: 'ROAS 3.5', actions: '1. crește bugetul' });
+  return i?.verdict === 'scale' && i.headline === 'Merge bine' && i.actions.startsWith('1.');
+})());
+check('insight: câmpuri lipsă → string gol, nu crash', (() => {
+  const i = coerceToInsight({ verdict: 'pause' });
+  return i?.verdict === 'pause' && i.headline === '' && i.reasoning === '';
 })());
 
 if (failures) {

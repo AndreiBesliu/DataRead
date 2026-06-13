@@ -130,6 +130,25 @@ export function computeKpis(metrics: DailyMetric[]): Kpis {
   return kpisFromTotals(sumMetrics(metrics));
 }
 
+// ── AI Optimization Engine (spec 5.5): recomandarea AI pe baza performanței campaniei ──
+export const VERDICTS = ['scale', 'maintain', 'pause', 'test'] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+export interface AiInsight {
+  verdict: Verdict;
+  headline: string;
+  reasoning: string;
+  actions: string;
+}
+
+export function coerceToInsight(v: unknown): AiInsight | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  if (!VERDICTS.includes(d.verdict as Verdict)) return null;
+  const s = (x: unknown) => (typeof x === 'string' ? x.slice(0, 4000) : '');
+  return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions: s(d.actions) };
+}
+
 export function coerceToTotals(v: unknown): Totals {
   const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
   return { spend: num(d.spend), impressions: num(d.impressions), clicks: num(d.clicks), leads: num(d.leads), revenue: num(d.revenue) };
