@@ -182,7 +182,7 @@ exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/
 // ACTIVARE (după ce Andrei rotește cheia): 1) `firebase functions:secrets:set ANTHROPIC_API_KEY`
 // 2) AI_ENABLED = true mai jos  3) `npm run deploy:functions`. Cu AI_ENABLED=false, callable-ul
 // nu e exportat, deci deploy-ul nu cere secretul.
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
 const AI_ENABLED = true; // activat 12.06.2026 — ANTHROPIC_API_KEY e în Secret Manager (v1)
@@ -775,3 +775,160 @@ if (AI_ENABLED) {
     }
   );
 }
+
+// ───────── [4] Landing Pages — servire publică + monitorizare trafic ─────────
+// serveLp (HTTP, legat prin rewrite-ul Hosting /p/** → această funcție) e „nexus-ul de trafic și
+// date": rezolvă slug → LP publicat, LOGHEAZĂ fiecare vizită server-side (rollup zilnic + doc brut),
+// randează pagina SSR (SEO din doc + design injectat ca variabile CSS + CSP). NU se cache-uiește
+// (no-store) ca fiecare hit să se logheze. Ramurile /p/_track și /p/_submit se adaugă în P5.
+
+const LP_SOURCE_WHITELIST = ['google', 'meta', 'facebook', 'instagram', 'tiktok', 'youtube', 'email', 'bing', 'linkedin', 'twitter', 'x', 'direct', 'referral', 'organic'];
+const LP_CSP =
+  "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; " +
+  "font-src https: data:; frame-src https:; media-src https:; connect-src 'self'; form-action 'self'; " +
+  "frame-ancestors 'none'; base-uri 'none'";
+const LP_HEX = /^#[0-9a-fA-F]{6}$/;
+const LP_SAFE_IMG = /^https:\/\/[^\s"')]+$/i;
+
+function lpBucket(key) {
+  const k = (typeof key === 'string' ? key : '').toLowerCase().slice(0, 60);
+  if (!k) return 'other';
+  return LP_SOURCE_WHITELIST.includes(k) ? k : 'other';
+}
+
+function lpDevice(ua) {
+  const s = (ua || '').toLowerCase();
+  if (/bot|crawl|spider|slurp|bingpreview|facebookexternalhit|headless/.test(s)) return 'bot';
+  if (/ipad|tablet|playbook|silk/.test(s)) return 'tablet';
+  if (/mobi|android|iphone|ipod|phone/.test(s)) return 'mobile';
+  return 'desktop';
+}
+
+function lpEscape(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Port JS al customThemeCss (src/theme/themes.ts) — defensiv (orice valoare invalidă → fallback).
+function lpThemeCss(design) {
+  const d = design && typeof design === 'object' ? design : {};
+  const rv = d.vars && typeof d.vars === 'object' ? d.vars : {};
+  const fb = { 'bg-0': '#0a0f1e', 'bg-1': '#121a30', 'fg-0': '#e8eefc', 'fg-1': '#8a9ac0', border: '#243154', accent: '#38bdf8', 'accent-dark': '#0ea5e9', 'accent-contrast': '#03121f' };
+  const v = {};
+  for (const k of Object.keys(fb)) v[k] = typeof rv[k] === 'string' && LP_HEX.test(rv[k]) ? rv[k] : fb[k];
+  const digital = d.digital === true;
+  const bgImage = typeof d.bgImage === 'string' && LP_SAFE_IMG.test(d.bgImage) ? d.bgImage : '';
+  const images = [], sizes = [], positions = [], repeats = [], attachments = [];
+  if (digital) {
+    images.push(`radial-gradient(${v.border} 1px, transparent 1px)`);
+    sizes.push('24px 24px'); positions.push('0 0'); repeats.push('repeat'); attachments.push('scroll');
+  }
+  if (bgImage) {
+    const n = parseInt(v['bg-0'].slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    images.push(`linear-gradient(rgba(${r},${g},${b},0.80), rgba(${r},${g},${b},0.52))`);
+    sizes.push('auto'); positions.push('0 0'); repeats.push('repeat'); attachments.push('fixed');
+    images.push(`url("${bgImage}")`);
+    sizes.push('cover'); positions.push('center'); repeats.push('no-repeat'); attachments.push('fixed');
+  }
+  const varStr = Object.keys(v).map((k) => `--${k}:${v[k]}`).join(';');
+  let bg = `background-color:${v['bg-0']}`;
+  if (images.length) {
+    bg += `;background-image:${images.join(', ')};background-size:${sizes.join(', ')};background-position:${positions.join(', ')};background-repeat:${repeats.join(', ')};background-attachment:${attachments.join(', ')}`;
+  }
+  return `:root{${varStr}}body{margin:0;min-height:100vh;color:${v['fg-0']};${bg}}`;
+}
+
+function lpNotFound() {
+  return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Pagină negăsită</title><style>body{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e8eefc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center}h1{font-size:64px;margin:0}</style></head><body><div><h1>404</h1><p>Pagina nu există sau nu este publicată.</p></div></body></html>';
+}
+
+async function logLpVisit(db, slug, req) {
+  const q = req.query || {};
+  const source = lpBucket(q.utm_source);
+  const ref = (req.headers['referer'] || req.headers['referrer'] || '').toString();
+  let refHost = ref ? 'other' : 'direct';
+  try {
+    if (ref) refHost = lpBucket(new URL(ref).hostname.replace(/^www\./, ''));
+  } catch (e) { /* referer invalid */ }
+  const ua = (req.headers['user-agent'] || '').toString().slice(0, 300);
+  const device = lpDevice(ua);
+  const country = (req.headers['x-country-code'] || req.headers['x-appengine-country'] || 'XX').toString().slice(0, 4).toUpperCase();
+  const day = new Date().toISOString().slice(0, 10);
+  const inc = admin.firestore.FieldValue.increment(1);
+  const base = db.collection('landingPages').doc(slug);
+  // Rollup zilnic (awaited — agregatul nu se pierde). set+merge cu obiecte imbricate = increment sigur.
+  await base.collection('stats').doc(day).set(
+    {
+      schema: 1, date: day, visits: inc,
+      byDevice: { [device]: inc },
+      bySource: { [source]: inc },
+      byReferrerHost: { [refHost]: inc },
+      byCountry: { [country]: inc },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  // Vizita brută (fire-and-forget).
+  base.collection('visits').add({
+    schema: 1,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+    referrer: ref.slice(0, 300),
+    utm: {
+      source: String(q.utm_source || '').slice(0, 200),
+      medium: String(q.utm_medium || '').slice(0, 200),
+      campaign: String(q.utm_campaign || '').slice(0, 200),
+    },
+    ua, device, country,
+  }).catch(() => {});
+}
+
+function composeLpPage(slug, lp, req) {
+  const lang = lp.lang === 'en' ? 'en' : 'ro';
+  const title = lpEscape((lp.title || '').slice(0, 140) || slug);
+  const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'dataread-e1bd6.web.app').toString();
+  const canonical = `https://${host}/p/${slug}`;
+  const css = lpThemeCss(lp.design);
+  const body = typeof lp.html === 'string' ? lp.html : '';
+  return (
+    `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">` +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    `<title>${title}</title>` +
+    (desc ? `<meta name="description" content="${desc}">` : '') +
+    `<link rel="canonical" href="${canonical}">` +
+    '<meta property="og:type" content="website">' +
+    `<meta property="og:title" content="${title}">` +
+    (desc ? `<meta property="og:description" content="${desc}">` : '') +
+    `<meta property="og:url" content="${canonical}">` +
+    `<style>${css}</style></head><body>${body}</body></html>`
+  );
+}
+
+exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public' }, async (req, res) => {
+  try {
+    const match = (req.path || '').match(/^\/p\/([^/]+)\/?$/);
+    const slug = match ? decodeURIComponent(match[1]).toLowerCase() : '';
+    // _track/_submit (P5) și slug-urile invalide → 404 deocamdată.
+    if (!slug || slug === '_track' || slug === '_submit' || !/^[a-z0-9-]+$/.test(slug)) {
+      res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
+      return;
+    }
+    const db = admin.firestore();
+    const snap = await db.collection('landingPages').doc(slug).get();
+    const lp = snap.exists ? snap.data() : null;
+    if (!lp || lp.status !== 'published') {
+      res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
+      return;
+    }
+    await logLpVisit(db, slug, req).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
+    res
+      .status(200)
+      .set('Content-Type', 'text/html; charset=utf-8')
+      .set('Cache-Control', 'no-store')
+      .set('Content-Security-Policy', LP_CSP)
+      .send(composeLpPage(slug, lp, req));
+  } catch (err) {
+    logger.error('serveLp failed', { err: String(err) });
+    res.status(500).set('Content-Type', 'text/html; charset=utf-8').send(lpNotFound());
+  }
+});

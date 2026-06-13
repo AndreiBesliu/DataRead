@@ -21,6 +21,14 @@
     ],
     "rewrites": [
       {
+        "source": "/p/**",
+        "function": {
+          "functionId": "serveLp",
+          "region": "europe-central2",
+          "pinTag": true
+        }
+      },
+      {
         "source": "**",
         "destination": "/app.html"
       }

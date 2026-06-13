@@ -476,6 +476,25 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: functions load + build + 8/8 suites + prerender + boot-smoke verzi.
 > DEPLOYED: functions (aiGenerateLandingPage + aiEditLandingPage create la europe-central2) + hosting.
 
+**2026-06-13 - Task Completed — LP P4: serveLp (servire publică + SSR SEO + logging trafic)**
+> Model: Claude Fable 5
+> Changes: functions/index.js secțiunea [4] — serveLp (onRequest, europe-central2, mereu activă, NU
+> în blocul AI): rezolvă /p/{slug} → LP publicat (404 brand-uit + X-Robots-Tag noindex dacă lipsește/
+> draft); LOGHEAZĂ vizita server-side — rollup zilnic stats/{YYYY-MM-DD} (visits/byDevice/bySource/
+> byReferrerHost/byCountry prin FieldValue.increment cu set+merge pe obiecte imbricate, AWAITED) +
+> doc brut visits/{auto} (fire-and-forget). Compune pagina SSR: <head> cu title/description/canonical/
+> og din doc (SEO real), CSS-ul design-ului injectat (lpThemeCss = port JS al customThemeCss),
+> Cache-Control no-store (ca fiecare hit să se logheze), CSP restrictivă (default-src none; script-src
+> doar inline; connect/form doar self; frame-src/img/media/font https — containment XSS pt operatori).
+> Helperi: lpBucket (whitelist surse/referrers → 'other', anti-bloat), lpDevice (UA→mobile/desktop/
+> tablet/bot), lpEscape. firebase.json: rewrite /p/** → serveLp (gen-2, europe-central2, pinTag)
+> ÎNAINTE de catch-all-ul ** → /app.html.
+> Verificat: functions load + build + prerender + boot-smoke verzi; LIVE: https://dataread-e1bd6.web.app/p/
+> {slug-inexistent} → 404 serveLp (rewrite + funcția + citirea Firestore execută corect). DEPLOYED:
+> functions:serveLp (creată) + hosting. (Randarea unei pagini PUBLICATE + incrementul de vizite se
+> confirmă la prima LP creată din /admin; compunerea CSS = identică cu cea verificată vizual în P2.)
+> NOTĂ: /p/_track și /p/_submit (beacon + formular) vin în P5.
+
 ### Backlog (adaugat 2026-06-13)
 - [ ] Sistem Landing Pages (conținut per client) — va alimenta și customizarea temelor admin
 - [x] Creator de teme admin extins (culori/background/animații; fără layout) ✅ 2026-06-13
