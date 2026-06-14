@@ -245,7 +245,8 @@ export function customThemeCss(c: CustomTheme): string {
   const bf = fontById(c.bodyFont || '');
   const imports = [hf, bf].filter((f) => f.q).filter((f, i, a) => a.findIndex((x) => x.q === f.q) === i)
     .map((f) => `@import url('https://fonts.googleapis.com/css2?family=${f.q}&display=swap');`).join('');
-  const bodyFam = c.bodyFont ? `font-family:${bf.stack};` : '';
+  // Mereu setăm un font sans pe body (implicit System) — altfel paginile cad pe serif-ul UA.
+  const bodyFam = `font-family:${bf.stack};`;
   const headRule = c.headingFont ? `\nh1,h2,h3,h4,h5,h6{font-family:${hf.stack}}` : '';
   // position:relative;z-index:0 → stacking context, ca decorul de fundal (canvas z-index:-1) să stea
   // în spatele conținutului, dar peste fundalul body-ului (fără a împacheta children-ii).

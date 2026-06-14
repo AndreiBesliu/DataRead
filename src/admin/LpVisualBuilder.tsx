@@ -178,6 +178,12 @@ export default function LpVisualBuilder({
               <div key={f.k}>{renderField(f, selected.props, (patch) => setProps(selected.id, { ...selected.props, ...patch }))}</div>
             ))
           )}
+          {selected.type !== 'decor' ? (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>{t('admin.lpStudio.blockBgDecor')}</div>
+              <LpDecorControls value={coerceToLpDecor((selected.props as Record<string, unknown>).bgDecor)} onChange={(bgDecor) => setProps(selected.id, { ...selected.props, bgDecor })} />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

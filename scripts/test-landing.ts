@@ -174,6 +174,30 @@ check('compileDecor: custom cu elemente → divuri poziționate + keyframes', ((
   const h = compileDecor(coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'star', x: 20, y: 30, anim: 'float' }] }), 'c', 'page');
   return h.includes('left:20%') && h.includes('lpf-float') && h.includes('@keyframes lpf-float') && h.includes('clip-path');
 })());
+check('compileBlocks: bgDecor pe orice bloc → învelit cu canvas în spate + conținut z-index 1', (() => {
+  const h = compileBlocks([{ id: '1', type: 'text', props: { text: 'Salut', bgDecor: { effect: 'dots' } } }], { form });
+  return h.includes('<canvas') && h.includes('z-index:1') && h.includes('Salut');
+})());
+check('compileBlocks: bgDecor none → fără înveliș (neschimbat)', (() => {
+  const plain = compileBlocks([{ id: '1', type: 'text', props: { text: 'Salut' } }], { form });
+  return !plain.includes('<canvas') && plain.includes('Salut');
+})());
+check('compileBlocks: blocul decor NU primește bgDecor dublu', (() => {
+  const h = compileBlocks([{ id: '1', type: 'decor', props: { decor: { effect: 'grid' }, bgDecor: { effect: 'dots' } } }], { form });
+  return (h.match(/<canvas/g) || []).length === 1;
+})());
+check('compileBlocks: bgDecor custom cu elemente goale → fără înveliș', (() => {
+  const h = compileBlocks([{ id: '9', type: 'hero', props: { heading: 'Salut', bgDecor: { effect: 'custom', elements: [] } } }], { form });
+  return !h.includes('lpd-') && h.includes('Salut');
+})());
+check('compileBlocks: bgDecor păstrează data-cta (beacon-ul de CTA funcționează)', (() => {
+  const h = compileBlocks([{ id: '1', type: 'hero', props: { heading: 'H', ctaText: 'Click', ctaHref: '#', bgDecor: { effect: 'dots' } } }], { form });
+  return h.includes('data-cta') && h.includes('<canvas');
+})());
+check('compileBlocks: bgDecor păstrează formularul (data-lp-form)', (() => {
+  const h = compileBlocks([{ id: '1', type: 'form', props: { bgDecor: { effect: 'grid' } } }], { form });
+  return h.includes('data-lp-form') && h.includes('<canvas');
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);

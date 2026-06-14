@@ -60,7 +60,12 @@ export function coerceToLpBlock(raw: unknown, index = 0): LpBlock | null {
   const b = raw as Record<string, unknown>;
   if (!LP_BLOCK_TYPES.includes(b.type as LpBlockType)) return null;
   const type = b.type as LpBlockType;
-  const props = b.props && typeof b.props === 'object' ? (b.props as Record<string, unknown>) : {};
+  const rawProps = b.props && typeof b.props === 'object' ? (b.props as Record<string, unknown>) : {};
+  // Normaliser unic pe TOATE căile de încărcare (regula CLAUDE.md): decorul din props (fundal de bloc
+  // sau decorul blocului 'decor') e hardening-uit la load, nu doar la compile.
+  const props: Record<string, unknown> = { ...rawProps };
+  if ('bgDecor' in props) props.bgDecor = coerceToLpDecor(props.bgDecor);
+  if (type === 'decor' && 'decor' in props) props.decor = coerceToLpDecor(props.decor);
   const id = typeof b.id === 'string' && b.id ? b.id.slice(0, 40) : `b${index}`;
   return { id, type, props };
 }
@@ -160,7 +165,19 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
   }
 }
 
-/** Blocuri → pagina HTML self-contained (corpul). PURĂ. */
+/** Blocuri → pagina HTML self-contained (corpul). PURĂ. Orice bloc (mai puțin blocul 'decor', care
+ *  își are propriul decor) poate avea un fundal decorativ în `props.bgDecor` — îl învelim cu un
+ *  strat de decor în spate (z-index 0) și conținutul deasupra (z-index 1). */
 export function compileBlocks(blocks: LpBlock[], ctx: { form: LpFormConfig }): string {
-  return (Array.isArray(blocks) ? blocks : []).map((b) => compileBlock(b, ctx)).join('\n');
+  return (Array.isArray(blocks) ? blocks : [])
+    .map((b) => {
+      const inner = compileBlock(b, ctx);
+      if (!inner || b.type === 'decor') return inner;
+      const decor = coerceToLpDecor((b.props || {}).bgDecor);
+      if (decor.effect === 'none') return inner;
+      const decorHtml = compileDecor(decor, `bg-${b.id}`, 'block');
+      if (!decorHtml) return inner;
+      return `<div style="position:relative;overflow:hidden">${decorHtml}<div style="position:relative;z-index:1">${inner}</div></div>`;
+    })
+    .join('\n');
 }

@@ -854,7 +854,8 @@ function lpThemeCss(design) {
   if (hf) fams.push(hf.q);
   if (bf && (!hf || bf.q !== hf.q)) fams.push(bf.q);
   const imports = fams.map((q) => `@import url('https://fonts.googleapis.com/css2?family=${q}&display=swap');`).join('');
-  const bodyFam = bf ? `font-family:${bf.stack};` : '';
+  const SYS_STACK = 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+  const bodyFam = `font-family:${bf ? bf.stack : SYS_STACK};`;
   const headRule = hf ? `h1,h2,h3,h4,h5,h6{font-family:${hf.stack}}` : '';
   return `${imports}:root{${varStr}}body{margin:0;min-height:100vh;position:relative;z-index:0;color:${v['fg-0']};${bodyFam}${bg}}${headRule}`;
 }

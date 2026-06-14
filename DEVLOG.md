@@ -590,6 +590,25 @@ normaliser, secretele niciodată în chat/repo.
 > NOTĂ: sistemul de design e acum complet — culori, fundal, fonturi, animații, decor (parametric +
 > plasare liberă).
 
+**2026-06-14 - Task Completed — decor pe orice bloc + font default + hardening (review ultracode)**
+> Model: Claude Fable 5
+> Andrei: decor pe ORICE bloc, nu doar bloc dedicat / fundal pagină. Changes: lpBlocks.compileBlocks
+> învelește orice bloc (≠ 'decor') cu `props.bgDecor` real → strat de decor în spate (z-index 0) +
+> conținut deasupra (z-index 1); blocurile fără bgDecor rămân neschimbate. LpVisualBuilder: panou
+> „Fundal decorativ (bloc)" (LpDecorControls pe props.bgDecor) la fiecare bloc non-decor. Fix prins
+> vizual: paginile LP cădeau pe serif-ul UA — acum body are mereu un sans (implicit System) în
+> customThemeCss + lpThemeCss. i18n blockBgDecor (ro+en).
+> **Review adversarial (Workflow ultracode, 10 agenți, 6 dimensiuni + verificare + critic):** 0 buguri
+> confirmate pe corectitudine (invariantele țin: blocuri ne-decorate neschimbate, fără decor dublu,
+> data-cta/data-lp-form supraviețuiesc învelirii, canvasul fix de pagină z-index:-1 nu e ocluzat).
+> Criticul de completitudine a semnalat riscuri de SCALĂ → reparate înainte de ship: (1) gardă de
+> mărime la salvare — refuz cu mesaj clar în loc de truncare tăcută a html-ului peste 200KB;
+> (2) bgDecor/decor trec acum prin coerceToLpDecor la LOAD în coerceToLpBlock (regula single-coerce);
+> (3) motorul de decor pune rAF pe pauză când e offscreen (IntersectionObserver) — fără zeci de bucle
+> rAF simultane pe pagini lungi; (4) teste noi (custom gol → fără înveliș; data-cta + data-lp-form).
+> Verificat: build + 8/8 suites (8 checks noi) + prerender + boot-smoke; randare vizuală fără page
+> errors (decor în spatele conținutului lizibil, heading sans). DEPLOYED: serveLp + hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

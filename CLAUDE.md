@@ -96,7 +96,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   fonturi Google + System); aplicate pe paginile LP de `customThemeCss`/`lpThemeCss` (`@import` +
   font-family pe body/h1-h6). În `ThemeControls` doar cu prop `withFonts` (LP design = da; tema admin
   = nu, inline-style nu poate @import). Sistemul de design e complet: culori/fundal/fonturi/animații/
-  decor (parametric + plasare liberă).
+  decor (parametric + plasare liberă). **Decor pe orice bloc:** `props.bgDecor` pe orice bloc (≠
+  'decor') e învelit de `compileBlocks` ca fundal (decor z-index 0 + conținut z-index 1); decorul din
+  props (bgDecor + decor) e coerce-uit la LOAD în `coerceToLpBlock`. Gardă de mărime la salvarea LP
+  (refuz, nu truncare, peste 200KB). Motorul de decor pune rAF pe pauză offscreen (IntersectionObserver).
 - **Creator de teme personalizate (configurator extins):** opțiunea „Personalizată" + butonul
   „Editează tema" deschid `ThemeEditor` — se modifică DOAR design-ul (cele 8 culori, imagine de
   fundal prin URL https, animație de decor: aurora/puls/sclipire, grilă), NICIODATĂ layout/

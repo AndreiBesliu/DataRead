@@ -15,7 +15,7 @@ import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorControls from './LpDecorControls';
-import { sanitizeSlug, type LandingPage } from '../types/landingPage';
+import { LP_HTML_MAX, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import { compileBlocks } from '../types/lpBlocks';
 import { compileDecor } from '../types/lpDecor';
 
@@ -90,6 +90,12 @@ export default function LpEditor({
   async function save(nextStatus?: LandingPage['status']) {
     setErr('');
     const status = nextStatus ?? draft.status;
+    // Gardă de mărime: refuzăm salvarea în loc să trunchiem tăcut html-ul (truncare = pagină ruptă).
+    // Cu decor pe fiecare bloc, codul compilat poate crește; mai bine un mesaj clar decât o pagină stricată.
+    if (payload.html.length > LP_HTML_MAX) {
+      setErr(t('admin.lpStudio.errTooLarge', { max: Math.round(LP_HTML_MAX / 1000) }));
+      return;
+    }
     if (isNew) {
       if (!draft.slug) {
         setErr(t('admin.lpStudio.errNoSlug'));

@@ -147,7 +147,9 @@ function decorEngine(id: string, cfgJson: string): string {
     'if(eff==="constellation"){var D=120;for(i=0;i<P.length;i++){for(var j=i+1;j<P.length;j++){var a=P[i],b2=P[j],d2=(a.x-b2.x)*(a.x-b2.x)+(a.y-b2.y)*(a.y-b2.y);if(d2<D*D){ctx.globalAlpha=op*0.5*(1-Math.sqrt(d2)/D);ctx.beginPath();ctx.moveTo(a.x+ox,a.y+oy);ctx.lineTo(b2.x+ox,b2.y+oy);ctx.stroke();}}}if(mx>-9000){for(i=0;i<P.length;i++){var pp=P[i],dm=(pp.x-mx)*(pp.x-mx)+(pp.y-my)*(pp.y-my);if(dm<170*170){ctx.globalAlpha=op*0.6*(1-Math.sqrt(dm)/170);ctx.beginPath();ctx.moveTo(pp.x+ox,pp.y+oy);ctx.lineTo(mx,my);ctx.stroke();}}}}}' +
     'function step(){t+=16;if(eff==="rings"){for(i=0;i<P.length;i++){P[i].r+=0.5*sf+0.4;if(P[i].r>P[i].max)P[i].r=0;}return;}for(i=0;i<P.length;i++){var p=P[i];p.x+=p.vx;p.y+=p.vy;p.rot+=p.vr;if(eff==="bubbles"){if(p.y<-p.r-6){p.y=H+p.r+6;p.x=Math.random()*W;}}else{if(p.x<-12)p.x=W+12;if(p.x>W+12)p.x=-12;if(p.y<-12)p.y=H+12;if(p.y>H+12)p.y=-12;}if(C.interaction==="mouseReact"&&mx>-9000){var ddx=p.x-mx,ddy=p.y-my,dd=ddx*ddx+ddy*ddy;if(dd<120*120&&dd>0.5){var dist=Math.sqrt(dd),f=(1-dist/120)*2.4;p.x+=ddx/dist*f;p.y+=ddy/dist*f;}}}}' +
     'function loop(){step();draw();raf=window.requestAnimationFrame(loop);}' +
-    'if(reduce){draw();}else{loop();}' +
+    'function start(){if(reduce){draw();return;}if(!raf)loop();}function stop(){if(raf){cancelAnimationFrame(raf);raf=null;}}' +
+    // Rulează rAF DOAR cât timp decorul e pe ecran (multe blocuri cu decor → altfel multe bucle rAF simultane).
+    'if("IntersectionObserver" in window){var io=new IntersectionObserver(function(es){for(var q=0;q<es.length;q++){if(es[q].isIntersecting)start();else stop();}});io.observe(el);}else{start();}' +
     '})();'
   );
 }
