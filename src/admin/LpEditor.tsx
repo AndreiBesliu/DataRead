@@ -13,7 +13,9 @@ import ThemeControls from '../theme/ThemeControls';
 import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
+import LpVisualBuilder from './LpVisualBuilder';
 import { sanitizeSlug, type LandingPage } from '../types/landingPage';
+import { compileBlocks } from '../types/lpBlocks';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
@@ -49,11 +51,14 @@ export default function LpEditor({
   const isNew = docId === null;
   const slugTaken = isNew && !!draft.slug && existingSlugs.includes(draft.slug);
 
+  // În mod visual, corpul paginii = blocurile compilate; în cod = html-ul brut.
+  const effectiveHtml = (d: LandingPage) => (d.editor === 'visual' ? compileBlocks(d.blocks, { form: d.form }) : d.html);
+
   // Preview debounced (nu recompun iframe-ul la fiecare tastă).
   useEffect(() => {
-    const id = setTimeout(() => setPreviewDoc(composeDoc(draft)), 400);
+    const id = setTimeout(() => setPreviewDoc(composeDoc({ ...draft, html: effectiveHtml(draft) })), 400);
     return () => clearTimeout(id);
-  }, [draft.html, draft.design, draft.lang]);
+  }, [draft.html, draft.design, draft.lang, draft.editor, draft.blocks, draft.form]);
 
   const setHtml = (html: string) => setDraft((d) => ({ ...d, html }));
 
@@ -65,7 +70,9 @@ export default function LpEditor({
       seoDescription: draft.seoDescription.slice(0, 320),
       status: draft.status,
       lang: draft.lang,
-      html: draft.html,
+      editor: draft.editor,
+      blocks: draft.blocks,
+      html: effectiveHtml(draft), // mod visual → blocuri compilate; serveLp servește tot `html`
       design: draft.design,
       hasForm: draft.form.enabled,
       form: draft.form,
@@ -166,6 +173,23 @@ export default function LpEditor({
           <option value="ro">RO</option>
           <option value="en">EN</option>
         </select>
+        {isNew ? (
+          <select value={draft.editor} onChange={(e) => { setDraft((d) => ({ ...d, editor: e.target.value === 'visual' ? 'visual' : 'code' })); setTab('code'); }} style={field} title={t('admin.lpStudio.modeLabel')}>
+            <option value="code">{t('admin.lpStudio.modeCode')}</option>
+            <option value="visual">{t('admin.lpStudio.modeVisual')}</option>
+          </select>
+        ) : draft.editor === 'visual' ? (
+          <button
+            onClick={() => {
+              if (!window.confirm(t('admin.lpStudio.ejectConfirm'))) return;
+              setDraft((d) => ({ ...d, editor: 'code', html: compileBlocks(d.blocks, { form: d.form }) }));
+              setTab('code');
+            }}
+            style={btn}
+          >
+            {t('admin.lpStudio.ejectToCode')}
+          </button>
+        ) : null}
         <button onClick={() => save()} disabled={saveState === 'saving' || slugTaken} style={btn}>
           {saveState === 'saving' ? t('admin.lpStudio.saving') : saveState === 'saved' ? t('admin.lpStudio.saved') : t('admin.lpStudio.save')}
         </button>
@@ -193,9 +217,9 @@ export default function LpEditor({
 
       {/* Bara de taburi */}
       <div style={{ display: 'flex', gap: 6, borderBottom: '2px solid var(--border)', marginBottom: 12, flexWrap: 'wrap' }}>
-        <button onClick={() => setTab('code')} style={tabBtn(tab === 'code')}>{t('admin.lpStudio.tabCode')}</button>
+        <button onClick={() => setTab('code')} style={tabBtn(tab === 'code')}>{draft.editor === 'visual' ? `🧱 ${t('admin.lpStudio.tabBlocks')}` : t('admin.lpStudio.tabCode')}</button>
         <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
-        <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button>
+        {draft.editor === 'code' ? <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button> : null}
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
         {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
@@ -205,7 +229,10 @@ export default function LpEditor({
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'stretch', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 420px', minWidth: 320 }}>
-            {tab === 'code' && (
+            {tab === 'code' && draft.editor === 'visual' && (
+              <LpVisualBuilder blocks={draft.blocks} form={draft.form} onChange={(blocks) => setDraft((d) => ({ ...d, blocks }))} />
+            )}
+            {tab === 'code' && draft.editor === 'code' && (
               <textarea
                 value={draft.html}
                 onChange={(e) => setHtml(e.target.value)}

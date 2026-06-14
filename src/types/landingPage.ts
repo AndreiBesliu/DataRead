@@ -7,6 +7,10 @@
  * corupt devine 'draft' — o pagină nu ajunge NICIODATĂ public din greșeală.
  */
 import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
+import { coerceBlocks, type LpBlock } from './lpBlocks';
+
+export const LP_EDITORS = ['code', 'visual'] as const;
+export type LpEditorMode = (typeof LP_EDITORS)[number];
 
 export const LANDING_PAGE_SCHEMA = 1;
 export const LP_HTML_MAX = 200_000; // ~200 KB, mult sub limita Firestore de 1 MiB
@@ -47,6 +51,10 @@ export interface LandingPage {
   seoDescription: string;
   status: LpStatus;
   lang: 'ro' | 'en'; // doar pentru <html lang> + limba de generare AI
+  /** Modul de autorare: 'code' (textarea/AI) sau 'visual' (builder pe blocuri). */
+  editor: LpEditorMode;
+  /** Blocurile (mod visual) — se compilează în `html` la salvare; serveLp servește tot `html`. */
+  blocks: LpBlock[];
   html: string; // pagina self-contained (cod, <= LP_HTML_MAX)
   design: CustomTheme; // refolosit din motorul de teme
   hasForm: boolean; // oglindă a form.enabled (invariant)
@@ -115,6 +123,8 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     seoDescription: '',
     status: 'draft',
     lang: 'ro',
+    editor: 'code',
+    blocks: [],
     html: '',
     design: coerceToCustomTheme(null),
     hasForm: false,
@@ -137,6 +147,8 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     seoDescription: str(d.seoDescription, LP_DESC_MAX),
     status: LP_STATUSES.includes(d.status as LpStatus) ? (d.status as LpStatus) : 'draft',
     lang: d.lang === 'en' ? 'en' : 'ro',
+    editor: d.editor === 'visual' ? 'visual' : 'code',
+    blocks: coerceBlocks(d.blocks),
     html: str(d.html, LP_HTML_MAX),
     design: coerceToCustomTheme(d.design),
     hasForm: form.enabled, // invariant: hasForm === form.enabled

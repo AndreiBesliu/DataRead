@@ -16,6 +16,7 @@ import {
   topEntries,
   type LpStatsDay,
 } from '../src/analytics/lpStats';
+import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from '../src/types/lpBlocks';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -111,6 +112,28 @@ check('bucketKey: whitelist păstrat, restul → other', (() => {
   const wl = ['google', 'meta'];
   return bucketKey('GOOGLE', wl) === 'google' && bucketKey('shady', wl) === 'other' && bucketKey('', wl) === 'other';
 })());
+
+// ── blocuri builder vizual (lpBlocks) ──
+const form = { enabled: true, fields: [{ name: 'email', label: 'Email', type: 'email' as const, required: true, options: [] }], submitLabel: 'Trimite', successMessage: '', createLead: false, notifyEmail: '' };
+check('coerceToLpBlock: tip necunoscut → null', coerceToLpBlock({ type: 'banana' }) === null);
+check('coerceToLpBlock: valid → păstrat cu id', (() => {
+  const b = coerceToLpBlock({ type: 'hero', props: { heading: 'Salut' } }, 3);
+  return b !== null && b.type === 'hero' && b.id === 'b3' && b.props.heading === 'Salut';
+})());
+check('coerceBlocks: filtrează invalide', coerceBlocks([{ type: 'hero' }, 'gunoi', { type: 'x' }, { type: 'spacer' }]).length === 2);
+check('compileBlocks: gol → string gol', compileBlocks([], { form }) === '');
+check('compileBlocks: hero → h1 + text + data-cta', (() => {
+  const html = compileBlocks([{ id: '1', type: 'hero', props: { heading: 'Oferta', ctaText: 'Cumpără', ctaHref: '#' } }], { form });
+  return html.includes('<h1') && html.includes('Oferta') && html.includes('data-cta') && html.includes('var(--accent)');
+})());
+check('compileBlocks: image cu URL ne-https → omis', compileBlocks([{ id: '1', type: 'image', props: { url: 'http://x/y.png' } }], { form }) === '');
+check('compileBlocks: image https → <img>', compileBlocks([{ id: '1', type: 'image', props: { url: 'https://x/y.png', alt: 'a' } }], { form }).includes('<img'));
+check('compileBlocks: form → <form data-lp-form> cu câmpul din config', (() => {
+  const html = compileBlocks([{ id: '1', type: 'form', props: {} }], { form });
+  return html.includes('data-lp-form') && html.includes('name="email"');
+})());
+check('compileBlocks: escapează HTML din text (anti-rupere)', !compileBlocks([{ id: '1', type: 'heading', props: { text: '<script>x' } }], { form }).includes('<script>x'));
+check('defaultBlockProps: features are 3 items', (defaultBlockProps('features').items as unknown[]).length === 3);
 
 if (failures) {
   console.error(`${failures} checks failed`);

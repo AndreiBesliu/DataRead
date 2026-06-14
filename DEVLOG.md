@@ -513,6 +513,22 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: functions load + build + 8/8 suites + prerender + boot-smoke verzi.
 > DEPLOYED: functions:serveLp (actualizat) + hosting. **Felia LP v1 e funcțional COMPLETĂ.**
 
+**2026-06-14 - Task Completed — LP builder vizual (blocuri → compilare în html)**
+> Model: Claude Fable 5
+> Andrei: builder vizual (drag&drop, fără cod) peste IDE-ul de cod. Decizie cheie: builder-ul lucrează
+> pe BLOCURI care se compilează în ACELAȘI `html` servit de serveLp ⇒ servirea + regulile NESCHIMBATE.
+> Changes: src/types/lpBlocks.ts (LpBlock + coerce + compileBlocks PUR; set bogat: hero/heading/text/
+> image/button/features/testimonial/faq/form/spacer; folosesc variabilele de temă; escape anti-rupere;
+> URL imagine https-only). LandingPage extins cu editor:'code'|'visual' + blocks[] (coerce; rules OK —
+> nu folosesc hasOnly). LpVisualBuilder.tsx (paletă, listă cu drag&drop reorder + ↑↓ + ștergere,
+> editor de proprietăți per bloc, sub-editor pt liste features/faq). LpEditor: mod cod↔vizual —
+> primul tab devine „Blocuri", AI ascuns în vizual; preview + payload.html se compilează din blocuri
+> (effectiveHtml); alegere mod la creare + „Comută pe cod" (eject one-way: blocks→html). i18n
+> admin.lpStudio.* (bt_*/bf_* + builder, ro+en). +11 checks în test-landing (coerce/compile/escape).
+> Verificat: build + 8/8 suites + prerender + boot-smoke verzi; randare vizuală confirmată (Playwright:
+> pagină multi-bloc — hero+features+testimonial+faq+form — pe tema Ocean cu accent custom). DEPLOYED:
+> hosting (serveLp NESCHIMBAT — servește tot `html`). **Andrei poate construi LP-uri 100% din UI.**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

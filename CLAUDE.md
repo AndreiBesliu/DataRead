@@ -127,7 +127,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `npm run deploy:functions`). Comutatorul `AI_ENABLED` din functions/index.js stinge tot fluxul
   la nevoie (flip + deploy).
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
-  editor de cod (textarea HTML) + preview live (iframe sandbox FĂRĂ same-origin) + agent AI
+  editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
+  LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`
+  servit de serveLp — servirea/regulile nu se schimbă; eject one-way visual→cod) + preview live
+  (iframe sandbox FĂRĂ same-origin) + agent AI
   (`aiGenerateLandingPage`/`aiEditLandingPage` — întorc `{html}`, NU scriu în Firestore; quota
   `aiUsage`) + panou design (refolosește `CustomTheme` via `ThemeControls`) + config formular +
   dashboard analytics. Colecția `landingPages/{slug}` (doc ID = slug, unic prin construcție),
