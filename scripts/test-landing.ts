@@ -146,6 +146,20 @@ check('coerceToLpDecor: valori valide păstrate', (() => {
   return d.effect === 'constellation' && d.interaction === 'mouseReact' && d.color === '#abcdef';
 })());
 check('compileDecor: none → gol', compileDecor(coerceToLpDecor({ effect: 'none' }), 'x', 'page') === '');
+check('coerceToLpDecor: intensity clamp + mouseAttract valid', (() => {
+  const d = coerceToLpDecor({ effect: 'dots', interaction: 'mouseAttract', intensity: 999 });
+  const e = coerceToLpDecor({ intensity: -5 });
+  return d.interaction === 'mouseAttract' && d.intensity === 100 && e.intensity === 0;
+})());
+check('compileDecor: intensity + mouseAttract ajung în config', (() => {
+  const h = compileDecor(coerceToLpDecor({ effect: 'dots', interaction: 'mouseAttract', intensity: 80 }), 'a', 'block');
+  return h.includes('"intensity":80') && h.includes('"interaction":"mouseAttract"');
+})());
+check('coerceToLpDecor: custom + reacție de particule → interaction normalizat la none', (() => {
+  return coerceToLpDecor({ effect: 'custom', interaction: 'mouseReact' }).interaction === 'none'
+    && coerceToLpDecor({ effect: 'custom', interaction: 'mouseParallax' }).interaction === 'mouseParallax'
+    && coerceToLpDecor({ effect: 'dots', interaction: 'mouseAttract' }).interaction === 'mouseAttract';
+})());
 check('compileDecor: dots → canvas + script + id', (() => {
   const h = compileDecor(coerceToLpDecor({ effect: 'dots' }), 'pg', 'page');
   return h.includes('<canvas') && h.includes('lpd-pg') && h.includes('<script>') && h.includes('prefers-reduced-motion');

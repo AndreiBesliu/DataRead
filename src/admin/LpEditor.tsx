@@ -61,7 +61,7 @@ export default function LpEditor({
   useEffect(() => {
     const id = setTimeout(() => setPreviewDoc(composeDoc({ ...draft, html: effectiveHtml(draft) })), 400);
     return () => clearTimeout(id);
-  }, [draft.html, draft.design, draft.lang, draft.editor, draft.blocks, draft.form]);
+  }, [draft.html, draft.design, draft.lang, draft.editor, draft.blocks, draft.form, draft.pageDecor]);
 
   const setHtml = (html: string) => setDraft((d) => ({ ...d, html }));
 

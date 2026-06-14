@@ -84,10 +84,17 @@ export default function LpFreeformEditor({ value, onChange, onClose }: { value: 
           ))}
           <label style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--fg-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
             {t('admin.lpStudio.decor_interaction')}
+            {/* Pe elemente DOM doar parallax-ul are sens (nu repel/attract de particule). */}
             <select value={value.interaction} onChange={(e) => onChange({ ...value, interaction: e.target.value as LpDecorInteraction })} style={{ ...field, width: 'auto' }}>
-              {LP_DECOR_INTERACTIONS.map((it) => <option key={it} value={it}>{t(`admin.lpStudio.decorInter_${it}`)}</option>)}
+              {LP_DECOR_INTERACTIONS.filter((it) => it === 'none' || it === 'mouseParallax' || it === 'scrollParallax').map((it) => <option key={it} value={it}>{t(`admin.lpStudio.decorInter_${it}`)}</option>)}
             </select>
           </label>
+          {value.interaction !== 'none' ? (
+            <label style={{ fontSize: 12, color: 'var(--fg-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {t('admin.lpStudio.decor_intensity')}: {value.intensity}
+              <input type="range" min={0} max={100} value={value.intensity} onChange={(e) => onChange({ ...value, intensity: Number(e.target.value) })} />
+            </label>
+          ) : null}
         </div>
 
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>

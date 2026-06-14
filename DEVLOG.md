@@ -609,6 +609,24 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: build + 8/8 suites (8 checks noi) + prerender + boot-smoke; randare vizuală fără page
 > errors (decor în spatele conținutului lizibil, heading sans). DEPLOYED: serveLp + hosting.
 
+**2026-06-14 - Task Completed — decor: preview în panoul LP + mai multe reacții (mouseAttract + intensitate)**
+> Model: Claude Fable 5
+> Andrei: (1) previzualizarea decorului să fie în panoul mare de previzualizare al LP; (2) mai multe
+> opțiuni de customizare a reacțiilor. Changes: (1) am scos mini-preview-ul din LpDecorControls
+> (state/useEffect/iframe/import compileDecor) — decorul se vede în panoul din dreapta; am adăugat
+> draft.pageDecor la dependențele preview-ului din LpEditor ca fundalul de pagină să se actualizeze
+> live. (2) interacțiune nouă `mouseAttract` (atrage particulele spre cursor, pe lângă mouseReact =
+> respinge) + câmp `intensity` (0-100, scalează forța mouse + amploarea parallax) în motorul canvas
+> (var k, R=max(30,120*k), dir attract=-1) și în parallax-ul DOM (custom). Slider „Intensitate
+> reacție" în LpDecorControls + în editorul de plasare liberă. i18n decorInter_mouseAttract/
+> decor_intensity (ro+en).
+> **Review adversarial (Workflow ultracode, 5 agenți, 3 dimensiuni + verificare):** 1 bug medium
+> confirmat și REPARAT — la custom (DOM), o reacție de particule (mouseReact/mouseAttract) rămasă de
+> la alt efect desincroniza select-ul filtrat din editorul freeform; normalizat la 'none' atât la
+> schimbarea efectului (LpDecorControls) cât și în coerceToLpDecor (regula single-coerce). +3 checks.
+> Verificat: build + 8/8 suites + prerender + boot-smoke; smoke headless al motoarelor (mouseAttract/
+> mouseReact/intensity/parallax) fără page errors. DEPLOYED: hosting (serveLp neatins — decor precompilat).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

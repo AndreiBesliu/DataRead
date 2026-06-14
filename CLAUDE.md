@@ -155,7 +155,7 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
   `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 7 efecte (dots/
   constellation/shapes(7 forme)/grid/waves/bubbles/rings) × 4 interacțiuni (none/mouseReact/
-  mouseParallax/scrollParallax) + **plasare liberă** (effect 'custom': elemente individuale
+  mouseAttract/mouseParallax/scrollParallax) + intensitate reglabilă (0-100) + **plasare liberă** (effect 'custom': elemente individuale
   poziționate prin drag în `LpFreeformEditor`, 9 forme, animație per element float/pulse/spin/drift,
   randate ca DOM via `compileCustomDecor`/`elementStyle`); culoare
   = `--accent` la runtime; respectă `prefers-reduced-motion`. Două locuri: **fundal de pagină**
