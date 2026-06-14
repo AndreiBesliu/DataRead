@@ -18,6 +18,7 @@ import {
 } from '../src/analytics/lpStats';
 import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from '../src/types/lpBlocks';
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
+import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -212,6 +213,17 @@ check('compileBlocks: bgDecor păstrează formularul (data-lp-form)', (() => {
   const h = compileBlocks([{ id: '1', type: 'form', props: { bgDecor: { effect: 'grid' } } }], { form });
   return h.includes('data-lp-form') && h.includes('<canvas');
 })());
+
+// ── galerie de șabloane ──
+check('LP_TEMPLATES: ≥6 șabloane, fiecare compilează în html ne-gol (mod visual)', (() => {
+  if (LP_TEMPLATES.length < 6) return false;
+  return LP_TEMPLATES.every((tpl) => {
+    const lp = landingPageFromTemplate(tpl, 'admin');
+    if (lp.editor !== 'visual' || lp.blocks.length === 0) return false;
+    return compileBlocks(lp.blocks, { form: lp.form }).length > 100;
+  });
+})());
+check('LP_TEMPLATES: id-uri unice', new Set(LP_TEMPLATES.map((t) => t.id)).size === LP_TEMPLATES.length);
 
 if (failures) {
   console.error(`${failures} checks failed`);

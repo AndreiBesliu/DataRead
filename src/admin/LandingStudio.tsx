@@ -7,8 +7,9 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { coerceToLandingPage, emptyLandingPage, type LandingPage } from '../types/landingPage';
+import { coerceToLandingPage, type LandingPage } from '../types/landingPage';
 import LpEditor from './LpEditor';
+import LpTemplatePicker from './LpTemplatePicker';
 
 interface Row {
   id: string;
@@ -25,6 +26,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<{ docId: string | null; initial: LandingPage } | null>(null);
+  const [picking, setPicking] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'landingPages'), (snap) => {
@@ -63,7 +65,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
         <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.lpStudio.title')}</h2>
-        <button onClick={() => setEditing({ docId: null, initial: emptyLandingPage(adminUid) })} style={{ ...btnPrimary, marginLeft: 'auto' }}>
+        <button onClick={() => setPicking(true)} style={{ ...btnPrimary, marginLeft: 'auto' }}>
           + {t('admin.lpStudio.new')}
         </button>
       </div>
@@ -105,6 +107,17 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
           </table>
         </div>
       )}
+
+      {picking ? (
+        <LpTemplatePicker
+          adminUid={adminUid}
+          onPick={(initial) => {
+            setPicking(false);
+            setEditing({ docId: null, initial });
+          }}
+          onClose={() => setPicking(false)}
+        />
+      ) : null}
     </div>
   );
 }

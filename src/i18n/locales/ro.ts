@@ -350,6 +350,9 @@ const ro = {
     lpStudio: {
       title: 'Landing Pages',
       new: 'Pagină nouă',
+      tpl_title: 'Pornește dintr-un șablon',
+      tpl_blank: 'Pagină goală',
+      tpl_blankHint: 'Începe de la zero',
       listEmpty: 'Nicio pagină încă. Creează prima cu „Pagină nouă".',
       colTitle: 'Titlu',
       colSlug: 'Adresă',

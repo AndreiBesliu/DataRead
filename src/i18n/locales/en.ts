@@ -348,6 +348,9 @@ const en: typeof ro = {
     lpStudio: {
       title: 'Landing Pages',
       new: 'New page',
+      tpl_title: 'Start from a template',
+      tpl_blank: 'Blank page',
+      tpl_blankHint: 'Start from scratch',
       listEmpty: 'No pages yet. Create your first with "New page".',
       colTitle: 'Title',
       colSlug: 'Address',

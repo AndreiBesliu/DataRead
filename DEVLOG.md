@@ -640,6 +640,22 @@ normaliser, secretele niciodată în chat/repo.
 > damă cu LP încadrat la 390px, grila de beneficii se stivuiește pe o coloană (responsive real).
 > DEPLOYED: hosting (schimbare pur UI; serveLp neatins).
 
+**2026-06-14 - Task Completed — galerie de șabloane LP (6 modele gata făcute)**
+> Model: Claude Fable 5
+> La „Pagină nouă" alegi acum un șablon gata (blocuri + design + decor + formular) sau pagină goală.
+> Changes: src/admin/lpTemplates.ts (tip LpTemplate + landingPageFromTemplate — totul prin
+> coerceToLandingPage la aplicare; 6 șabloane RO: Conferință business, Lansare produs e-commerce,
+> Consultanță B2B, Webinar gratuit, App download, Clinică/programare — fiecare cu temă+fonturi+decor
+> distincte). LpTemplatePicker.tsx (modal cu carduri + mini-preview live în iframe scalat). LandingStudio:
+> „Pagină nouă" deschide selectorul. i18n tpl_title/blank/blankHint (ro+en). +2 checks (toate compilează,
+> id-uri unice).
+> **Conținut generat cu Workflow ultracode (12 agenți: autor + critic per categorie, în paralel)** —
+> fiecare șablon autorat și apoi rafinat de un editor critic; embed determinist în registru.
+> Verificat: build + 8/8 suites + prerender + boot-smoke; toate cele 6 șabloane randate headless FĂRĂ
+> page errors (8/9/8/6/9/9 blocuri), confirmate vizual (conferință dark + clinică light). DEPLOYED:
+> hosting (serveLp neatins). **LP Studio e complet ca produs: șabloane → builder/cod/AI → design+decor
+> → preview responsive → publicare → analytics.**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
