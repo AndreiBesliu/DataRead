@@ -6,7 +6,7 @@
  * implicită = variabila temei --accent (citită la runtime), deci decorul se asortează cu design-ul.
  */
 
-export const LP_DECOR_EFFECTS = ['none', 'dots', 'constellation', 'shapes', 'grid', 'waves', 'bubbles', 'rings'] as const;
+export const LP_DECOR_EFFECTS = ['none', 'dots', 'constellation', 'shapes', 'grid', 'waves', 'bubbles', 'rings', 'custom'] as const;
 export type LpDecorEffect = (typeof LP_DECOR_EFFECTS)[number];
 
 export const LP_DECOR_INTERACTIONS = ['none', 'mouseReact', 'mouseParallax', 'scrollParallax'] as const;
@@ -20,6 +20,25 @@ export interface LpDecor {
   size: number; // 1..40 (px de bază)
   color: string; // hex sau '' (= --accent)
   opacity: number; // 0..1
+  /** Doar pentru effect 'custom' (plasare liberă): elementele poziționate individual. */
+  elements: LpElement[];
+}
+
+export const LP_ELEMENT_SHAPES = ['dot', 'circle', 'ring', 'square', 'triangle', 'diamond', 'star', 'hexagon', 'line'] as const;
+export type LpElementShape = (typeof LP_ELEMENT_SHAPES)[number];
+export const LP_ELEMENT_ANIMS = ['none', 'float', 'pulse', 'spin', 'drift'] as const;
+export type LpElementAnim = (typeof LP_ELEMENT_ANIMS)[number];
+
+export interface LpElement {
+  id: string;
+  shape: LpElementShape;
+  x: number; // % 0..100
+  y: number; // % 0..100
+  size: number; // px
+  rotation: number; // grade
+  color: string; // hex sau '' (= --accent)
+  opacity: number; // 0..1
+  anim: LpElementAnim;
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -27,7 +46,29 @@ const clampN = (v: unknown, min: number, max: number, d: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
 
 export function defaultDecor(): LpDecor {
-  return { effect: 'none', interaction: 'none', density: 40, speed: 40, size: 3, color: '', opacity: 0.6 };
+  return { effect: 'none', interaction: 'none', density: 40, speed: 40, size: 3, color: '', opacity: 0.6, elements: [] };
+}
+
+export function defaultElement(shape: LpElementShape = 'circle'): LpElement {
+  return { id: '', shape, x: 50, y: 50, size: 40, rotation: 0, color: '', opacity: 0.85, anim: 'float' };
+}
+
+export function coerceElements(raw: unknown): LpElement[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 80).map((r, i) => {
+    const o = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+    return {
+      id: typeof o.id === 'string' && o.id ? o.id.slice(0, 40) : `e${i}`,
+      shape: LP_ELEMENT_SHAPES.includes(o.shape as LpElementShape) ? (o.shape as LpElementShape) : 'circle',
+      x: clampN(o.x, 0, 100, 50),
+      y: clampN(o.y, 0, 100, 50),
+      size: clampN(o.size, 4, 400, 40),
+      rotation: clampN(o.rotation, -360, 360, 0),
+      color: typeof o.color === 'string' && HEX.test(o.color) ? o.color : '',
+      opacity: clampN(o.opacity, 0, 1, 0.85),
+      anim: LP_ELEMENT_ANIMS.includes(o.anim as LpElementAnim) ? (o.anim as LpElementAnim) : 'none',
+    };
+  });
 }
 
 export function coerceToLpDecor(raw: unknown): LpDecor {
@@ -41,7 +82,36 @@ export function coerceToLpDecor(raw: unknown): LpDecor {
     size: clampN(d.size, 1, 40, 3),
     color: typeof d.color === 'string' && HEX.test(d.color) ? d.color : '',
     opacity: clampN(d.opacity, 0, 1, 0.6),
+    elements: coerceElements(d.elements),
   };
+}
+
+const STAR_PTS = '50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%';
+const HEX_PTS = '25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%';
+const TRI_PTS = '50% 0%,0% 100%,100% 100%';
+const DIA_PTS = '50% 0%,100% 50%,50% 100%,0% 50%';
+
+/** Stilul formei plasate (camelCase — pt. React în editor ȘI serializat la compile). Sursă unică. */
+export function elementStyle(el: LpElement): Record<string, string | number> {
+  const c = el.color || 'var(--accent)';
+  const s: Record<string, string | number> = { width: `${el.size}px`, height: `${el.size}px`, opacity: el.opacity, transform: `rotate(${el.rotation}deg)`, boxSizing: 'border-box' };
+  const border = Math.max(2, Math.round(el.size * 0.12));
+  switch (el.shape) {
+    case 'dot': { const d = `${Math.max(4, Math.round(el.size * 0.4))}px`; s.width = d; s.height = d; s.background = c; s.borderRadius = '50%'; break; }
+    case 'circle': s.background = c; s.borderRadius = '50%'; break;
+    case 'ring': s.borderRadius = '50%'; s.border = `${border}px solid ${c}`; s.background = 'transparent'; break;
+    case 'square': s.background = c; break;
+    case 'triangle': s.background = c; s.clipPath = `polygon(${TRI_PTS})`; break;
+    case 'diamond': s.background = c; s.clipPath = `polygon(${DIA_PTS})`; break;
+    case 'star': s.background = c; s.clipPath = `polygon(${STAR_PTS})`; break;
+    case 'hexagon': s.background = c; s.clipPath = `polygon(${HEX_PTS})`; break;
+    case 'line': s.height = `${Math.max(2, Math.round(el.size * 0.08))}px`; s.background = c; s.borderRadius = '2px'; break;
+  }
+  return s;
+}
+
+function styleToCss(s: Record<string, string | number>): string {
+  return Object.keys(s).map((k) => `${k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())}:${s[k]}`).join(';');
 }
 
 // Motorul de animație (JS inline, self-contained per instanță). Fără backticks/${} înăuntru —
@@ -82,10 +152,45 @@ function decorEngine(id: string, cfgJson: string): string {
   );
 }
 
-/** Compilează un decor în markup self-contained (canvas + script). '' dacă effect==='none'. */
+const LPF_KEYFRAMES =
+  '@keyframes lpf-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}' +
+  '@keyframes lpf-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}' +
+  '@keyframes lpf-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}' +
+  '@keyframes lpf-drift{0%,100%{transform:translate(0,0)}25%{transform:translate(10px,-8px)}50%{transform:translate(-8px,8px)}75%{transform:translate(8px,10px)}}';
+const LPF_CLASSES =
+  '.lpf-float{animation:lpf-float 6s ease-in-out infinite}.lpf-pulse{animation:lpf-pulse 4s ease-in-out infinite}' +
+  '.lpf-spin{animation:lpf-spin 14s linear infinite}.lpf-drift{animation:lpf-drift 11s ease-in-out infinite}';
+
+/** Plasare liberă (effect 'custom'): elemente DOM poziționate + animații CSS + parallax JS opțional. */
+function compileCustomDecor(decor: LpDecor, safeId: string, pos: string): string {
+  const els = Array.isArray(decor.elements) ? decor.elements : [];
+  if (!els.length) return '';
+  const items = els
+    .map((el, i) => {
+      const animClass = el.anim !== 'none' ? `lpf-${el.anim}` : '';
+      const delay = (i % 7) * 0.4;
+      return `<div style="position:absolute;left:${el.x}%;top:${el.y}%;transform:translate(-50%,-50%)"><div class="${animClass}" style="animation-delay:${delay}s"><div style="${styleToCss(elementStyle(el))}"></div></div></div>`;
+    })
+    .join('');
+  const style = `<style>@media (prefers-reduced-motion: no-preference){${LPF_KEYFRAMES}${LPF_CLASSES}}</style>`;
+  const layerId = `lpfl-${safeId}`;
+  let script = '';
+  if (decor.interaction === 'mouseParallax') {
+    script = `<script>(function(){var L=document.getElementById("${layerId}");if(!L)return;var p=L.parentNode;window.addEventListener("mousemove",function(e){var r=p.getBoundingClientRect();L.style.transform="translate("+((e.clientX-r.left-r.width/2)*0.04)+"px,"+((e.clientY-r.top-r.height/2)*0.04)+"px)";});})();</script>`;
+  } else if (decor.interaction === 'scrollParallax') {
+    script = `<script>(function(){var L=document.getElementById("${layerId}");if(!L)return;window.addEventListener("scroll",function(){L.style.transform="translateY("+(((window.scrollY||0)*0.06)%120)+"px)";},{passive:true});})();</script>`;
+  }
+  return `<div id="lpd-${safeId}" style="${pos}">${style}<div id="${layerId}" style="position:absolute;inset:0;will-change:transform">${items}</div></div>${script}`;
+}
+
+/** Compilează un decor în markup self-contained (canvas/DOM + script). '' dacă effect==='none'. */
 export function compileDecor(decor: LpDecor, id: string, mode: 'page' | 'block'): string {
   if (!decor || decor.effect === 'none') return '';
   const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '') || 'x';
+  const pos = mode === 'page'
+    ? 'position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden'
+    : 'position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden';
+  if (decor.effect === 'custom') return compileCustomDecor(decor, safeId, pos);
   const cfg = JSON.stringify({
     effect: decor.effect,
     interaction: decor.interaction,
@@ -95,8 +200,5 @@ export function compileDecor(decor: LpDecor, id: string, mode: 'page' | 'block')
     color: decor.color,
     opacity: decor.opacity,
   }).replace(/</g, '\\u003c');
-  const pos = mode === 'page'
-    ? 'position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden'
-    : 'position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden';
   return `<div id="lpd-${safeId}" style="${pos}"><canvas style="display:block;width:100%;height:100%"></canvas></div><script>${decorEngine(safeId, cfg)}</script>`;
 }

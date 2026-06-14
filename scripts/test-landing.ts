@@ -165,6 +165,15 @@ check('compileDecor: efecte noi (waves/bubbles/rings) → canvas + script', (() 
     return h.includes('<canvas') && h.includes('<script>');
   });
 })());
+check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
+  const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });
+  return d.effect === 'custom' && d.elements.length === 1 && d.elements[0].shape === 'circle' && d.elements[0].x === 100 && d.elements[0].size === 400;
+})());
+check('compileDecor: custom fără elemente → gol', compileDecor(coerceToLpDecor({ effect: 'custom', elements: [] }), 'c', 'block') === '');
+check('compileDecor: custom cu elemente → divuri poziționate + keyframes', (() => {
+  const h = compileDecor(coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'star', x: 20, y: 30, anim: 'float' }] }), 'c', 'page');
+  return h.includes('left:20%') && h.includes('lpf-float') && h.includes('@keyframes lpf-float') && h.includes('clip-path');
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);

@@ -559,6 +559,23 @@ normaliser, secretele niciodată în chat/repo.
 > deploy doar hosting. Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală
 > (Playwright, fără page errors) pe tema Carbon. DEPLOYED: hosting.
 
+**2026-06-14 - Task Completed — editor de plasare liberă decor (effect 'custom')**
+> Model: Claude Fable 5
+> Pasul „freeform" amânat: așezi individual forme pe o pânză, prin drag, fiecare cu animația ei.
+> Changes: lpDecor.ts — effect nou 'custom' + model LpElement (shape/x%/y%/size/rotation/color/
+> opacity/anim) + coerceElements + `elementStyle` (sursă unică camelCase, folosită ȘI de editor în
+> React ȘI serializată la compile) + `compileCustomDecor` (DOM pozitionat: 3 niveluri ca să nu se
+> bată transformările — poziționare/animație/rotație; keyframes float/pulse/spin/drift sub
+> prefers-reduced-motion: no-preference; parallax mouse/scroll prin strat translatat). 9 forme
+> (punct/cerc/inel/pătrat/triunghi/romb/stea/hexagon/linie). LpFreeformEditor.tsx (modal: pânză cu
+> drag pe procente, paletă forme, panou proprietăți per element, ștergere, interacțiune scenă).
+> LpDecorControls: 'custom' → buton „Editează elementele (N)" deschide editorul + mini-preview.
+> i18n decorEffect_custom/ff_*/sh_*/ffAnim_* (ro+en). +3 checks în test-landing.
+> Servirea NESCHIMBATĂ (custom compilează în stringuri stocate; serveLp servește precompilat) ⇒
+> deploy doar hosting. Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală
+> (Playwright, fără page errors) — forme la pozițiile lor, culori accent+custom, overlay lizibil.
+> DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

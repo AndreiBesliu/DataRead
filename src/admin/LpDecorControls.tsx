@@ -6,10 +6,12 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LP_DECOR_EFFECTS, LP_DECOR_INTERACTIONS, compileDecor, type LpDecor, type LpDecorEffect, type LpDecorInteraction } from '../types/lpDecor';
+import LpFreeformEditor from './LpFreeformEditor';
 
 export default function LpDecorControls({ value, onChange }: { value: LpDecor; onChange: (d: LpDecor) => void }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState('');
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -40,7 +42,13 @@ export default function LpDecorControls({ value, onChange }: { value: LpDecor; o
         {LP_DECOR_EFFECTS.map((ef) => <option key={ef} value={ef}>{t(`admin.lpStudio.decorEffect_${ef}`)}</option>)}
       </select>
 
-      {value.effect !== 'none' ? (
+      {value.effect === 'custom' ? (
+        <>
+          <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 10 }}>{t('admin.lpStudio.decor_customHint')}</p>
+          <button onClick={() => setEditing(true)} style={{ border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginTop: 6 }}>{t('admin.lpStudio.decor_editElements', { count: (value.elements || []).length })}</button>
+          {preview ? (<><label style={label}>{t('admin.lpStudio.decor_preview')}</label><iframe title="decor-preview" srcDoc={preview} sandbox="allow-scripts" style={{ width: '100%', height: 150, border: '1px solid var(--border)', borderRadius: 8 }} /></>) : null}
+        </>
+      ) : value.effect !== 'none' ? (
         <>
           <label style={label}>{t('admin.lpStudio.decor_interaction')}</label>
           <select value={value.interaction} onChange={(e) => onChange({ ...value, interaction: e.target.value as LpDecorInteraction })} style={field}>
@@ -68,6 +76,7 @@ export default function LpDecorControls({ value, onChange }: { value: LpDecor; o
           ) : null}
         </>
       ) : null}
+      {editing ? <LpFreeformEditor value={value} onChange={onChange} onClose={() => setEditing(false)} /> : null}
     </div>
   );
 }
