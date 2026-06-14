@@ -8,6 +8,7 @@
  */
 import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
 import { coerceBlocks, type LpBlock } from './lpBlocks';
+import { coerceToLpDecor, type LpDecor } from './lpDecor';
 
 export const LP_EDITORS = ['code', 'visual'] as const;
 export type LpEditorMode = (typeof LP_EDITORS)[number];
@@ -57,6 +58,9 @@ export interface LandingPage {
   blocks: LpBlock[];
   html: string; // pagina self-contained (cod, <= LP_HTML_MAX)
   design: CustomTheme; // refolosit din motorul de teme
+  /** Decor de fundal pe toată pagina (config) + markup-ul compilat (injectat de serveLp). */
+  pageDecor: LpDecor;
+  pageDecorHtml: string;
   hasForm: boolean; // oglindă a form.enabled (invariant)
   form: LpFormConfig;
   clientUid: string; // asociere opțională (portal client) — '' dacă nu
@@ -127,6 +131,8 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     blocks: [],
     html: '',
     design: coerceToCustomTheme(null),
+    pageDecor: coerceToLpDecor(null),
+    pageDecorHtml: '',
     hasForm: false,
     form: coerceForm({}),
     clientUid: '',
@@ -151,6 +157,8 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     blocks: coerceBlocks(d.blocks),
     html: str(d.html, LP_HTML_MAX),
     design: coerceToCustomTheme(d.design),
+    pageDecor: coerceToLpDecor(d.pageDecor),
+    pageDecorHtml: str(d.pageDecorHtml, LP_HTML_MAX),
     hasForm: form.enabled, // invariant: hasForm === form.enabled
     form,
     clientUid: str(d.clientUid, 128),

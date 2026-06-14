@@ -5,8 +5,9 @@
  * (var(--accent) etc.), injectate de design. Compilarea e PURĂ (testabilă headless).
  */
 import type { LpFormConfig } from './landingPage';
+import { coerceToLpDecor, compileDecor, defaultDecor } from './lpDecor';
 
-export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer'] as const;
+export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor'] as const;
 export type LpBlockType = (typeof LP_BLOCK_TYPES)[number];
 
 export interface LpBlock {
@@ -47,6 +48,8 @@ export function defaultBlockProps(type: LpBlockType): Record<string, unknown> {
       return { heading: 'Lasă-ne datele tale' };
     case 'spacer':
       return { size: 48 };
+    case 'decor':
+      return { decor: { ...defaultDecor(), effect: 'dots', interaction: 'mouseReact', density: 50 }, heading: '', subheading: '', ctaText: '', ctaHref: '#', minHeight: 360 };
     default:
       return {};
   }
@@ -142,6 +145,16 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
     }
     case 'spacer':
       return `<div style="height:${Math.min(Math.max(nbr(p.size, 48), 0), 400)}px"></div>`;
+    case 'decor': {
+      const decor = coerceToLpDecor(p.decor);
+      const mh = Math.min(Math.max(nbr(p.minHeight, 360), 80), 1000);
+      const decorHtml = compileDecor(decor, `bk-${block.id}`, 'block');
+      const heading = str(p.heading) ? `<h2 style="font-size:clamp(28px,4vw,44px);margin:0 0 12px;color:var(--fg-0)">${esc(str(p.heading, TXT))}</h2>` : '';
+      const sub = str(p.subheading) ? `<p style="font-size:18px;color:var(--fg-1);margin:0">${esc(str(p.subheading, TXT))}</p>` : '';
+      const cta = str(p.ctaText) ? `<a data-cta href="${escAttr(safeHref(p.ctaHref))}" style="display:inline-block;margin-top:22px;background:var(--accent);color:var(--accent-contrast);padding:14px 30px;border-radius:10px;font-weight:700;text-decoration:none">${esc(p.ctaText)}</a>` : '';
+      const overlay = heading || sub || cta ? `<div style="position:relative;z-index:1;text-align:center;max-width:760px;margin:0 auto;padding:0 24px">${heading}${sub}${cta}</div>` : '';
+      return `<section style="position:relative;min-height:${mh}px;display:flex;align-items:center;justify-content:center;padding:56px 0;overflow:hidden">${decorHtml}${overlay}</section>`;
+    }
     default:
       return '';
   }

@@ -17,6 +17,7 @@ import {
   type LpStatsDay,
 } from '../src/analytics/lpStats';
 import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from '../src/types/lpBlocks';
+import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -134,6 +135,30 @@ check('compileBlocks: form → <form data-lp-form> cu câmpul din config', (() =
 })());
 check('compileBlocks: escapează HTML din text (anti-rupere)', !compileBlocks([{ id: '1', type: 'heading', props: { text: '<script>x' } }], { form }).includes('<script>x'));
 check('defaultBlockProps: features are 3 items', (defaultBlockProps('features').items as unknown[]).length === 3);
+
+// ── decor (lpDecor) ──
+check('coerceToLpDecor: gunoi → none + clamp', (() => {
+  const d = coerceToLpDecor({ effect: 'lasers', density: 999, opacity: 5, color: 'rgb(0,0,0)' });
+  return d.effect === 'none' && d.density === 100 && d.opacity === 1 && d.color === '';
+})());
+check('coerceToLpDecor: valori valide păstrate', (() => {
+  const d = coerceToLpDecor({ effect: 'constellation', interaction: 'mouseReact', color: '#abcdef' });
+  return d.effect === 'constellation' && d.interaction === 'mouseReact' && d.color === '#abcdef';
+})());
+check('compileDecor: none → gol', compileDecor(coerceToLpDecor({ effect: 'none' }), 'x', 'page') === '');
+check('compileDecor: dots → canvas + script + id', (() => {
+  const h = compileDecor(coerceToLpDecor({ effect: 'dots' }), 'pg', 'page');
+  return h.includes('<canvas') && h.includes('lpd-pg') && h.includes('<script>') && h.includes('prefers-reduced-motion');
+})());
+check('compileDecor: mode page → fixed z-index:-1; block → absolute', (() => {
+  const pg = compileDecor(coerceToLpDecor({ effect: 'grid' }), 'a', 'page');
+  const bk = compileDecor(coerceToLpDecor({ effect: 'grid' }), 'b', 'block');
+  return pg.includes('position:fixed') && pg.includes('z-index:-1') && bk.includes('position:absolute');
+})());
+check('compileBlocks: bloc decor → section + canvas', (() => {
+  const h = compileBlocks([{ id: '1', type: 'decor', props: { decor: { effect: 'shapes' }, heading: 'Salut' } }], { form });
+  return h.includes('<section') && h.includes('<canvas') && h.includes('Salut');
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);

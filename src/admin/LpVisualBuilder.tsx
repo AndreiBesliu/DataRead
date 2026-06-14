@@ -6,7 +6,16 @@
 import { useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LP_BLOCK_TYPES, defaultBlockProps, type LpBlock, type LpBlockType } from '../types/lpBlocks';
+import { coerceToLpDecor } from '../types/lpDecor';
+import LpDecorControls from './LpDecorControls';
 import type { LpFormConfig } from '../types/landingPage';
+
+const DECOR_OVERLAY_FIELDS: { k: string; t: 'text' | 'textarea' | 'url' }[] = [
+  { k: 'heading', t: 'text' },
+  { k: 'subheading', t: 'textarea' },
+  { k: 'ctaText', t: 'text' },
+  { k: 'ctaHref', t: 'url' },
+];
 
 type FieldKind = 'text' | 'textarea' | 'url' | 'number' | 'align' | 'select' | 'items';
 interface Field {
@@ -16,7 +25,8 @@ interface Field {
   item?: { k: string; t: FieldKind }[];
 }
 
-const BLOCK_FIELDS: Record<LpBlockType, Field[]> = {
+// 'decor' are UI dedicat (LpDecorControls), nu render-ul generic de field-uri.
+const BLOCK_FIELDS: Partial<Record<LpBlockType, Field[]>> = {
   hero: [{ k: 'heading', t: 'text' }, { k: 'subheading', t: 'textarea' }, { k: 'ctaText', t: 'text' }, { k: 'ctaHref', t: 'url' }, { k: 'align', t: 'align' }],
   heading: [{ k: 'text', t: 'text' }, { k: 'level', t: 'select', opts: ['h2', 'h3'] }, { k: 'align', t: 'align' }],
   text: [{ k: 'text', t: 'textarea' }, { k: 'align', t: 'align' }],
@@ -155,9 +165,19 @@ export default function LpVisualBuilder({
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '2px solid var(--border)' }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t(`admin.lpStudio.bt_${selected.type}`)}</div>
           {selected.type === 'form' ? <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.lpStudio.formBlockHint', { count: form.fields.length })}</p> : null}
-          {BLOCK_FIELDS[selected.type].map((f) => (
-            <div key={f.k}>{renderField(f, selected.props, (patch) => setProps(selected.id, { ...selected.props, ...patch }))}</div>
-          ))}
+          {selected.type === 'decor' ? (
+            <>
+              <LpDecorControls value={coerceToLpDecor(selected.props.decor)} onChange={(decor) => setProps(selected.id, { ...selected.props, decor })} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-1)', marginTop: 14 }}>{t('admin.lpStudio.decor_overlay')}</div>
+              {DECOR_OVERLAY_FIELDS.map((f) => (
+                <div key={f.k}>{renderField(f, selected.props, (patch) => setProps(selected.id, { ...selected.props, ...patch }))}</div>
+              ))}
+            </>
+          ) : (
+            (BLOCK_FIELDS[selected.type] || []).map((f) => (
+              <div key={f.k}>{renderField(f, selected.props, (patch) => setProps(selected.id, { ...selected.props, ...patch }))}</div>
+            ))
+          )}
         </div>
       ) : null}
     </div>

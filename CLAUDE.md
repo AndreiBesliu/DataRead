@@ -143,8 +143,18 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   brut `visits`. Beacon injectat (scroll/timp/CTA → `/p/_track`) + formular opțional per LP
   (`/p/_submit` → `submissions` + opțional lead în pipeline). Motor analytics pur:
   `src/analytics/lpStats.ts`. Submissions/visits/stats = scrise DOAR de functions (rules:
-  create/write false). Amânat: builder vizual drag&drop; servire pe subdomeniu (izolare XSS pt.
-  autori ne-de-încredere); cod >200KB în Storage; `/en/p/**`.
+  create/write false).
+- **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
+  `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 4 efecte (dots/
+  constellation/shapes/grid) × 4 interacțiuni (none/mouseReact/mouseParallax/scrollParallax); culoare
+  = `--accent` la runtime; respectă `prefers-reduced-motion`. Două locuri: **fundal de pagină**
+  (`LandingPage.pageDecor` + `pageDecorHtml` compilat la salvare, injectat de serveLp după `<body>`;
+  `body{position:relative;z-index:0}` ⇒ canvas `z-index:-1` în spatele conținutului) și **bloc `decor`**
+  (în builder, cu overlay text). `LpDecorControls` (refolosit Design tab + builder). serveLp servește
+  tot string-ul precompilat (fără port JS al motorului). Amânat: editor de plasare liberă; decor pe
+  orice bloc existent; WebGL.
+- Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
+  Storage; `/en/p/**`.
 
 ## Capcane cunoscute
 

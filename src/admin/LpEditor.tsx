@@ -14,15 +14,18 @@ import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
+import LpDecorControls from './LpDecorControls';
 import { sanitizeSlug, type LandingPage } from '../types/landingPage';
 import { compileBlocks } from '../types/lpBlocks';
+import { compileDecor } from '../types/lpDecor';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
 type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
-  return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${lp.html}</body></html>`;
+  const pageDecor = compileDecor(lp.pageDecor, 'pg', 'page');
+  return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${pageDecor}${lp.html}</body></html>`;
 }
 
 export default function LpEditor({
@@ -74,6 +77,8 @@ export default function LpEditor({
       blocks: draft.blocks,
       html: effectiveHtml(draft), // mod visual → blocuri compilate; serveLp servește tot `html`
       design: draft.design,
+      pageDecor: draft.pageDecor,
+      pageDecorHtml: compileDecor(draft.pageDecor, 'pg', 'page'), // injectat de serveLp după <body>
       hasForm: draft.form.enabled,
       form: draft.form,
       clientUid: draft.clientUid,
@@ -257,6 +262,10 @@ export default function LpEditor({
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px 16px', maxHeight: 460, overflowY: 'auto' }}>
                 <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} />
                 <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '2px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('admin.lpStudio.decor_pageTitle')}</div>
+                  <LpDecorControls value={draft.pageDecor} onChange={(pageDecor) => setDraft((d) => ({ ...d, pageDecor }))} />
+                </div>
               </div>
             )}
             {tab === 'ai' && (

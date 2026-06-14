@@ -209,7 +209,9 @@ export function customThemeCss(c: CustomTheme): string {
       `background-attachment:${bg.backgroundAttachment}`,
     );
   }
-  return `:root{${vars}}\nbody{margin:0;min-height:100vh;color:${c.vars['fg-0']};${bgDecl.join(';')}}`;
+  // position:relative;z-index:0 → stacking context, ca decorul de fundal (canvas z-index:-1) să stea
+  // în spatele conținutului, dar peste fundalul body-ului (fără a împacheta children-ii).
+  return `:root{${vars}}\nbody{margin:0;min-height:100vh;position:relative;z-index:0;color:${c.vars['fg-0']};${bgDecl.join(';')}}`;
 }
 
 /** Clasa CSS pentru stratul decorativ animat (gol = fără animație). */

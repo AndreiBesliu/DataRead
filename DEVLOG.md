@@ -529,6 +529,26 @@ normaliser, secretele niciodată în chat/repo.
 > pagină multi-bloc — hero+features+testimonial+faq+form — pe tema Ocean cu accent custom). DEPLOYED:
 > hosting (serveLp NESCHIMBAT — servește tot `html`). **Andrei poate construi LP-uri 100% din UI.**
 
+**2026-06-14 - Task Completed — Elemente & animații decorative interactive (LP)**
+> Model: Claude Fable 5
+> Andrei: elemente decorative (puncte/linii/cerculețe/forme) în blocuri sau pe fundal, care se mișcă
+> la interacțiunea userului. Decizie cheie: motorul de animație trăiește DOAR în TS (`compileDecor`
+> produce <canvas>+<script> inline self-contained); paginile servite primesc string-ul compilat ⇒
+> serveLp nu cunoaște motorul (fără port JS). Changes: src/types/lpDecor.ts (LpDecor + coerce +
+> compileDecor — motor canvas pur: 4 efecte dots/constellation/shapes/grid × 4 interacțiuni none/
+> mouseReact/mouseParallax/scrollParallax; culoarea = --accent la runtime; prefers-reduced-motion →
+> static; densitate plafonată; mode page=fixed z-index:-1 / block=absolute). LandingPage + pageDecor
+> + pageDecorHtml (compilat la salvare). lpBlocks: bloc nou `decor` (config + overlay text → section
+> cu canvas). LpDecorControls.tsx (efect/interacțiune/densitate/viteză/mărime/opacitate/culoare +
+> mini-preview live iframe). Wire: tab Design „Fundal decorativ" (pageDecor) + bloc decor în builder
+> (caz special). customThemeCss + lpThemeCss: body position:relative;z-index:0 (stacking ⇒ canvasul
+> z-index:-1 stă în spatele conținutului). serveLp.composeLpPage injectează pageDecorHtml după <body>.
+> i18n decor*/bt_decor (ro+en). +6 checks în test-landing.
+> Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală (Playwright, fără page
+> errors): cele 4 efecte + fundal de pagină (constelație) în spatele conținutului lizibil. DEPLOYED:
+> functions:serveLp + hosting. Amânat: editor de plasare liberă element-cu-element; decor ca fundal
+> la orice bloc existent; WebGL/3D.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

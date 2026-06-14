@@ -835,7 +835,7 @@ function lpThemeCss(design) {
   if (images.length) {
     bg += `;background-image:${images.join(', ')};background-size:${sizes.join(', ')};background-position:${positions.join(', ')};background-repeat:${repeats.join(', ')};background-attachment:${attachments.join(', ')}`;
   }
-  return `:root{${varStr}}body{margin:0;min-height:100vh;color:${v['fg-0']};${bg}}`;
+  return `:root{${varStr}}body{margin:0;min-height:100vh;position:relative;z-index:0;color:${v['fg-0']};${bg}}`;
 }
 
 function lpNotFound() {
@@ -890,6 +890,8 @@ function composeLpPage(slug, lp, req) {
   const canonical = `https://${host}/p/${slug}`;
   const css = lpThemeCss(lp.design);
   const body = typeof lp.html === 'string' ? lp.html : '';
+  // Decorul de fundal al paginii — compilat la salvare în client, injectat aici (motorul nu trăiește în functions).
+  const pageDecor = typeof lp.pageDecorHtml === 'string' ? lp.pageDecorHtml : '';
   return (
     `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">` +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -900,7 +902,7 @@ function composeLpPage(slug, lp, req) {
     `<meta property="og:title" content="${title}">` +
     (desc ? `<meta property="og:description" content="${desc}">` : '') +
     `<meta property="og:url" content="${canonical}">` +
-    `<style>${css}</style></head><body>${body}${lpScripts(slug, lp)}</body></html>`
+    `<style>${css}</style></head><body>${pageDecor}${body}${lpScripts(slug, lp)}</body></html>`
   );
 }
 
