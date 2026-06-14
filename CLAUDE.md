@@ -109,6 +109,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   lizibilitate gradient peste imagine + culoare) + stratul decorativ animat `.admin-fx` (z-index 0,
   sub `<main>`). Asta e fundația viitorului sistem **Landing Pages** (același motor de design,
   pentru clienți cu conținut variabil).
+- **LP Studio — panou de previzualizare:** `LpPreviewPane` (mare, redimensionabil vertical) cu lățimi
+  de dispozitiv (mobil 390 / tabletă 820 / desktop plin) pentru testarea responsive (iframe = viewport)
+  + fundal-canvas distinct (`.lp-preview-surface`, transparency grid). Previzualizarea decorului/
+  paginii se face aici, nu într-o cutie separată în controale.
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
   `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (portal client, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage

@@ -15,6 +15,7 @@ import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorControls from './LpDecorControls';
+import LpPreviewPane from './LpPreviewPane';
 import { LP_HTML_MAX, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import { compileBlocks } from '../types/lpBlocks';
 import { compileDecor } from '../types/lpDecor';
@@ -238,8 +239,8 @@ export default function LpEditor({
       {tab === 'analytics' && !isNew ? (
         <LpAnalytics slug={docId as string} />
       ) : (
-        <div style={{ display: 'flex', gap: 14, alignItems: 'stretch', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 420px', minWidth: 320 }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px', minWidth: 300, maxWidth: 440 }}>
             {tab === 'code' && draft.editor === 'visual' && (
               <LpVisualBuilder blocks={draft.blocks} form={draft.form} onChange={(blocks) => setDraft((d) => ({ ...d, blocks }))} />
             )}
@@ -289,15 +290,8 @@ export default function LpEditor({
             )}
           </div>
 
-          <div style={{ flex: '1 1 420px', minWidth: 320 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', padding: '6px 0 12px' }}>{t('admin.lpStudio.preview')}</div>
-            <iframe
-              title="preview"
-              srcDoc={previewDoc}
-              sandbox="allow-forms allow-popups allow-scripts"
-              referrerPolicy="no-referrer"
-              style={{ width: '100%', height: 460, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }}
-            />
+          <div style={{ flex: '2 1 460px', minWidth: 320 }}>
+            <LpPreviewPane srcDoc={previewDoc} />
           </div>
         </div>
       )}

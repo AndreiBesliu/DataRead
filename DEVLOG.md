@@ -627,6 +627,19 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: build + 8/8 suites + prerender + boot-smoke; smoke headless al motoarelor (mouseAttract/
 > mouseReact/intensity/parallax) fără page errors. DEPLOYED: hosting (serveLp neatins — decor precompilat).
 
+**2026-06-14 - Task Completed — panou de previzualizare LP mare, responsive, cu fundal distinct**
+> Model: Claude Fable 5
+> Andrei: panoul de preview mult mai mare + customizabil (LP-urile fiind responsive, conținutul ține
+> cont de mărimea boxului) + fundal diferit de restul admin-ului. Changes: LpPreviewPane.tsx nou —
+> lățimi de dispozitiv (Mobil 390 / Tabletă 820 / Desktop plin) ca să testezi responsive-ul (iframe-ul
+> ia lățimea aleasă → conținutul se reașază), redimensionabil pe verticală (resize), înălțime mare
+> implicit (640). styles.css `.lp-preview-surface` = fundal-canvas în damă (transparency grid),
+> distinct de tema admin-ului. LpEditor: preview-ul folosește LpPreviewPane; layout rebalansat
+> (controale ≤440px, preview flex 2 → mult mai lat). i18n pv_mobile/tablet/desktop/full/resizeHint.
+> Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală (Playwright): suprafață în
+> damă cu LP încadrat la 390px, grila de beneficii se stivuiește pe o coloană (responsive real).
+> DEPLOYED: hosting (schimbare pur UI; serveLp neatins).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
