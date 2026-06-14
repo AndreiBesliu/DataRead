@@ -719,6 +719,15 @@ normaliser, secretele niciodată în chat/repo.
 > locuri, deci paginile grele sunt raportate corect ca „sărite", nu „eșuate". Verificat: 8/8 suites
 > (+5 checks noi) + E2E în proces + build + prerender + boot-smoke. DEPLOYED: hosting.
 
+**2026-06-14 - Hotfix — /admin + paginile publice dădeau „Page Not Found" (deploy fără prerender)**
+> Model: Claude Fable 5
+> Cauză: la ultimele 2 deploy-uri de hosting am rulat `npm run build` (care golește `dist/` — emptyOutDir)
+> FĂRĂ `npm run prerender`, deci `dist/app.html` (ținta rewrite-ului catch-all `** → /app.html`) + paginile
+> prerenderizate (/pachete, /start, /contact, /legal/*, /en/*) lipseau din build. Rezultat: orice rută SPA
+> (/admin, /app) + sub-paginile publice → 404 Firebase. Fix: `npm run build:site` (build+prerender) +
+> boot-smoke + re-deploy hosting. Verificat live: /admin, /app, /, /pachete, /start → HTTP 200.
+> **Lecție:** deploy de hosting DOAR cu `npm run build:site` (sau `npm run deploy`), niciodată `build` simplu.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
