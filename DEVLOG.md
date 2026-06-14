@@ -549,6 +549,16 @@ normaliser, secretele niciodată în chat/repo.
 > functions:serveLp + hosting. Amânat: editor de plasare liberă element-cu-element; decor ca fundal
 > la orice bloc existent; WebGL/3D.
 
+**2026-06-14 - Task Completed — decor: efecte noi + varietate de forme**
+> Model: Claude Fable 5
+> Extins motorul `compileDecor` (src/types/lpDecor.ts) cu 3 efecte noi — valuri (linii sinusoidale
+> animate), bule (cercuri care urcă), inele pulsatorii (cercuri concentrice care se dilată din centru/
+> mouse) — și paleta `shapes` cu diamant/stea/inel/hexagon (acum 7 forme). Total: 7 efecte × 4
+> interacțiuni. i18n decorEffect_waves/bubbles/rings (ro+en) + check nou în test-landing.
+> Servirea NESCHIMBATĂ (decorul compilează în stringuri stocate; serveLp servește precompilat) ⇒
+> deploy doar hosting. Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală
+> (Playwright, fără page errors) pe tema Carbon. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

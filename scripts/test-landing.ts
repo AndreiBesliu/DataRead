@@ -159,6 +159,12 @@ check('compileBlocks: bloc decor → section + canvas', (() => {
   const h = compileBlocks([{ id: '1', type: 'decor', props: { decor: { effect: 'shapes' }, heading: 'Salut' } }], { form });
   return h.includes('<section') && h.includes('<canvas') && h.includes('Salut');
 })());
+check('compileDecor: efecte noi (waves/bubbles/rings) → canvas + script', (() => {
+  return ['waves', 'bubbles', 'rings'].every((ef) => {
+    const h = compileDecor(coerceToLpDecor({ effect: ef }), 'e', 'block');
+    return h.includes('<canvas') && h.includes('<script>');
+  });
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);

@@ -145,8 +145,9 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `src/analytics/lpStats.ts`. Submissions/visits/stats = scrise DOAR de functions (rules:
   create/write false).
 - **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
-  `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 4 efecte (dots/
-  constellation/shapes/grid) × 4 interacțiuni (none/mouseReact/mouseParallax/scrollParallax); culoare
+  `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 7 efecte (dots/
+  constellation/shapes(7 forme)/grid/waves/bubbles/rings) × 4 interacțiuni (none/mouseReact/
+  mouseParallax/scrollParallax); culoare
   = `--accent` la runtime; respectă `prefers-reduced-motion`. Două locuri: **fundal de pagină**
   (`LandingPage.pageDecor` + `pageDecorHtml` compilat la salvare, injectat de serveLp după `<body>`;
   `body{position:relative;z-index:0}` ⇒ canvas `z-index:-1` în spatele conținutului) și **bloc `decor`**
