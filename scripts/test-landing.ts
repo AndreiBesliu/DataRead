@@ -180,6 +180,14 @@ check('compileDecor: efecte noi (waves/bubbles/rings) → canvas + script', (() 
     return h.includes('<canvas') && h.includes('<script>');
   });
 })());
+check('compileDecor: motor canvas conține scalare responsivă (scl/W/REF)', (() => {
+  const h = compileDecor(coerceToLpDecor({ effect: 'constellation' }), 'e', 'page');
+  return h.includes('function scl()') && h.includes('W/REF') && /D=120\*scl\(\)/.test(h);
+})());
+check('compileDecor: custom scalează elementele (var --lpf-s + script de scalare)', (() => {
+  const h = compileDecor(coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'circle', x: 50, y: 50 }] }), 'c', 'block');
+  return h.includes('scale(var(--lpf-s,1))') && h.includes('setProperty("--lpf-s"');
+})());
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
   const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });
   return d.effect === 'custom' && d.elements.length === 1 && d.elements[0].shape === 'circle' && d.elements[0].x === 100 && d.elements[0].size === 400;

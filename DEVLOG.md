@@ -682,6 +682,25 @@ normaliser, secretele niciodată în chat/repo.
 > Notă: scriere de LP de test direct în producție nu e posibilă fără credențiale Admin SDK (ADC/SA
 > neconfigurate); E2E în proces acoperă exact același cod + intrări, plus negative paths live.
 
+**2026-06-14 - Task Completed — decor responsiv (se scalează cu lățimea containerului)**
+> Model: Claude Fable 5
+> Andrei: „dimensiunea elementelor rămâne constantă, nimic nu se scalează" — decorul avea dimensiuni
+> în px ficși, deci pe mobil/desktop arăta disproporționat (conținutul se reașază responsive, decorul nu).
+> Fix în lpDecor.ts (motorul trăiește doar în TS → doar hosting, serveLp neatins; paginile vechi prind
+> scalarea la re-salvare/recompilare):
+> - **Canvas** (decorEngine): `scl()=clamp(0.5..1.25, W/REF=1100)` aplicat pe raza particulelor, grid
+>   (dot+wobble), waves amp, constellation D/MR; recalculat la resize (build rulează deja la resize).
+> - **Custom (freeform)**: elementele primesc `scale(var(--lpf-s,1))`; un scaleScript setează `--lpf-s`
+>   = clamp(0.5..1.25, lățime container/1100) la init + resize (independent de parallax-ul pe layer).
+> **Review adversarial (Workflow ultracode, 9 agenți, 3 lentile + verificare)** → 4 constatări reale,
+> toate remediate înainte de deploy: (MEDIUM) reduced-motion + resize golea canvas-ul (sz() curăță, dar
+> draw() nu se mai apela) → listener resize→draw în reduced-motion; (LOW) lineWidth nescalat → 
+> `lineWidth=max(1,scl())`; (LOW) wobble grid fix 3px → `*SCg`; (LOW) gap grid scalat alimenta bucla →
+> ~3× puncte/cadru pe mobil (regresie perf introdusă de mine) → gap revenit la lățime-independent,
+> doar raza punctelor scalează. Verificat: 8/8 suites (+2 checks scalare) + E2E în proces + build +
+> screenshot multi-lățime (390/640/900) cu pătrat de referință fix → decorul scalează vizibil, referința
+> constantă. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
