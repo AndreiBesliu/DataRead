@@ -701,6 +701,24 @@ normaliser, secretele niciodată în chat/repo.
 > screenshot multi-lățime (390/640/900) cu pătrat de referință fix → decorul scalează vizibil, referința
 > constantă. DEPLOYED: hosting.
 
+**2026-06-14 - Task Completed — buton „Recompilează toate" în LP Studio + sursă unică de compilare**
+> Model: Claude Fable 5
+> Andrei: „da, sună bine" (la oferta de buton „recompilează toate paginile" ca paginile vechi să prindă
+> scalarea decorului fără re-salvare manuală). Changes:
+> - **landingPage.ts**: helperi puri noi `effectiveLpForm` (bloc form → form.enabled), `recompileLpAssets`
+>   (html din blocuri în vizual / brut în cod + pageDecorHtml + formular efectiv) și `htmlByteSize`
+>   (octeți UTF-8 = ce validează regulile). Sursă UNICĂ de compilare.
+> - **LpEditor.tsx**: refactor să folosească recompileLpAssets (preview, payload, eject-to-code) +
+>   gardă de mărime pe `htmlByteSize` în loc de `.length`. Fără schimbare de comportament (verificat).
+> - **LandingStudio.tsx**: buton „↻ Recompilează toate" — tranzacție per pagină (re-citire proaspătă →
+>   recompilare → scriere), sare paginile prea mari (octeți), scrie doar ce s-a schimbat, raportează
+>   contoare (actualizate/neschimbate/sărite/eșuate). i18n ro+en (recompile*).
+> **Review adversarial (Workflow ultracode, 6 agenți)** → 2 constatări reale (LOW), remediate înainte de
+> deploy: (1) lost-update race (folosea snapshot-ul vechi) → tranzacție cu re-citire proaspătă; (2) garda
+> de mărime pe `.length` (UTF-16) diverge de regula Firestore `.size()` (UTF-8) → `htmlByteSize` în ambele
+> locuri, deci paginile grele sunt raportate corect ca „sărite", nu „eșuate". Verificat: 8/8 suites
+> (+5 checks noi) + E2E în proces + build + prerender + boot-smoke. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

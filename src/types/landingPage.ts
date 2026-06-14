@@ -7,8 +7,8 @@
  * corupt devine 'draft' — o pagină nu ajunge NICIODATĂ public din greșeală.
  */
 import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
-import { coerceBlocks, type LpBlock } from './lpBlocks';
-import { coerceToLpDecor, type LpDecor } from './lpDecor';
+import { coerceBlocks, compileBlocks, type LpBlock } from './lpBlocks';
+import { coerceToLpDecor, compileDecor, type LpDecor } from './lpDecor';
 
 export const LP_EDITORS = ['code', 'visual'] as const;
 export type LpEditorMode = (typeof LP_EDITORS)[number];
@@ -165,6 +165,30 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     leadId: str(d.leadId, 128),
     createdBy: str(d.createdBy, 128),
   };
+}
+
+/** Mărimea în OCTEȚI UTF-8 a unui string — aceeași semantică cu `String.size()` din regulile Firestore
+ *  (care validează html.size() <= LP_HTML_MAX). `.length` (unități UTF-16) ar subestima conținutul cu
+ *  diacritice/emoji, lăsând o pagină respinsă de reguli să treacă de gardă. Sursă unică pt. editor + recompilare. */
+export function htmlByteSize(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+/** Formularul efectiv: un bloc `form` forțează form.enabled — altfel s-ar livra public un formular fără
+ *  handler (serveLp injectează submit-ul doar când hasForm). Sursă unică pt. editor + recompilare. */
+export function effectiveLpForm(lp: LandingPage): LpFormConfig {
+  const enabled = lp.form.enabled || lp.blocks.some((b) => b.type === 'form');
+  return { ...lp.form, enabled };
+}
+
+/** Recompilează asset-urile SERVITE din modelul curent: `html` (blocuri compilate în mod vizual; html-ul
+ *  brut în mod cod) + `pageDecorHtml` (decor pagină) + formular efectiv. Sursă unică pentru salvarea din
+ *  editor ȘI pentru „recompilează toate" (paginile vechi prind logica nouă de compilare fără re-salvare). */
+export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; form: LpFormConfig; hasForm: boolean } {
+  const form = effectiveLpForm(lp);
+  const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form }) : lp.html;
+  const pageDecorHtml = compileDecor(lp.pageDecor, 'pg', 'page');
+  return { html, pageDecorHtml, form, hasForm: form.enabled };
 }
 
 // ── Submissions (landingPages/{slug}/submissions/{id}) ──

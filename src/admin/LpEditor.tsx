@@ -16,8 +16,7 @@ import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorControls from './LpDecorControls';
 import LpPreviewPane from './LpPreviewPane';
-import { LP_HTML_MAX, sanitizeSlug, type LandingPage } from '../types/landingPage';
-import { compileBlocks } from '../types/lpBlocks';
+import { htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import { compileDecor } from '../types/lpDecor';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
@@ -55,15 +54,9 @@ export default function LpEditor({
   const isNew = docId === null;
   const slugTaken = isNew && !!draft.slug && existingSlugs.includes(draft.slug);
 
-  // Dacă pagina conține un bloc `form`, forțăm form.enabled — altfel s-ar livra un formular „mort"
-  // (fără handler injectat de serveLp, fără acceptare la /p/_submit). Un bloc form vizibil => formular funcțional.
-  const formCfg = (d: LandingPage) => ({
-    ...d.form,
-    enabled: d.form.enabled || d.blocks.some((b) => b.type === 'form'),
-  });
-
-  // În mod visual, corpul paginii = blocurile compilate; în cod = html-ul brut.
-  const effectiveHtml = (d: LandingPage) => (d.editor === 'visual' ? compileBlocks(d.blocks, { form: formCfg(d) }) : d.html);
+  // Asset-urile servite (html din blocuri în mod vizual + pageDecorHtml + formular efectiv) — aceeași
+  // sursă unică folosită de „recompilează toate". Un bloc `form` forțează form.enabled (formular funcțional).
+  const effectiveHtml = (d: LandingPage) => recompileLpAssets(d).html;
 
   // Preview debounced (nu recompun iframe-ul la fiecare tastă).
   useEffect(() => {
@@ -73,8 +66,9 @@ export default function LpEditor({
 
   const setHtml = (html: string) => setDraft((d) => ({ ...d, html }));
 
-  const payload = useMemo(
-    () => ({
+  const payload = useMemo(() => {
+    const assets = recompileLpAssets(draft);
+    return {
       schema: 1,
       slug: draft.slug,
       title: draft.title.slice(0, 140),
@@ -83,24 +77,23 @@ export default function LpEditor({
       lang: draft.lang,
       editor: draft.editor,
       blocks: draft.blocks,
-      html: effectiveHtml(draft), // mod visual → blocuri compilate; serveLp servește tot `html`
+      html: assets.html, // mod visual → blocuri compilate; serveLp servește tot `html`
       design: draft.design,
       pageDecor: draft.pageDecor,
-      pageDecorHtml: compileDecor(draft.pageDecor, 'pg', 'page'), // injectat de serveLp după <body>
-      hasForm: formCfg(draft).enabled,
-      form: formCfg(draft),
+      pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
+      hasForm: assets.hasForm,
+      form: assets.form,
       clientUid: draft.clientUid,
       leadId: draft.leadId,
-    }),
-    [draft]
-  );
+    };
+  }, [draft]);
 
   async function save(nextStatus?: LandingPage['status']) {
     setErr('');
     const status = nextStatus ?? draft.status;
     // Gardă de mărime: refuzăm salvarea în loc să trunchiem tăcut html-ul (truncare = pagină ruptă).
     // Cu decor pe fiecare bloc, codul compilat poate crește; mai bine un mesaj clar decât o pagină stricată.
-    if (payload.html.length > LP_HTML_MAX) {
+    if (htmlByteSize(payload.html) > LP_HTML_MAX) {
       setErr(t('admin.lpStudio.errTooLarge', { max: Math.round(LP_HTML_MAX / 1000) }));
       return;
     }
@@ -203,7 +196,8 @@ export default function LpEditor({
           <button
             onClick={() => {
               if (!window.confirm(t('admin.lpStudio.ejectConfirm'))) return;
-              setDraft((d) => ({ ...d, editor: 'code', html: compileBlocks(d.blocks, { form: d.form }) }));
+              // d.editor e încă 'visual' aici → recompileLpAssets compilează blocurile în html (cu formular efectiv).
+              setDraft((d) => ({ ...d, editor: 'code', html: recompileLpAssets(d).html }));
               setTab('code');
             }}
             style={btn}

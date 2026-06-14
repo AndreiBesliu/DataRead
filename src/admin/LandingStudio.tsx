@@ -5,9 +5,9 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { coerceToLandingPage, type LandingPage } from '../types/landingPage';
+import { coerceToLandingPage, htmlByteSize, LP_HTML_MAX, recompileLpAssets, type LandingPage } from '../types/landingPage';
 import LpEditor from './LpEditor';
 import LpTemplatePicker from './LpTemplatePicker';
 
@@ -27,6 +27,8 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<{ docId: string | null; initial: LandingPage } | null>(null);
   const [picking, setPicking] = useState(false);
+  const [recompiling, setRecompiling] = useState(false);
+  const [recompileMsg, setRecompileMsg] = useState('');
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'landingPages'), (snap) => {
@@ -61,14 +63,55 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
     await deleteDoc(doc(db, 'landingPages', id)).catch(() => {});
   }
 
+  // Recompilează asset-urile servite (html din blocuri + pageDecorHtml) ale TUTUROR paginilor cu logica
+  // curentă de compilare — paginile vechi prind îmbunătățirile (ex. scalarea decorului) fără re-salvare.
+  // Tranzacție per pagină: re-citim documentul PROASPĂT, recompilăm din el și scriem — ca o editare
+  // concurentă (alt operator/alt tab) să nu fie suprascrisă cu date vechi (lost-update).
+  async function recompileAll() {
+    if (!window.confirm(t('admin.lpStudio.recompileConfirm', { count: rows.length }))) return;
+    setRecompiling(true);
+    setRecompileMsg('');
+    let updated = 0, unchanged = 0, skipped = 0, failed = 0;
+    for (const r of rows) {
+      try {
+        const outcome = await runTransaction(db, async (tx) => {
+          const ref = doc(db, 'landingPages', r.id);
+          const snap = await tx.get(ref);
+          if (!snap.exists()) return 'gone';
+          const cur = snap.data();
+          const a = recompileLpAssets(coerceToLandingPage(cur)); // recompilează din conținutul CURENT
+          if (htmlByteSize(a.html) > LP_HTML_MAX) return 'skipped'; // octeți UTF-8 = ce validează regulile
+          const changed = a.html !== (cur.html ?? '') || a.pageDecorHtml !== (cur.pageDecorHtml ?? '') || a.hasForm !== !!cur.hasForm;
+          if (!changed) return 'unchanged';
+          tx.update(ref, { schema: 1, html: a.html, pageDecorHtml: a.pageDecorHtml, hasForm: a.hasForm, form: a.form, updatedAt: serverTimestamp() });
+          return 'updated';
+        });
+        if (outcome === 'updated') updated++;
+        else if (outcome === 'unchanged') unchanged++;
+        else if (outcome === 'skipped') skipped++;
+        // 'gone' (ștearsă între timp) → ignorăm
+      } catch {
+        failed++;
+      }
+    }
+    setRecompiling(false);
+    setRecompileMsg(t('admin.lpStudio.recompileDone', { updated, unchanged, skipped, failed }));
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.lpStudio.title')}</h2>
-        <button onClick={() => setPicking(true)} style={{ ...btnPrimary, marginLeft: 'auto' }}>
+        {rows.length > 0 ? (
+          <button onClick={recompileAll} disabled={recompiling} style={{ ...btn, marginLeft: 'auto', opacity: recompiling ? 0.6 : 1 }} title={t('admin.lpStudio.recompileHint')}>
+            ↻ {recompiling ? t('admin.lpStudio.recompileRunning') : t('admin.lpStudio.recompileAll')}
+          </button>
+        ) : null}
+        <button onClick={() => setPicking(true)} style={{ ...btnPrimary, marginLeft: rows.length > 0 ? 0 : 'auto' }}>
           + {t('admin.lpStudio.new')}
         </button>
       </div>
+      {recompileMsg ? <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: -6, marginBottom: 12 }}>{recompileMsg}</p> : null}
 
       {rows.length === 0 ? (
         <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.lpStudio.listEmpty')}</p>

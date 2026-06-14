@@ -2,6 +2,9 @@
 import {
   coerceToLandingPage,
   coerceToLpSubmission,
+  effectiveLpForm,
+  htmlByteSize,
+  recompileLpAssets,
   sanitizeSlug,
   sanitizeSubmissionValues,
   LP_HTML_MAX,
@@ -187,6 +190,23 @@ check('compileDecor: motor canvas conține scalare responsivă (scl/W/REF)', (()
 check('compileDecor: custom scalează elementele (var --lpf-s + script de scalare)', (() => {
   const h = compileDecor(coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'circle', x: 50, y: 50 }] }), 'c', 'block');
   return h.includes('scale(var(--lpf-s,1))') && h.includes('setProperty("--lpf-s"');
+})());
+check('htmlByteSize: octeți UTF-8 (diacritice/emoji > .length), nu unități UTF-16', (() => {
+  return htmlByteSize('abc') === 3 && htmlByteSize('ăâîșț') === 10 && htmlByteSize('a') === 1 && 'ăâîșț'.length === 5;
+})());
+check('effectiveLpForm: bloc form forțează form.enabled (formular „mort" → activat)', (() => {
+  const lp = coerceToLandingPage({ editor: 'visual', blocks: [{ type: 'form' }], form: { enabled: false, fields: [{ name: 'email', label: 'Email', type: 'email' }] } });
+  return effectiveLpForm(lp).enabled === true && lp.form.enabled === false;
+})());
+check('recompileLpAssets: vizual → html din blocuri + pageDecorHtml; respectă formularul efectiv', (() => {
+  const lp = coerceToLandingPage({ editor: 'visual', html: 'STALE', blocks: [{ type: 'hero', props: { heading: 'Salut' } }, { type: 'form' }], pageDecor: { effect: 'dots' }, form: { enabled: false, fields: [{ name: 'email', label: 'Email', type: 'email' }] } });
+  const a = recompileLpAssets(lp);
+  return a.html.includes('Salut') && a.html.includes('data-lp-form') && !a.html.includes('STALE') && a.pageDecorHtml.includes('lpd-pg') && a.hasForm === true;
+})());
+check('recompileLpAssets: mod cod → html-ul brut rămâne neatins', (() => {
+  const lp = coerceToLandingPage({ editor: 'code', html: '<h1>Manual</h1>', pageDecor: { effect: 'none' } });
+  const a = recompileLpAssets(lp);
+  return a.html === '<h1>Manual</h1>' && a.pageDecorHtml === '';
 })());
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
   const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });
