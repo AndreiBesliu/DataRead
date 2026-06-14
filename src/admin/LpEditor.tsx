@@ -260,7 +260,7 @@ export default function LpEditor({
             )}
             {tab === 'design' && (
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px 16px', maxHeight: 460, overflowY: 'auto' }}>
-                <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} />
+                <ThemeControls value={draft.design} onChange={(design) => setDraft((d) => ({ ...d, design }))} withName={false} withAnimation={false} withFonts={true} />
                 <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '2px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('admin.lpStudio.decor_pageTitle')}</div>

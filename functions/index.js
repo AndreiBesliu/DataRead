@@ -808,6 +808,19 @@ function lpEscape(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// Fonturi (port al LP_FONTS din themes.ts) — pentru aplicarea tipografiei pe pagina servită.
+const LP_FONTS_MAP = {
+  inter: { q: 'Inter:wght@400;600;800', stack: "'Inter',sans-serif" },
+  poppins: { q: 'Poppins:wght@400;600;800', stack: "'Poppins',sans-serif" },
+  montserrat: { q: 'Montserrat:wght@400;600;800', stack: "'Montserrat',sans-serif" },
+  playfair: { q: 'Playfair+Display:wght@400;700;900', stack: "'Playfair Display',serif" },
+  merriweather: { q: 'Merriweather:wght@400;700', stack: "'Merriweather',serif" },
+  lora: { q: 'Lora:wght@400;600;700', stack: "'Lora',serif" },
+  spacegrotesk: { q: 'Space+Grotesk:wght@400;600;700', stack: "'Space Grotesk',sans-serif" },
+  dmsans: { q: 'DM+Sans:wght@400;600;700', stack: "'DM Sans',sans-serif" },
+  oswald: { q: 'Oswald:wght@400;600;700', stack: "'Oswald',sans-serif" },
+};
+
 // Port JS al customThemeCss (src/theme/themes.ts) — defensiv (orice valoare invalidă → fallback).
 function lpThemeCss(design) {
   const d = design && typeof design === 'object' ? design : {};
@@ -835,7 +848,15 @@ function lpThemeCss(design) {
   if (images.length) {
     bg += `;background-image:${images.join(', ')};background-size:${sizes.join(', ')};background-position:${positions.join(', ')};background-repeat:${repeats.join(', ')};background-attachment:${attachments.join(', ')}`;
   }
-  return `:root{${varStr}}body{margin:0;min-height:100vh;position:relative;z-index:0;color:${v['fg-0']};${bg}}`;
+  const hf = LP_FONTS_MAP[d.headingFont];
+  const bf = LP_FONTS_MAP[d.bodyFont];
+  const fams = [];
+  if (hf) fams.push(hf.q);
+  if (bf && (!hf || bf.q !== hf.q)) fams.push(bf.q);
+  const imports = fams.map((q) => `@import url('https://fonts.googleapis.com/css2?family=${q}&display=swap');`).join('');
+  const bodyFam = bf ? `font-family:${bf.stack};` : '';
+  const headRule = hf ? `h1,h2,h3,h4,h5,h6{font-family:${hf.stack}}` : '';
+  return `${imports}:root{${varStr}}body{margin:0;min-height:100vh;position:relative;z-index:0;color:${v['fg-0']};${bodyFam}${bg}}${headRule}`;
 }
 
 function lpNotFound() {

@@ -237,6 +237,8 @@ const en: typeof ro = {
       bgImageHint: 'https only. Leave empty for a plain background.',
       grid: 'Dot grid',
       animation: 'Decorative animation',
+      headingFont: 'Heading font',
+      bodyFont: 'Body font',
       reset: 'Reset',
       done: 'Done',
       close: 'Close',

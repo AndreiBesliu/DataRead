@@ -92,6 +92,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`
   pe wrapperul view-ului de admin; componentele se reskinează automat (folosesc deja variabilele).
   Default = Midnight (dark digital). Portalul de client (/app) rămâne pe tema default deocamdată.
+- **Tipografie (ACTIV, 14.06.2026):** `CustomTheme.headingFont/bodyFont` (id din `LP_FONTS` — 10
+  fonturi Google + System); aplicate pe paginile LP de `customThemeCss`/`lpThemeCss` (`@import` +
+  font-family pe body/h1-h6). În `ThemeControls` doar cu prop `withFonts` (LP design = da; tema admin
+  = nu, inline-style nu poate @import). Sistemul de design e complet: culori/fundal/fonturi/animații/
+  decor (parametric + plasare liberă).
 - **Creator de teme personalizate (configurator extins):** opțiunea „Personalizată" + butonul
   „Editează tema" deschid `ThemeEditor` — se modifică DOAR design-ul (cele 8 culori, imagine de
   fundal prin URL https, animație de decor: aurora/puls/sclipire, grilă), NICIODATĂ layout/

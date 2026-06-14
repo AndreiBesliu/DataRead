@@ -83,6 +83,31 @@ export const CUSTOM_THEME_ID = 'custom';
 export type ThemeAnimation = 'none' | 'pulse' | 'sheen' | 'drift';
 export const THEME_ANIMATIONS: ThemeAnimation[] = ['none', 'pulse', 'sheen', 'drift'];
 
+/** Fonturi curate (Google Fonts) pentru paginile LP. id '' = fontul de sistem (fără încărcare). */
+export interface FontDef {
+  id: string;
+  label: string;
+  /** Parametrul `family=` din Google Fonts (gol pt. system). */
+  q: string;
+  /** font-family CSS. */
+  stack: string;
+}
+export const LP_FONTS: FontDef[] = [
+  { id: '', label: 'System', q: '', stack: 'system-ui,-apple-system,Segoe UI,Roboto,sans-serif' },
+  { id: 'inter', label: 'Inter', q: 'Inter:wght@400;600;800', stack: "'Inter',sans-serif" },
+  { id: 'poppins', label: 'Poppins', q: 'Poppins:wght@400;600;800', stack: "'Poppins',sans-serif" },
+  { id: 'montserrat', label: 'Montserrat', q: 'Montserrat:wght@400;600;800', stack: "'Montserrat',sans-serif" },
+  { id: 'playfair', label: 'Playfair Display', q: 'Playfair+Display:wght@400;700;900', stack: "'Playfair Display',serif" },
+  { id: 'merriweather', label: 'Merriweather', q: 'Merriweather:wght@400;700', stack: "'Merriweather',serif" },
+  { id: 'lora', label: 'Lora', q: 'Lora:wght@400;600;700', stack: "'Lora',serif" },
+  { id: 'spacegrotesk', label: 'Space Grotesk', q: 'Space+Grotesk:wght@400;600;700', stack: "'Space Grotesk',sans-serif" },
+  { id: 'dmsans', label: 'DM Sans', q: 'DM+Sans:wght@400;600;700', stack: "'DM Sans',sans-serif" },
+  { id: 'oswald', label: 'Oswald', q: 'Oswald:wght@400;600;700', stack: "'Oswald',sans-serif" },
+];
+export function fontById(id: string): FontDef {
+  return LP_FONTS.find((f) => f.id === id) || LP_FONTS[0];
+}
+
 /** Cheile de culoare editabile, în ordinea afișării în editor. */
 export const THEME_COLOR_KEYS: (keyof AdminTheme['vars'])[] = [
   'bg-0', 'bg-1', 'fg-0', 'fg-1', 'border', 'accent', 'accent-dark', 'accent-contrast',
@@ -99,6 +124,9 @@ export interface CustomTheme {
   /** URL imagine de fundal (https; gol = fără). */
   bgImage: string;
   animation: ThemeAnimation;
+  /** Fonturi (id din LP_FONTS; '' = system) — aplicate pe paginile LP. */
+  headingFont: string;
+  bodyFont: string;
 }
 
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
@@ -107,8 +135,11 @@ const SAFE_IMG_URL = /^https:\/\/[^\s"')]+$/i;
 
 export function defaultCustomTheme(baseId: string = DEFAULT_ADMIN_THEME): CustomTheme {
   const b = themeById(baseId);
-  return { schema: 1, base: b.id, label: 'Tema mea', vars: { ...b.vars }, digital: !!b.digital, bgImage: '', animation: 'none' };
+  return { schema: 1, base: b.id, label: 'Tema mea', vars: { ...b.vars }, digital: !!b.digital, bgImage: '', animation: 'none', headingFont: '', bodyFont: '' };
 }
+
+const FONT_IDS = LP_FONTS.map((f) => f.id);
+const fontId = (v: unknown): string => (typeof v === 'string' && FONT_IDS.includes(v) ? v : '');
 
 /** Normaliser UNIC — orice intrare stricată → temă validă, fără a arunca. */
 export function coerceToCustomTheme(raw: unknown): CustomTheme {
@@ -127,7 +158,7 @@ export function coerceToCustomTheme(raw: unknown): CustomTheme {
   const bgImage = SAFE_IMG_URL.test(bgRaw) ? bgRaw.slice(0, 500) : '';
   const label = typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : 'Tema mea';
   const digital = typeof o.digital === 'boolean' ? o.digital : !!bt.digital;
-  return { schema: 1, base, label, vars, digital, bgImage, animation };
+  return { schema: 1, base, label, vars, digital, bgImage, animation, headingFont: fontId(o.headingFont), bodyFont: fontId(o.bodyFont) };
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -209,9 +240,16 @@ export function customThemeCss(c: CustomTheme): string {
       `background-attachment:${bg.backgroundAttachment}`,
     );
   }
+  // Fonturi (Google Fonts) — @import-urile trebuie să fie ÎNAINTEA oricărei reguli.
+  const hf = fontById(c.headingFont || '');
+  const bf = fontById(c.bodyFont || '');
+  const imports = [hf, bf].filter((f) => f.q).filter((f, i, a) => a.findIndex((x) => x.q === f.q) === i)
+    .map((f) => `@import url('https://fonts.googleapis.com/css2?family=${f.q}&display=swap');`).join('');
+  const bodyFam = c.bodyFont ? `font-family:${bf.stack};` : '';
+  const headRule = c.headingFont ? `\nh1,h2,h3,h4,h5,h6{font-family:${hf.stack}}` : '';
   // position:relative;z-index:0 → stacking context, ca decorul de fundal (canvas z-index:-1) să stea
   // în spatele conținutului, dar peste fundalul body-ului (fără a împacheta children-ii).
-  return `:root{${vars}}\nbody{margin:0;min-height:100vh;position:relative;z-index:0;color:${c.vars['fg-0']};${bgDecl.join(';')}}`;
+  return `${imports}:root{${vars}}\nbody{margin:0;min-height:100vh;position:relative;z-index:0;color:${c.vars['fg-0']};${bodyFam}${bgDecl.join(';')}}${headRule}`;
 }
 
 /** Clasa CSS pentru stratul decorativ animat (gol = fără animație). */

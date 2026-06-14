@@ -576,6 +576,20 @@ normaliser, secretele niciodată în chat/repo.
 > (Playwright, fără page errors) — forme la pozițiile lor, culori accent+custom, overlay lizibil.
 > DEPLOYED: hosting.
 
+**2026-06-14 - Task Completed — tipografie în sistemul de design (fonturi LP)**
+> Model: Claude Fable 5
+> Ultimul pilon de design lipsă: fonturi. CustomTheme += headingFont/bodyFont (id din LP_FONTS — 10
+> fonturi Google curate: Inter/Poppins/Montserrat/Playfair/Merriweather/Lora/Space Grotesk/DM Sans/
+> Oswald + System; '' = system, non-breaking). customThemeCss (TS) + lpThemeCss (port JS în functions)
+> emit `@import` Google Fonts (înaintea regulilor) + aplică font-family pe body (bodyFont) și h1-h6
+> (headingFont). ThemeControls: prop nou `withFonts` (LP design = da; editorul de temă admin = nu,
+> fiindcă inline-style nu poate @import). CSP-ul LP permitea deja style-src/font-src https. i18n
+> headingFont/bodyFont (ro+en). +3 checks în test-themes.
+> Verificat: build + 8/8 suites + prerender + boot-smoke; randare vizuală (Playwright cu rețea):
+> titluri Playfair Display + corp Inter, fără page errors. DEPLOYED: serveLp (lpThemeCss) + hosting.
+> NOTĂ: sistemul de design e acum complet — culori, fundal, fonturi, animații, decor (parametric +
+> plasare liberă).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

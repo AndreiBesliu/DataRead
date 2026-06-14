@@ -239,6 +239,8 @@ const ro = {
       bgImageHint: 'Doar https. Lasă gol pentru fundal simplu.',
       grid: 'Grilă de puncte',
       animation: 'Animație de decor',
+      headingFont: 'Font titluri',
+      bodyFont: 'Font text',
       reset: 'Resetează',
       done: 'Gata',
       close: 'Închide',

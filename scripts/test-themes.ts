@@ -62,6 +62,15 @@ check('customThemeStyle cu imagine → straturi de fundal', (() => {
   return typeof s.backgroundImage === 'string' && s.backgroundImage.includes('url("https://ex.com/b.png")') && s.backgroundImage.includes('radial-gradient');
 })());
 check('themeAnimClass: none → gol, restul → anim-*', themeAnimClass('none') === '' && themeAnimClass('drift') === 'anim-drift');
+check('coerce: font valid păstrat, invalid → system ("")', (() => {
+  const a = coerceToCustomTheme({ headingFont: 'poppins', bodyFont: 'nush' });
+  return a.headingFont === 'poppins' && a.bodyFont === '';
+})());
+check('customThemeCss: font titlu → @import + h1 font-family', (() => {
+  const css = customThemeCss(coerceToCustomTheme({ headingFont: 'playfair', bodyFont: 'inter' }));
+  return css.startsWith('@import') && css.includes('Playfair+Display') && css.includes('Inter') && css.includes("h1,h2,h3,h4,h5,h6{font-family:'Playfair Display'");
+})());
+check('customThemeCss: fără font → fără @import', !customThemeCss(coerceToCustomTheme({})).includes('@import'));
 check('customThemeCss: variabile pe :root + fundal pe body (pt. pagina LP)', (() => {
   const css = customThemeCss(coerceToCustomTheme({ vars: { accent: '#a855f7' }, digital: true }));
   return css.includes('--accent:#a855f7') && css.includes(':root{') && css.includes('body{') && css.includes('background-color:');

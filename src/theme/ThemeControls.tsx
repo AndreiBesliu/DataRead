@@ -5,7 +5,7 @@
  */
 import { type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ADMIN_THEMES, THEME_ANIMATIONS, THEME_COLOR_KEYS, themeById, type CustomTheme, type ThemeAnimation } from './themes';
+import { ADMIN_THEMES, LP_FONTS, THEME_ANIMATIONS, THEME_COLOR_KEYS, themeById, type CustomTheme, type ThemeAnimation } from './themes';
 
 export const COLOR_LABEL_KEY: Record<string, string> = {
   'bg-0': 'admin.themeEditor.cBg0',
@@ -35,11 +35,13 @@ export default function ThemeControls({
   onChange,
   withName = true,
   withAnimation = true,
+  withFonts = false,
 }: {
   value: CustomTheme;
   onChange: (c: CustomTheme) => void;
   withName?: boolean;
   withAnimation?: boolean;
+  withFonts?: boolean;
 }) {
   const { t } = useTranslation();
   const setVar = (k: keyof CustomTheme['vars'], v: string) => onChange({ ...value, vars: { ...value.vars, [k]: v } });
@@ -83,6 +85,19 @@ export default function ThemeControls({
         <span>{t('admin.themeEditor.grid')}</span>
         <input type="checkbox" checked={value.digital} onChange={(e) => onChange({ ...value, digital: e.target.checked })} />
       </label>
+
+      {withFonts ? (
+        <>
+          <label style={label} htmlFor="tc-hfont">{t('admin.themeEditor.headingFont')}</label>
+          <select id="tc-hfont" value={value.headingFont} onChange={(e) => onChange({ ...value, headingFont: e.target.value })} style={field}>
+            {LP_FONTS.map((f) => <option key={f.id || 'sys'} value={f.id}>{f.label}</option>)}
+          </select>
+          <label style={label} htmlFor="tc-bfont">{t('admin.themeEditor.bodyFont')}</label>
+          <select id="tc-bfont" value={value.bodyFont} onChange={(e) => onChange({ ...value, bodyFont: e.target.value })} style={field}>
+            {LP_FONTS.map((f) => <option key={f.id || 'sys'} value={f.id}>{f.label}</option>)}
+          </select>
+        </>
+      ) : null}
 
       {withAnimation ? (
         <>
