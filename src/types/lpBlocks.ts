@@ -130,6 +130,10 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
       return `<section style="max-width:760px;margin:0 auto;padding:32px 24px">${items}</section>`;
     }
     case 'form': {
+      // Randăm formularul DOAR dacă e activat — altfel ar ajunge public un formular fără handler
+      // (serveLp injectează submit-ul doar când hasForm). LpEditor activează formularul când există
+      // un bloc 'form', deci aici e și o gardă defensivă.
+      if (!ctx.form || !ctx.form.enabled) return '';
       const fields = (ctx.form && Array.isArray(ctx.form.fields) ? ctx.form.fields : [])
         .map((f) => {
           const req = f.required ? ' required' : '';

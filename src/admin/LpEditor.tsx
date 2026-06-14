@@ -55,8 +55,15 @@ export default function LpEditor({
   const isNew = docId === null;
   const slugTaken = isNew && !!draft.slug && existingSlugs.includes(draft.slug);
 
+  // Dacă pagina conține un bloc `form`, forțăm form.enabled — altfel s-ar livra un formular „mort"
+  // (fără handler injectat de serveLp, fără acceptare la /p/_submit). Un bloc form vizibil => formular funcțional.
+  const formCfg = (d: LandingPage) => ({
+    ...d.form,
+    enabled: d.form.enabled || d.blocks.some((b) => b.type === 'form'),
+  });
+
   // În mod visual, corpul paginii = blocurile compilate; în cod = html-ul brut.
-  const effectiveHtml = (d: LandingPage) => (d.editor === 'visual' ? compileBlocks(d.blocks, { form: d.form }) : d.html);
+  const effectiveHtml = (d: LandingPage) => (d.editor === 'visual' ? compileBlocks(d.blocks, { form: formCfg(d) }) : d.html);
 
   // Preview debounced (nu recompun iframe-ul la fiecare tastă).
   useEffect(() => {
@@ -80,8 +87,8 @@ export default function LpEditor({
       design: draft.design,
       pageDecor: draft.pageDecor,
       pageDecorHtml: compileDecor(draft.pageDecor, 'pg', 'page'), // injectat de serveLp după <body>
-      hasForm: draft.form.enabled,
-      form: draft.form,
+      hasForm: formCfg(draft).enabled,
+      form: formCfg(draft),
       clientUid: draft.clientUid,
       leadId: draft.leadId,
     }),
@@ -107,7 +114,9 @@ export default function LpEditor({
         return;
       }
     }
-    if (status === 'published' && !draft.html.trim()) {
+    // Validăm corpul SERVIT (payload.html = effectiveHtml: html brut în cod, blocuri compilate în vizual),
+    // nu draft.html — altfel paginile în mod vizual (toate șabloanele) nu pot fi publicate.
+    if (status === 'published' && !payload.html.trim()) {
       setErr(t('admin.lpStudio.errNoHtml'));
       return;
     }

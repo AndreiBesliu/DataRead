@@ -5,6 +5,7 @@ dist
 .firebase
 tsconfig.tsbuildinfo
 scripts/.tmp-*
+scripts/*.png
 
 # Local env / secrets — keep all .env* files out of git except the example + CI templates
 .env

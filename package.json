@@ -11,6 +11,7 @@
     "build:site": "npm run build && npm run prerender",
     "test": "node scripts/run-tests.mjs",
     "test:boot": "node scripts/boot-smoke.mjs",
+    "test:e2e-lp": "node scripts/e2e-lp-serve.mjs",
     "prices:check": "node scripts/dump-prices.mjs",
     "deploy": "npm run build:site && firebase deploy --only hosting,firestore:rules",
     "deploy:functions": "firebase deploy --only functions"

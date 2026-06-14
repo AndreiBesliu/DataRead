@@ -656,6 +656,32 @@ normaliser, secretele niciodată în chat/repo.
 > hosting (serveLp neatins). **LP Studio e complet ca produs: șabloane → builder/cod/AI → design+decor
 > → preview responsive → publicare → analytics.**
 
+**2026-06-14 - Task Completed — verificare LP (audit + fix-uri + E2E în proces) + deploy**
+> Model: Claude Fable 5
+> Andrei: „vreau să ne asigurăm că ce s-a făcut pentru LPs funcționează corect". Audit multi-agent
+> (ultracode) → 5 constatări, toate remediate:
+> - **HIGH** publicarea în mod vizual/șablon era blocată: garda verifica `draft.html` (gol în vizual),
+>   acum `payload.html` (= blocuri compilate). [LpEditor.tsx]
+> - **MEDIUM** formular „mort": un bloc `form` se livra fără handler dacă form.enabled=false. Acum
+>   `formCfg` forțează enabled când există un bloc form (effectiveHtml + payload) + gardă în compileBlock. [LpEditor.tsx, lpBlocks.ts]
+> - **MEDIUM** integritate handleTrack: scria statistici pentru ORICE slug valid ca regex. Acum citește
+>   doc-ul și scrie DOAR dacă există + e publicat. [functions/index.js]
+> - **LOW** SSR: host-ul (din header, controlabil) intra neescapat în canonical/og:url. Acum validat
+>   la hostname + `lpEscape`. [functions/index.js]
+> - **LOW** lpThemeCss (port JS): fallback-ul ignora `design.base` (cădea mereu pe dark). Acum tabel de
+>   preset-uri portat → fallback pe tema de bază + flag digital. [functions/index.js]
+> Verificat: 8/8 suites + build + prerender + boot-smoke. **E2E în proces** nou (scripts/e2e-lp-serve.mjs,
+> `npm run test:e2e-lp`): drive-uiește serveLp/handleTrack/handleSubmit REAL (functions/index.js) cu un
+> Firestore fals în memorie + compilatoarele REALE (compileBlocks/compileDecor/customThemeCss) → 38
+> verificări: randare pagină vizuală (SEO, design Ocean+fonturi, decor canvas în spate, blocuri, formular
+> auto-activat, beacon+handler), draft→404, track increment vs. integritate (slug inexistent/draft = 0
+> scrieri), submit valid→submission+lead, submit incomplet→400, fallback temă light. Dovadă vizuală:
+> screenshot constellation randat corect (puncte+linii subtile în spatele conținutului). Verificare LIVE
+> pe producție (negative paths pe serveLp deployat): /p/{inexistent}→404+noindex, /p/_track→204,
+> /p/_submit→400. DEPLOYED: functions (serveLp + cele 3 fix-uri) + hosting (LpEditor/lpBlocks) + rules.
+> Notă: scriere de LP de test direct în producție nu e posibilă fără credențiale Admin SDK (ADC/SA
+> neconfigurate); E2E în proces acoperă exact același cod + intrări, plus negative paths live.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

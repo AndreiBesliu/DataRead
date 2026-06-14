@@ -821,14 +821,25 @@ const LP_FONTS_MAP = {
   oswald: { q: 'Oswald:wght@400;600;700', stack: "'Oswald',sans-serif" },
 };
 
-// Port JS al customThemeCss (src/theme/themes.ts) — defensiv (orice valoare invalidă → fallback).
+// Preset-uri admin (port al ADMIN_THEMES din src/theme/themes.ts) — pentru fallback pe baza temei.
+const LP_ADMIN_THEMES = {
+  midnight: { digital: true, vars: { 'bg-0': '#0a0f1e', 'bg-1': '#121a30', 'fg-0': '#e8eefc', 'fg-1': '#8a9ac0', border: '#243154', accent: '#38bdf8', 'accent-dark': '#0ea5e9', 'accent-contrast': '#03121f' } },
+  carbon: { digital: true, vars: { 'bg-0': '#0c0c10', 'bg-1': '#17171f', 'fg-0': '#f1f1f5', 'fg-1': '#9a9ab0', border: '#2a2a36', accent: '#a855f7', 'accent-dark': '#9333ea', 'accent-contrast': '#150022' } },
+  matrix: { digital: true, vars: { 'bg-0': '#06120c', 'bg-1': '#0c1f15', 'fg-0': '#d6ffe6', 'fg-1': '#6fae87', border: '#16402a', accent: '#22c55e', 'accent-dark': '#16a34a', 'accent-contrast': '#02160a' } },
+  ocean: { digital: true, vars: { 'bg-0': '#071a2b', 'bg-1': '#0d2840', 'fg-0': '#e3f2ff', 'fg-1': '#86a8c4', border: '#1b4566', accent: '#2dd4bf', 'accent-dark': '#14b8a6', 'accent-contrast': '#022019' } },
+  light: { digital: false, vars: { 'bg-0': '#f6f7f9', 'bg-1': '#ffffff', 'fg-0': '#16202c', 'fg-1': '#4b5563', border: '#e2e6eb', accent: '#2563eb', 'accent-dark': '#1d4ed8', 'accent-contrast': '#ffffff' } },
+};
+
+// Port JS al customThemeCss (src/theme/themes.ts) — defensiv (orice valoare invalidă → fallback pe baza temei).
 function lpThemeCss(design) {
   const d = design && typeof design === 'object' ? design : {};
   const rv = d.vars && typeof d.vars === 'object' ? d.vars : {};
-  const fb = { 'bg-0': '#0a0f1e', 'bg-1': '#121a30', 'fg-0': '#e8eefc', 'fg-1': '#8a9ac0', border: '#243154', accent: '#38bdf8', 'accent-dark': '#0ea5e9', 'accent-contrast': '#03121f' };
+  // Fallback-ul respectă tema de bază (design.base): o pagină „light" parțial salvată nu trebuie să cadă pe dark.
+  const baseTheme = LP_ADMIN_THEMES[d.base] || LP_ADMIN_THEMES.midnight;
+  const fb = baseTheme.vars;
   const v = {};
   for (const k of Object.keys(fb)) v[k] = typeof rv[k] === 'string' && LP_HEX.test(rv[k]) ? rv[k] : fb[k];
-  const digital = d.digital === true;
+  const digital = typeof d.digital === 'boolean' ? d.digital : baseTheme.digital;
   const bgImage = typeof d.bgImage === 'string' && LP_SAFE_IMG.test(d.bgImage) ? d.bgImage : '';
   const images = [], sizes = [], positions = [], repeats = [], attachments = [];
   if (digital) {
@@ -908,8 +919,11 @@ function composeLpPage(slug, lp, req) {
   const lang = lp.lang === 'en' ? 'en' : 'ro';
   const title = lpEscape((lp.title || '').slice(0, 140) || slug);
   const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
-  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'dataread-e1bd6.web.app').toString();
-  const canonical = `https://${host}/p/${slug}`;
+  // Host-ul vine din header (controlabil de client) → îl validăm la un hostname plauzibil și îl escapăm,
+  // ca să nu injecteze atribute/markup în <link>/<meta>. Fallback la domeniul canonic dacă e suspect.
+  const rawHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
+  const host = /^[a-zA-Z0-9.:-]+$/.test(rawHost) ? rawHost : 'dataread-e1bd6.web.app';
+  const canonical = `https://${lpEscape(host)}/p/${slug}`;
   const css = lpThemeCss(lp.design);
   const body = typeof lp.html === 'string' ? lp.html : '';
   // Decorul de fundal al paginii — compilat la salvare în client, injectat aici (motorul nu trăiește în functions).
@@ -1019,7 +1033,16 @@ async function handleTrack(req, res) {
   const day = new Date().toISOString().slice(0, 10);
   const inc = admin.firestore.FieldValue.increment;
   try {
-    await admin.firestore().collection('landingPages').doc(slug).collection('stats').doc(day).set(
+    const base = admin.firestore().collection('landingPages').doc(slug);
+    // Integritate: scriem statistici DOAR pentru o pagină existentă și publicată — altfel un POST direct
+    // ar putea polua/umfla statistici pentru slug-uri arbitrare sau inexistente.
+    const snap = await base.get();
+    const lp = snap.exists ? snap.data() : null;
+    if (!lp || lp.status !== 'published') {
+      res.status(204).end();
+      return;
+    }
+    await base.collection('stats').doc(day).set(
       {
         schema: 1, date: day,
         beacons: inc(1),
