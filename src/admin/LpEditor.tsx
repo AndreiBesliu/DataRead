@@ -18,6 +18,7 @@ import LpDecorControls from './LpDecorControls';
 import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
 import { htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
+import type { LpProject } from '../types/lpProject';
 import { compileDecor } from '../types/lpDecor';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
@@ -34,6 +35,8 @@ export default function LpEditor({
   docId,
   adminUid,
   existingSlugs,
+  projects,
+  clients,
   onClose,
   onSaved,
 }: {
@@ -41,6 +44,8 @@ export default function LpEditor({
   docId: string | null; // null = pagină nouă (slug încă neales)
   adminUid: string;
   existingSlugs: string[];
+  projects: Record<string, LpProject>;
+  clients: { id: string; label: string }[];
   onClose: () => void;
   onSaved: (slug: string) => void;
 }) {
@@ -84,6 +89,7 @@ export default function LpEditor({
       pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
       hasForm: assets.hasForm,
       form: assets.form,
+      projectId: draft.projectId,
       clientUid: draft.clientUid,
       leadId: draft.leadId,
     };
@@ -187,6 +193,14 @@ export default function LpEditor({
         <select value={draft.lang} onChange={(e) => setDraft((d) => ({ ...d, lang: e.target.value === 'en' ? 'en' : 'ro' }))} style={field}>
           <option value="ro">RO</option>
           <option value="en">EN</option>
+        </select>
+        <select value={draft.projectId} onChange={(e) => setDraft((d) => ({ ...d, projectId: e.target.value }))} style={field} title={t('admin.lpStudio.colProjectClient')}>
+          <option value="">📁 {t('admin.lpStudio.fltNoProject')}</option>
+          {Object.entries(projects).map(([id, p]) => <option key={id} value={id}>{p.name}</option>)}
+        </select>
+        <select value={draft.clientUid} onChange={(e) => setDraft((d) => ({ ...d, clientUid: e.target.value }))} style={field} title="Client">
+          <option value="">👤 {t('admin.lpStudio.prNoClient')}</option>
+          {clients.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
         {isNew ? (
           <select value={draft.editor} onChange={(e) => { setDraft((d) => ({ ...d, editor: e.target.value === 'visual' ? 'visual' : 'code' })); setTab('code'); }} style={field} title={t('admin.lpStudio.modeLabel')}>

@@ -138,7 +138,9 @@ service cloud.firestore {
     // PUBLICATE (defense-in-depth). Drafturile + scrierea = doar operatorii. Submission-urile și
     // telemetria se scriu EXCLUSIV prin functions (Admin SDK ocolește rules).
     match /landingPages/{slug} {
-      allow read: if isAdmin() || resource.data.status == 'published';
+      // Doar adminii citesc doc-ul LP prin client SDK; publicul primește pagina prin serveLp (Admin SDK,
+      // SSR). Citirea publică ar fi expus câmpuri interne (clientUid/leadId/projectId/form/knownVariants).
+      allow read: if isAdmin();
       // request.resource.data e null la delete → validarea stă doar pe create/update.
       allow create, update: if isAdmin()
         && request.resource.data.schema == 1
@@ -176,6 +178,18 @@ service cloud.firestore {
           && request.resource.data.url is string && request.resource.data.url.size() <= 600
           && request.resource.data.variantKey is string && request.resource.data.variantKey.matches('^[a-z0-9~_-]{1,161}$');
       }
+    }
+
+    // Proiecte LP (organizare) — colecție gestionată de admin.
+    match /lpProjects/{id} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['schema', 'name', 'color', 'clientUid', 'createdAt', 'createdBy'])
+        && request.resource.data.schema == 1
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.color is string && request.resource.data.color.size() <= 9
+        && (!('clientUid' in request.resource.data) || (request.resource.data.clientUid is string && request.resource.data.clientUid.size() <= 128));
+      allow delete: if isAdmin();
     }
 
     // ───────── Stripe (extensia firestore-stripe-payments) ─────────

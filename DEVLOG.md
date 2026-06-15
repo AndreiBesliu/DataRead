@@ -768,6 +768,25 @@ normaliser, secretele niciodată în chat/repo.
 > acoperit de plafon + coerce la citire). Verificat: 9/9 suites + e2e (paritate+variant+byMedium+allowlist) +
 > build:site (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules.
 
+**2026-06-15 - Task Completed — analytics LP (sortare/CSV/A-B) + organizare pe proiect & client**
+> Model: Claude Fable 5
+> Andrei: „ia-le în ordine" (urmările de analytics) + organizare LP pe proiect/client (cu acces viitor al
+> clientului la date). Plan aprobat (Proiect+Client; colecție gestionată).
+> - **Analytics (LpAnalytics):** tabel variante SORTABIL (header click), **export CSV** variante,
+>   **comparație A/B/n** (agregare după versiune/asset/platformă/campanie, clasare după conversie, câștigător ★).
+> - **Organizare:** colecție gestionată `lpProjects` (nume+culoare+client implicit) — `src/types/lpProject.ts`,
+>   `LpProjectManager` (CRUD modal); `LandingPage.projectId` + atribuire client (`clientUid`) din bara meta a
+>   editorului; în listă: filtre (chips proiect + dropdown client) + coloană Proiect/Client (badge). Pregătit
+>   pentru accesul VIITOR al clientului (clientUid pe LP; scoping „mai târziu").
+> - reguli: `lpProjects` admin-rw (hasOnly + validare); `LandingPage.projectId/clientUid` permise.
+> **Review adversarial (Workflow ultracode, 16 agenți)** → 13 constatări; remediate cele relevante: (MEDIUM)
+> A/B marca un câștigător chiar la 0 conversii → gate pe conv>0; (MEDIUM) select-ul de comparație dispărea când
+> dimensiunea avea <2 grupuri → secțiunea/selectul rămân, mesaj „prea puține grupuri"; (LOW-securitate) doc-ul
+> LP publicat era citibil public (expunea clientUid/leadId/projectId) → read DOAR isAdmin (publicul primește
+> pagina prin serveLp/Admin SDK); proiect șters → filtru resetat + LP tratat ca „fără proiect"; clients
+> onSnapshot plafonat (500); reguli lpProjects validează clientUid; tabel/comparație etichetate „(total, toate
+> timpurile)". Verificat: 9/9 suites + e2e + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

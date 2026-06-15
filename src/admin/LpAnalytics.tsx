@@ -50,6 +50,67 @@ export default function LpAnalytics({ slug }: { slug: string }) {
   const totals = useMemo(() => sumLpStats(windowDays), [windowDays]);
   const k = lpKpis(totals);
 
+  // Sortare tabel variante (coloană + direcție).
+  type VarSortKey = 'source' | 'medium' | 'campaign' | 'content' | 'visits' | 'submissions' | 'conv' | 'eng';
+  const [sortKey, setSortKey] = useState<VarSortKey>('visits');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const vKey = (v: LpVariant, key: VarSortKey): number | string => {
+    switch (key) {
+      case 'visits': return v.visits;
+      case 'submissions': return v.submissions;
+      case 'conv': return variantConvRate(v) ?? -1;
+      case 'eng': return v.visits > 0 ? v.engaged / v.visits : -1;
+      default: return v[key] || '';
+    }
+  };
+  const sortedVariants = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...variants].sort((a, b) => {
+      const av = vKey(a, sortKey), bv = vKey(b, sortKey);
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }, [variants, sortKey, sortDir]);
+  const toggleSort = (key: VarSortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'source' || key === 'medium' || key === 'campaign' || key === 'content' ? 'asc' : 'desc'); }
+  };
+  const sortArrow = (key: VarSortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
+
+  // Comparație A/B/n: agregă variantele după o dimensiune și clasează după rata de conversie.
+  type CmpDim = 'content' | 'medium' | 'source' | 'campaign';
+  const [cmpDim, setCmpDim] = useState<CmpDim>('content');
+  const comparison = useMemo(() => {
+    const groups: Record<string, { key: string; visits: number; submissions: number }> = {};
+    for (const v of variants) {
+      if (v.key === '__direct' || v.key === '__other') continue; // doar variante etichetate
+      const gk = (v[cmpDim] || '-');
+      if (gk === '-') continue;
+      const g = groups[gk] || (groups[gk] = { key: gk, visits: 0, submissions: 0 });
+      g.visits += v.visits; g.submissions += v.submissions;
+    }
+    const rows = Object.values(groups).map((g) => ({ ...g, conv: g.visits > 0 ? g.submissions / g.visits : null }));
+    rows.sort((a, b) => (b.conv ?? -1) - (a.conv ?? -1) || b.visits - a.visits);
+    return rows;
+  }, [variants, cmpDim]);
+  // Câte variante etichetate există (independent de dimensiune) — gate stabil pt. afișarea comparației.
+  const labeledCount = useMemo(() => variants.filter((v) => v.key !== '__direct' && v.key !== '__other').length, [variants]);
+
+  function exportVariantsCsv() {
+    const header = ['platforma', 'tip_asset', 'campanie', 'versiune', 'vizite', 'conversii', 'rata_conversie', 'engagement'];
+    const rows = sortedVariants.map((v) => {
+      const lab = v.key === '__direct' ? 'direct' : v.key === '__other' ? 'other' : '';
+      const cr = variantConvRate(v);
+      const eng = v.visits > 0 ? v.engaged / v.visits : null;
+      return [lab || v.source, lab ? '' : v.medium, lab ? '' : v.campaign, lab ? '' : v.content, String(v.visits), String(v.submissions), cr === null ? '' : (cr * 100).toFixed(1) + '%', eng === null ? '' : (eng * 100).toFixed(1) + '%'];
+    });
+    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `lp-${slug}-variante.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const fmtN = (n: number) => n.toLocaleString('ro-RO');
   const fmtPct = (n: number | null) => (n === null ? '—' : `${(n * 100).toFixed(1)}%`);
   const fmtSec = (n: number | null) => (n === null ? '—' : `${Math.round(n)}s`);
@@ -151,7 +212,10 @@ export default function LpAnalytics({ slug }: { slug: string }) {
         <Breakdown titleKey="admin.lpStudio.anDevices" map={totals.byDevice} />
       </div>
 
-      <h3 style={{ fontSize: 15, margin: '4px 0 8px' }}>{t('admin.lpStudio.anVariants')} ({variants.length})</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 8px' }}>
+        <h3 style={{ fontSize: 15, margin: 0 }}>{t('admin.lpStudio.anVariants')} ({variants.length}) <span style={{ color: 'var(--fg-1)', fontSize: 12, fontWeight: 400 }}>{t('admin.lpStudio.anAllTime')}</span></h3>
+        {variants.length > 0 ? <button onClick={exportVariantsCsv} style={{ ...btn, marginLeft: 'auto' }}>{t('admin.lpStudio.anExport')}</button> : null}
+      </div>
       {variants.length === 0 ? (
         <p style={{ color: 'var(--fg-1)', fontSize: 13, marginBottom: 18 }}>{t('admin.lpStudio.anNoVariants')}</p>
       ) : (
@@ -159,18 +223,13 @@ export default function LpAnalytics({ slug }: { slug: string }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg-0)' }}>
-                <th style={td}>{t('admin.lpStudio.lbPlatform')}</th>
-                <th style={td}>{t('admin.lpStudio.lbMedium')}</th>
-                <th style={td}>{t('admin.lpStudio.lbCampaign')}</th>
-                <th style={td}>{t('admin.lpStudio.lbContent')}</th>
-                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anVisits')}</th>
-                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anSubmissions')}</th>
-                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anConvRate')}</th>
-                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anEngagement')}</th>
+                {([['source', 'lbPlatform', 'left'], ['medium', 'lbMedium', 'left'], ['campaign', 'lbCampaign', 'left'], ['content', 'lbContent', 'left'], ['visits', 'anVisits', 'right'], ['submissions', 'anSubmissions', 'right'], ['conv', 'anConvRate', 'right'], ['eng', 'anEngagement', 'right']] as [VarSortKey, string, 'left' | 'right'][]).map(([key, lblKey, align]) => (
+                  <th key={key} onClick={() => toggleSort(key)} style={{ ...td, textAlign: align, cursor: 'pointer', userSelect: 'none' }} title={t('admin.lpStudio.anSortHint')}>{t(`admin.lpStudio.${lblKey}`)}{sortArrow(key)}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {variants.map((v) => {
+              {sortedVariants.map((v) => {
                 const label = (s: string) => (s === '__direct' ? t('admin.lpStudio.anDirect') : s === '__other' ? t('admin.lpStudio.anOther') : null);
                 const lab = label(v.key);
                 const eng = v.visits > 0 ? v.engaged / v.visits : null;
@@ -192,6 +251,51 @@ export default function LpAnalytics({ slug }: { slug: string }) {
           </table>
         </div>
       )}
+
+      {/* Comparație A/B/n: clasează versiunile/platformele după rata de conversie (câștigătorul marcat). */}
+      {labeledCount >= 2 ? (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: 15, margin: 0 }}>{t('admin.lpStudio.anCompare')}</h3>
+            <select value={cmpDim} onChange={(e) => setCmpDim(e.target.value as CmpDim)} style={{ ...btn, padding: '4px 8px' }}>
+              <option value="content">{t('admin.lpStudio.lbContent')}</option>
+              <option value="medium">{t('admin.lpStudio.lbMedium')}</option>
+              <option value="source">{t('admin.lpStudio.lbPlatform')}</option>
+              <option value="campaign">{t('admin.lpStudio.lbCampaign')}</option>
+            </select>
+            <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.lpStudio.anAllTime')}</span>
+          </div>
+          {comparison.length < 2 ? (
+            <p style={{ color: 'var(--fg-1)', fontSize: 13 }}>{t('admin.lpStudio.anCmpNeedMore')}</p>
+          ) : (
+          <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-0)' }}>
+                  <th style={td}>{t('admin.lpStudio.anCompareValue')}</th>
+                  <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anVisits')}</th>
+                  <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anSubmissions')}</th>
+                  <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anConvRate')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparison.map((g, i) => {
+                  const winner = i === 0 && g.conv != null && g.conv > 0; // câștigător doar dacă chiar a convertit
+                  return (
+                  <tr key={g.key} style={winner ? { background: 'color-mix(in srgb, var(--accent) 12%, transparent)' } : undefined}>
+                    <td style={td}>{winner ? '★ ' : ''}{g.key}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(g.visits)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(g.submissions)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontWeight: winner ? 800 : 400 }}>{fmtPct(g.conv)}</td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          )}
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <h3 style={{ fontSize: 15, margin: 0 }}>{t('admin.lpStudio.anSubmissionsList')} ({subs.length})</h3>

@@ -183,8 +183,18 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   performanță) + în `LpAnalytics` card „Tip asset" (byMedium) + tabel „Variante observate". Reguli:
   variants read-only (functions), links admin-rw (hasOnly+format). Boții rămân în `visits` (înregistrăm
   tot traficul). Amânat: atribuire multi-touch; export cross-LP; conectori platformă API.
+- **Organizare LP (ACTIV 15.06.2026):** colecție gestionată `lpProjects/{id}` (nume + culoare + client
+  implicit; `src/types/lpProject.ts` + `LpProjectManager`) + `LandingPage.projectId` și `clientUid`
+  (atribuite din bara meta a editorului). Lista din Studio: filtre (chips proiect + dropdown client) +
+  coloană Proiect/Client; un projectId care referă un proiect șters e tratat ca „fără proiect". Reguli:
+  `lpProjects` admin-rw (hasOnly + validare). `clientUid` pe LP = fundația accesului VIITOR al clientului
+  la datele lui (portal scoped — de făcut). **Citirea doc-ului `landingPages` e DOAR isAdmin** (publicul
+  primește pagina prin serveLp/Admin SDK) — ca să nu se scurgă câmpuri interne.
+- **Analytics LP extins:** tabel variante sortabil + export CSV + comparație A/B/n (agregare după
+  versiune/asset/platformă/campanie, câștigător după rata de conversie). Contoarele `variants/{key}` sunt
+  all-time (fără axă de zi); tabelul/comparația sunt etichetate „(total, toate timpurile)".
 - Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
-  Storage; `/en/p/**`.
+  Storage; `/en/p/**`; portal client pentru date LP scoped pe clientUid.
 
 ## Capcane cunoscute
 

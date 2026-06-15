@@ -67,6 +67,7 @@ export interface LandingPage {
   /** Allowlist de variante de link cunoscute (scris de Link Builder) — serveLp atribuie trafic DOAR
    *  acestor chei (anti-bloat); restul → __other / __direct. */
   knownVariants: Record<string, true>;
+  projectId: string; // organizare: referă lpProjects/{id} — '' dacă neîncadrat
   clientUid: string; // asociere opțională (portal client) — '' dacă nu
   leadId: string; // asociere opțională (pipeline) — '' dacă nu
   createdBy: string; // uid-ul operatorului
@@ -140,6 +141,7 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     hasForm: false,
     form: coerceForm({}),
     knownVariants: {},
+    projectId: '',
     clientUid: '',
     leadId: '',
     createdBy: str(createdBy, 128),
@@ -167,6 +169,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     hasForm: form.enabled, // invariant: hasForm === form.enabled
     form,
     knownVariants: coerceKnownVariants(d.knownVariants),
+    projectId: str(d.projectId, 128),
     clientUid: str(d.clientUid, 128),
     leadId: str(d.leadId, 128),
     createdBy: str(d.createdBy, 128),

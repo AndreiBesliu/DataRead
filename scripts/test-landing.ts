@@ -22,6 +22,7 @@ import {
 import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from '../src/types/lpBlocks';
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
+import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -37,7 +38,13 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 // ── coerceToLandingPage ──
 check('coerce(null) → default sigur (draft, html gol, slug gol)', (() => {
   const lp = coerceToLandingPage(null);
-  return lp.status === 'draft' && lp.html === '' && lp.slug === '' && lp.schema === 1 && lp.lang === 'ro';
+  return lp.status === 'draft' && lp.html === '' && lp.slug === '' && lp.schema === 1 && lp.lang === 'ro' && lp.projectId === '' && Object.keys(lp.knownVariants).length === 0;
+})());
+check('coerce: projectId păstrat (organizare)', coerceToLandingPage({ projectId: 'proj123' }).projectId === 'proj123');
+check('coerceToLpProject: nume + culoare validă; fallback culoare', (() => {
+  const a = coerceToLpProject({ name: 'Campanie Iarnă', color: '#22c55e', clientUid: 'u1' });
+  const b = coerceToLpProject({ name: 'X', color: 'nu-e-hex' });
+  return a.schema === 1 && a.name === 'Campanie Iarnă' && a.color === '#22c55e' && a.clientUid === 'u1' && b.color === LP_PROJECT_COLORS[0];
 })());
 check('coerce(gunoi) nu aruncă, design valid', (() => {
   const lp = coerceToLandingPage({ status: 'turbo', design: { vars: { accent: 'nu-e-hex' } }, lang: 'fr' });
