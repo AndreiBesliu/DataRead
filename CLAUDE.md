@@ -171,6 +171,18 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (în builder, cu overlay text). `LpDecorControls` (refolosit Design tab + builder). serveLp servește
   tot string-ul precompilat (fără port JS al motorului). Amânat: editor de plasare liberă; decor pe
   orice bloc existent; WebGL.
+- **Atribuire per-link (UTM, ACTIV 15.06.2026):** linkul LP se postează pe multe platforme + assets
+  video/statice cu versiuni, codificate prin UTM. Cheia variantei = `src/types/lpAttribution.ts`
+  (`variantKey` = [source,medium,campaign,content] sanitizate, unite cu `~`; PUR) + **port JS** în
+  functions/index.js (paritate TS↔JS testată cross-runtime în `e2e-lp-serve.mjs`). **Anti-bloat fără
+  citire:** `landingPages/{slug}.knownVariants:{[key]:true}` (scris de Link Builder, plafon 200); serveLp
+  citește deja doc-ul → variantă cunoscută = contor dedicat `variants/{key}`, UTM necunoscut → `__other`,
+  fără UTM → `__direct`. serveLp/handleTrack/handleSubmit scriu în batch {stats(+`byMedium`) + variantă}
+  (visits/engagement/submissions); `variantKey` la submit se calculează SERVER-side din UTM. UI: tab
+  „Linkuri" (`LpLinkBuilder` — compune URL etichetat + salvează în `links/{id}`+knownVariants + listă cu
+  performanță) + în `LpAnalytics` card „Tip asset" (byMedium) + tabel „Variante observate". Reguli:
+  variants read-only (functions), links admin-rw (hasOnly+format). Boții rămân în `visits` (înregistrăm
+  tot traficul). Amânat: atribuire multi-touch; export cross-LP; conectori platformă API.
 - Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
   Storage; `/en/p/**`.
 

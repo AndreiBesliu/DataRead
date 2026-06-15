@@ -782,7 +782,7 @@ if (AI_ENABLED) {
 // randează pagina SSR (SEO din doc + design injectat ca variabile CSS + CSP). NU se cache-uiește
 // (no-store) ca fiecare hit să se logheze. Ramurile /p/_track și /p/_submit se adaugă în P5.
 
-const LP_SOURCE_WHITELIST = ['google', 'meta', 'facebook', 'instagram', 'tiktok', 'youtube', 'email', 'bing', 'linkedin', 'twitter', 'x', 'direct', 'referral', 'organic'];
+const LP_SOURCE_WHITELIST = ['google', 'meta', 'facebook', 'instagram', 'tiktok', 'youtube', 'email', 'bing', 'linkedin', 'twitter', 'x', 'pinterest', 'snapchat', 'whatsapp', 'telegram', 'reddit', 'threads', 'sms', 'direct', 'referral', 'organic'];
 const LP_CSP =
   "default-src 'none'; img-src https: data:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; " +
   "font-src https: data:; frame-src https:; media-src https:; connect-src 'self'; form-action 'self'; " +
@@ -790,11 +790,67 @@ const LP_CSP =
 const LP_HEX = /^#[0-9a-fA-F]{6}$/;
 const LP_SAFE_IMG = /^https:\/\/[^\s"')]+$/i;
 
-function lpBucket(key) {
+function lpBucket(key, whitelist) {
   const k = (typeof key === 'string' ? key : '').toLowerCase().slice(0, 60);
   if (!k) return 'other';
-  return LP_SOURCE_WHITELIST.includes(k) ? k : 'other';
+  return (whitelist || LP_SOURCE_WHITELIST).includes(k) ? k : 'other';
 }
+
+// ── Atribuire per-link (port JS al src/types/lpAttribution.ts — paritate testată în e2e-lp-serve.mjs) ──
+const LP_MEDIUM_WHITELIST = ['video', 'static', 'image', 'story', 'reel', 'carousel', 'post', 'email', 'bio', 'qr', 'sms', 'other'];
+const LP_ATTR_PART_MAX = 40;
+const LP_VARIANT_DIRECT = '__direct'; // vizită fără niciun UTM
+const LP_VARIANT_OTHER = '__other'; // UTM prezent dar nu e o variantă cunoscută (allowlist)
+
+function sanitizeVariantPart(x) {
+  const s = String(x == null ? '' : x)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, LP_ATTR_PART_MAX);
+  return s || '-';
+}
+// Extrage atribuirea din query (utm_*) SAU dintr-un obiect {source,...} (body.utm de la beacon/form).
+function lpAttr(src) {
+  const o = src && typeof src === 'object' ? src : {};
+  const pick = (a, b) => (o[a] != null ? o[a] : o[b]);
+  return {
+    source: sanitizeVariantPart(pick('utm_source', 'source')),
+    medium: sanitizeVariantPart(pick('utm_medium', 'medium')),
+    campaign: sanitizeVariantPart(pick('utm_campaign', 'campaign')),
+    content: sanitizeVariantPart(pick('utm_content', 'content')),
+    term: sanitizeVariantPart(pick('utm_term', 'term')),
+  };
+}
+function variantKey(attr) {
+  const o = attr && typeof attr === 'object' ? attr : {};
+  return [o.source, o.medium, o.campaign, o.content].map(sanitizeVariantPart).join('~').slice(0, 160);
+}
+function lpHasAttr(a) {
+  return [a.source, a.medium, a.campaign, a.content].some((p) => p && p !== '-');
+}
+function buildLpUrl(origin, slug, attr) {
+  const o = attr && typeof attr === 'object' ? attr : {};
+  const a = { source: sanitizeVariantPart(o.source), medium: sanitizeVariantPart(o.medium), campaign: sanitizeVariantPart(o.campaign), content: sanitizeVariantPart(o.content), term: sanitizeVariantPart(o.term) };
+  const base = `${String(origin || '').replace(/\/$/, '')}/p/${slug}`;
+  const params = [];
+  const add = (k, v) => { if (v && v !== '-') params.push(`${k}=${encodeURIComponent(v)}`); };
+  add('utm_source', a.source); add('utm_medium', a.medium); add('utm_campaign', a.campaign); add('utm_content', a.content); add('utm_term', a.term);
+  return params.length ? `${base}?${params.join('&')}` : base;
+}
+// Ținta variantei pentru incrementare, prin allowlist-ul knownVariants de pe LP (anti-bloat, fără citire):
+// variantă cunoscută → cheia ei; UTM prezent dar necunoscut → __other; fără UTM → __direct.
+function variantTarget(attr, knownVariants) {
+  if (!lpHasAttr(attr)) return LP_VARIANT_DIRECT;
+  const key = variantKey(attr);
+  const known = knownVariants && typeof knownVariants === 'object' && knownVariants[key] === true;
+  return known ? key : LP_VARIANT_OTHER;
+}
+exports.sanitizeVariantPart = sanitizeVariantPart;
+exports.variantKey = variantKey;
+exports.buildLpUrl = buildLpUrl;
 
 function lpDevice(ua) {
   const s = (ua || '').toLowerCase();
@@ -875,9 +931,11 @@ function lpNotFound() {
   return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Pagină negăsită</title><style>body{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e8eefc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center}h1{font-size:64px;margin:0}</style></head><body><div><h1>404</h1><p>Pagina nu există sau nu este publicată.</p></div></body></html>';
 }
 
-async function logLpVisit(db, slug, req) {
+async function logLpVisit(db, slug, req, lp) {
   const q = req.query || {};
   const source = lpBucket(q.utm_source);
+  const medium = lpBucket(q.utm_medium, LP_MEDIUM_WHITELIST);
+  const attr = lpAttr(q);
   const ref = (req.headers['referer'] || req.headers['referrer'] || '').toString();
   let refHost = ref ? 'other' : 'direct';
   try {
@@ -888,29 +946,39 @@ async function logLpVisit(db, slug, req) {
   const country = (req.headers['x-country-code'] || req.headers['x-appengine-country'] || 'XX').toString().slice(0, 4).toUpperCase();
   const day = new Date().toISOString().slice(0, 10);
   const inc = admin.firestore.FieldValue.increment(1);
+  const ts = admin.firestore.FieldValue.serverTimestamp();
   const base = db.collection('landingPages').doc(slug);
-  // Rollup zilnic (awaited — agregatul nu se pierde). set+merge cu obiecte imbricate = increment sigur.
-  await base.collection('stats').doc(day).set(
-    {
-      schema: 1, date: day, visits: inc,
-      byDevice: { [device]: inc },
-      bySource: { [source]: inc },
-      byReferrerHost: { [refHost]: inc },
-      byCountry: { [country]: inc },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  // Rollup zilnic + contor de variantă, scrise ÎMPREUNĂ într-un batch (un singur round-trip, awaited).
+  const batch = db.batch();
+  batch.set(base.collection('stats').doc(day), {
+    schema: 1, date: day, visits: inc,
+    byDevice: { [device]: inc },
+    bySource: { [source]: inc },
+    byMedium: { [medium]: inc },
+    byReferrerHost: { [refHost]: inc },
+    byCountry: { [country]: inc },
+    updatedAt: ts,
+  }, { merge: true });
+  // Atribuire per variantă, prin allowlist-ul knownVariants (anti-bloat, fără citire suplimentară).
+  const target = variantTarget(attr, lp && lp.knownVariants);
+  batch.set(base.collection('variants').doc(target), {
+    schema: 1, source: attr.source, medium: attr.medium, campaign: attr.campaign, content: attr.content, term: attr.term,
+    visits: inc, lastSeen: ts,
+  }, { merge: true });
+  await batch.commit();
   // Vizita brută (fire-and-forget).
   base.collection('visits').add({
     schema: 1,
-    at: admin.firestore.FieldValue.serverTimestamp(),
+    at: ts,
     referrer: ref.slice(0, 300),
     utm: {
       source: String(q.utm_source || '').slice(0, 200),
       medium: String(q.utm_medium || '').slice(0, 200),
       campaign: String(q.utm_campaign || '').slice(0, 200),
+      content: String(q.utm_content || '').slice(0, 200),
+      term: String(q.utm_term || '').slice(0, 200),
     },
+    variantKey: target,
     ua, device, country,
   }).catch(() => {});
 }
@@ -951,11 +1019,12 @@ function jsString(s) {
 function lpScripts(slug, lp) {
   const beacon =
     '<script>(function(){var s=' + jsString(slug) + ';var m=0,t0=Date.now(),c=0,sent=false;' +
+    'var U=new URLSearchParams(location.search);var utm={source:U.get("utm_source")||"",medium:U.get("utm_medium")||"",campaign:U.get("utm_campaign")||"",content:U.get("utm_content")||"",term:U.get("utm_term")||""};' +
     'function p(){var h=document.documentElement;var sc=h.scrollTop||document.body.scrollTop||0;' +
     'var mx=(h.scrollHeight-h.clientHeight)||1;return Math.min(100,Math.round(sc/mx*100));}' +
     'window.addEventListener("scroll",function(){var x=p();if(x>m)m=x;},{passive:true});' +
     'document.addEventListener("click",function(e){var el=e.target.closest&&e.target.closest("[data-cta]");if(el)c++;});' +
-    'function send(){if(sent)return;sent=true;try{navigator.sendBeacon("/p/_track",new Blob([JSON.stringify({slug:s,scrollPct:m,timeMs:Date.now()-t0,cta:c})],{type:"application/json"}));}catch(e){}}' +
+    'function send(){if(sent)return;sent=true;try{navigator.sendBeacon("/p/_track",new Blob([JSON.stringify({slug:s,scrollPct:m,timeMs:Date.now()-t0,cta:c,utm:utm})],{type:"application/json"}));}catch(e){}}' +
     'document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")send();});' +
     'window.addEventListener("pagehide",send);})();</script>';
   if (!lp.hasForm) return beacon;
@@ -965,7 +1034,7 @@ function lpScripts(slug, lp) {
     'var OK=' + jsString(okMsg) + ';var ERR="A apărut o eroare. Reîncearcă.";' +
     'f.addEventListener("submit",function(e){e.preventDefault();var fd=new FormData(f);var v={};fd.forEach(function(val,k){v[k]=String(val).slice(0,2000);});' +
     'var u=new URLSearchParams(location.search);' +
-    'fetch("/p/_submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:s,values:v,referrer:document.referrer,utm:{source:u.get("utm_source")||"",medium:u.get("utm_medium")||"",campaign:u.get("utm_campaign")||""}})})' +
+    'fetch("/p/_submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:s,values:v,referrer:document.referrer,utm:{source:u.get("utm_source")||"",medium:u.get("utm_medium")||"",campaign:u.get("utm_campaign")||"",content:u.get("utm_content")||"",term:u.get("utm_term")||""}})})' +
     '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){f.innerHTML="<p style=\\"padding:24px;text-align:center;color:var(--fg-0)\\">"+OK+"</p>";}else{alert(ERR);}}).catch(function(){alert(ERR);});});})();</script>';
   return beacon + form;
 }
@@ -1032,8 +1101,10 @@ async function handleTrack(req, res) {
   const engaged = timeMs > 15000 || scrollPct > 50 ? 1 : 0;
   const day = new Date().toISOString().slice(0, 10);
   const inc = admin.firestore.FieldValue.increment;
+  const ts = admin.firestore.FieldValue.serverTimestamp();
   try {
-    const base = admin.firestore().collection('landingPages').doc(slug);
+    const db = admin.firestore();
+    const base = db.collection('landingPages').doc(slug);
     // Integritate: scriem statistici DOAR pentru o pagină existentă și publicată — altfel un POST direct
     // ar putea polua/umfla statistici pentru slug-uri arbitrare sau inexistente.
     const snap = await base.get();
@@ -1042,18 +1113,20 @@ async function handleTrack(req, res) {
       res.status(204).end();
       return;
     }
-    await base.collection('stats').doc(day).set(
-      {
-        schema: 1, date: day,
-        beacons: inc(1),
-        scrollDepthSum: inc(scrollPct),
-        timeOnPageSum: inc(timeMs),
-        engaged: inc(engaged),
-        ctaClicks: inc(cta),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const attr = lpAttr(body.utm);
+    const target = variantTarget(attr, lp.knownVariants);
+    const batch = db.batch();
+    batch.set(base.collection('stats').doc(day), {
+      schema: 1, date: day,
+      beacons: inc(1), scrollDepthSum: inc(scrollPct), timeOnPageSum: inc(timeMs), engaged: inc(engaged), ctaClicks: inc(cta),
+      updatedAt: ts,
+    }, { merge: true });
+    // Engagement pe variantă (același target ca vizita; allowlist anti-bloat).
+    batch.set(base.collection('variants').doc(target), {
+      schema: 1, source: attr.source, medium: attr.medium, campaign: attr.campaign, content: attr.content, term: attr.term,
+      beacons: inc(1), scrollDepthSum: inc(scrollPct), timeOnPageSum: inc(timeMs), engaged: inc(engaged), ctaClicks: inc(cta), lastSeen: ts,
+    }, { merge: true });
+    await batch.commit();
   } catch (e) {
     logger.warn('lp track failed', { slug, e: String(e) });
   }
@@ -1082,20 +1155,27 @@ async function handleSubmit(req, res) {
       return;
     }
     const utm = body.utm && typeof body.utm === 'object' ? body.utm : {};
+    const attr = lpAttr(utm); // sanitizat server-side; cheia variantei NU se ia din client
+    const target = variantTarget(attr, lp.knownVariants);
+    const day = new Date().toISOString().slice(0, 10);
+    const ts = admin.firestore.FieldValue.serverTimestamp();
     const base = db.collection('landingPages').doc(slug);
     await base.collection('submissions').add({
       schema: 1, values, status: 'new',
-      utm: { source: String(utm.source || '').slice(0, 200), medium: String(utm.medium || '').slice(0, 200), campaign: String(utm.campaign || '').slice(0, 200), term: '', content: '' },
+      utm: { source: String(utm.source || '').slice(0, 200), medium: String(utm.medium || '').slice(0, 200), campaign: String(utm.campaign || '').slice(0, 200), content: String(utm.content || '').slice(0, 200), term: String(utm.term || '').slice(0, 200) },
+      variantKey: target,
       referrer: String(body.referrer || '').slice(0, 300),
       ua: String(req.headers['user-agent'] || '').slice(0, 300),
       geoCountry: (req.headers['x-country-code'] || req.headers['x-appengine-country'] || 'XX').toString().slice(0, 4).toUpperCase(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: ts,
     });
-    const day = new Date().toISOString().slice(0, 10);
-    await base.collection('stats').doc(day).set(
-      { schema: 1, date: day, submissions: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    );
+    const batch = db.batch();
+    batch.set(base.collection('stats').doc(day), { schema: 1, date: day, submissions: admin.firestore.FieldValue.increment(1), updatedAt: ts }, { merge: true });
+    batch.set(base.collection('variants').doc(target), {
+      schema: 1, source: attr.source, medium: attr.medium, campaign: attr.campaign, content: attr.content, term: attr.term,
+      submissions: admin.firestore.FieldValue.increment(1), lastSeen: ts,
+    }, { merge: true });
+    await batch.commit();
     if (lp.form && lp.form.createLead === true) {
       await db.collection('leads').add(mapSubmissionToLead(values, fields, slug, lp.lang));
     }
@@ -1124,7 +1204,7 @@ exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public
       res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
       return;
     }
-    await logLpVisit(db, slug, req).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
+    await logLpVisit(db, slug, req, lp).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
     res
       .status(200)
       .set('Content-Type', 'text/html; charset=utf-8')

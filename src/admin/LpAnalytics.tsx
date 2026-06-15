@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
+import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 
 interface SubRow {
   id: string;
@@ -18,6 +19,7 @@ export default function LpAnalytics({ slug }: { slug: string }) {
   const { t } = useTranslation();
   const [days, setDays] = useState<LpStatsDay[]>([]);
   const [subs, setSubs] = useState<SubRow[]>([]);
+  const [variants, setVariants] = useState<LpVariant[]>([]);
   const [range, setRange] = useState(30);
   const [loading, setLoading] = useState(true);
 
@@ -26,13 +28,15 @@ export default function LpAnalytics({ slug }: { slug: string }) {
     (async () => {
       setLoading(true);
       try {
-        const [statsSnap, subsSnap] = await Promise.all([
+        const [statsSnap, subsSnap, varSnap] = await Promise.all([
           getDocs(query(collection(db, 'landingPages', slug, 'stats'), orderBy('date', 'desc'), limit(120))),
           getDocs(query(collection(db, 'landingPages', slug, 'submissions'), orderBy('createdAt', 'desc'), limit(200))),
+          getDocs(collection(db, 'landingPages', slug, 'variants')),
         ]);
         if (cancel) return;
         setDays(statsSnap.docs.map((d) => coerceToLpStatsDay(d.data())).filter((x): x is LpStatsDay => !!x));
         setSubs(subsSnap.docs.map((d) => ({ id: d.id, values: (d.data().values || {}) as Record<string, string>, createdAt: (d.data().createdAt as SubRow['createdAt']) || null })));
+        setVariants(varSnap.docs.map((d) => coerceToLpVariant(d.id, d.data())).sort((a, b) => b.visits - a.visits));
       } finally {
         if (!cancel) setLoading(false);
       }
@@ -141,10 +145,53 @@ export default function LpAnalytics({ slug }: { slug: string }) {
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
         <Breakdown titleKey="admin.lpStudio.anSources" map={totals.bySource} />
+        <Breakdown titleKey="admin.lpStudio.anMedium" map={totals.byMedium} />
         <Breakdown titleKey="admin.lpStudio.anReferrers" map={totals.byReferrerHost} />
         <Breakdown titleKey="admin.lpStudio.anCountries" map={totals.byCountry} />
         <Breakdown titleKey="admin.lpStudio.anDevices" map={totals.byDevice} />
       </div>
+
+      <h3 style={{ fontSize: 15, margin: '4px 0 8px' }}>{t('admin.lpStudio.anVariants')} ({variants.length})</h3>
+      {variants.length === 0 ? (
+        <p style={{ color: 'var(--fg-1)', fontSize: 13, marginBottom: 18 }}>{t('admin.lpStudio.anNoVariants')}</p>
+      ) : (
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, overflowX: 'auto', marginBottom: 18 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-0)' }}>
+                <th style={td}>{t('admin.lpStudio.lbPlatform')}</th>
+                <th style={td}>{t('admin.lpStudio.lbMedium')}</th>
+                <th style={td}>{t('admin.lpStudio.lbCampaign')}</th>
+                <th style={td}>{t('admin.lpStudio.lbContent')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anVisits')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anSubmissions')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anConvRate')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.lpStudio.anEngagement')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((v) => {
+                const label = (s: string) => (s === '__direct' ? t('admin.lpStudio.anDirect') : s === '__other' ? t('admin.lpStudio.anOther') : null);
+                const lab = label(v.key);
+                const eng = v.visits > 0 ? v.engaged / v.visits : null;
+                const cell = (x: string) => (lab ? '—' : (x && x !== '-' ? x : '—'));
+                return (
+                  <tr key={v.key}>
+                    <td style={td}>{lab ? <strong style={{ color: 'var(--fg-1)' }}>{lab}</strong> : cell(v.source)}</td>
+                    <td style={td}>{cell(v.medium)}</td>
+                    <td style={td}>{cell(v.campaign)}</td>
+                    <td style={td}>{cell(v.content)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(v.visits)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(v.submissions)}</td>
+                    <td style={{ ...td, textAlign: 'right', color: 'var(--fg-1)' }}>{fmtPct(variantConvRate(v))}</td>
+                    <td style={{ ...td, textAlign: 'right', color: 'var(--fg-1)' }}>{fmtPct(eng)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <h3 style={{ fontSize: 15, margin: 0 }}>{t('admin.lpStudio.anSubmissionsList')} ({subs.length})</h3>

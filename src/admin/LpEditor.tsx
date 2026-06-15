@@ -15,13 +15,14 @@ import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorControls from './LpDecorControls';
+import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
 import { htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import { compileDecor } from '../types/lpDecor';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'analytics';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'links' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
   const pageDecor = compileDecor(lp.pageDecor, 'pg', 'page');
@@ -236,11 +237,14 @@ export default function LpEditor({
         <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
         {draft.editor === 'code' ? <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button> : null}
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
+        {!isNew ? <button onClick={() => setTab('links')} style={tabBtn(tab === 'links')}>🔗 {t('admin.lpStudio.tabLinks')}</button> : null}
         {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
 
       {tab === 'analytics' && !isNew ? (
         <LpAnalytics slug={docId as string} />
+      ) : tab === 'links' && !isNew ? (
+        <LpLinkBuilder slug={docId as string} origin={ORIGIN} />
       ) : (
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', minWidth: 300, maxWidth: 440 }}>

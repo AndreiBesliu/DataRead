@@ -9,6 +9,7 @@
 import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
 import { coerceBlocks, compileBlocks, type LpBlock } from './lpBlocks';
 import { coerceToLpDecor, compileDecor, type LpDecor } from './lpDecor';
+import { coerceKnownVariants } from './lpAttribution';
 
 export const LP_EDITORS = ['code', 'visual'] as const;
 export type LpEditorMode = (typeof LP_EDITORS)[number];
@@ -63,6 +64,9 @@ export interface LandingPage {
   pageDecorHtml: string;
   hasForm: boolean; // oglindă a form.enabled (invariant)
   form: LpFormConfig;
+  /** Allowlist de variante de link cunoscute (scris de Link Builder) — serveLp atribuie trafic DOAR
+   *  acestor chei (anti-bloat); restul → __other / __direct. */
+  knownVariants: Record<string, true>;
   clientUid: string; // asociere opțională (portal client) — '' dacă nu
   leadId: string; // asociere opțională (pipeline) — '' dacă nu
   createdBy: string; // uid-ul operatorului
@@ -135,6 +139,7 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     pageDecorHtml: '',
     hasForm: false,
     form: coerceForm({}),
+    knownVariants: {},
     clientUid: '',
     leadId: '',
     createdBy: str(createdBy, 128),
@@ -161,6 +166,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     pageDecorHtml: str(d.pageDecorHtml, LP_HTML_MAX),
     hasForm: form.enabled, // invariant: hasForm === form.enabled
     form,
+    knownVariants: coerceKnownVariants(d.knownVariants),
     clientUid: str(d.clientUid, 128),
     leadId: str(d.leadId, 128),
     createdBy: str(d.createdBy, 128),

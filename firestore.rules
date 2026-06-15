@@ -145,7 +145,9 @@ service cloud.firestore {
         && request.resource.data.slug is string && request.resource.data.slug.size() <= 60
         && request.resource.data.title is string && request.resource.data.title.size() <= 140
         && request.resource.data.html is string && request.resource.data.html.size() <= 200000
-        && request.resource.data.status in ['draft', 'published'];
+        && request.resource.data.status in ['draft', 'published']
+        // knownVariants (allowlist de variante de link) — opțional, dar dacă există: map plafonat (anti-bloat).
+        && (!('knownVariants' in request.resource.data) || (request.resource.data.knownVariants is map && request.resource.data.knownVariants.size() <= 200));
       allow delete: if isAdmin();
 
       match /submissions/{subId} {
@@ -159,6 +161,20 @@ service cloud.firestore {
       match /stats/{date} {
         allow read: if isAdmin();
         allow write: if false; // doar functions (rollup-uri incrementate server-side)
+      }
+      match /variants/{key} {
+        allow read: if isAdmin();
+        allow write: if false; // doar functions (contoare incrementate server-side)
+      }
+      // Linkuri etichetate generate de operator (Link Builder). Scrise din client de admin.
+      match /links/{id} {
+        allow read, delete: if isAdmin();
+        allow create, update: if isAdmin()
+          && request.resource.data.keys().hasOnly(['schema', 'label', 'source', 'medium', 'campaign', 'content', 'term', 'url', 'variantKey', 'createdAt', 'createdBy'])
+          && request.resource.data.schema == 1
+          && request.resource.data.label is string && request.resource.data.label.size() <= 80
+          && request.resource.data.url is string && request.resource.data.url.size() <= 600
+          && request.resource.data.variantKey is string && request.resource.data.variantKey.matches('^[a-z0-9~_-]{1,161}$');
       }
     }
 

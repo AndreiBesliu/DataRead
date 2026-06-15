@@ -39,24 +39,34 @@ const admin = fnRequire('firebase-admin');
 admin.initializeApp = () => ({});            // no-op: fără credențiale reale
 const state = { lpDoc: null, calls: {} };
 const rec = (k, v) => { (state.calls[k] = state.calls[k] || []).push(v); };
-function docRef(parent, id) {
+// Doc-ref fals cu identitate (_recKey/_id) ca batch-ul să poată înregistra pe colecția corectă.
+function makeDoc(recKey, id, isLp) {
   return {
+    _recKey: recKey, _id: id,
     async get() {
-      if (parent === 'landingPages') return { exists: state.lpDoc !== null, data: () => state.lpDoc };
+      if (isLp) return { exists: state.lpDoc !== null, data: () => state.lpDoc };
       return { exists: false, data: () => null };
     },
-    collection(sub) {
-      return {
-        doc() { return { async set(data) { rec(`${parent}/${sub}:set`, data); } }; },
-        add(data) { rec(`${parent}/${sub}:add`, data); return Promise.resolve({ id: 'x' }); },
-      };
-    },
-    async set(data) { rec(`${parent}:set`, data); },
+    collection(sub) { return makeCol(`${recKey}/${sub}`); },
+    async set(data) { rec(`${recKey}:set`, { id, data }); },
+    async update(data) { rec(`${recKey}:update`, { id, data }); },
+  };
+}
+function makeCol(recKey) {
+  return {
+    doc(id) { return makeDoc(recKey, id, recKey === 'landingPages'); },
+    add(data) { rec(`${recKey}:add`, data); return Promise.resolve({ id: 'x' }); },
   };
 }
 const fakeDb = {
-  collection(name) {
-    return { doc(id) { return docRef(name, id); }, add(data) { rec(`${name}:add`, data); return Promise.resolve({ id: 'x' }); } };
+  collection(name) { return makeCol(name); },
+  batch() {
+    const ops = [];
+    return {
+      set(ref, data) { ops.push(['set', ref, data]); return this; },
+      update(ref, data) { ops.push(['update', ref, data]); return this; },
+      async commit() { for (const [op, ref, data] of ops) rec(`${ref._recKey}:${op}`, { id: ref._id, data }); },
+    };
   },
 };
 // admin.firestore e un getter pe namespace → îl înlocuim cu defineProperty (configurable).
@@ -66,6 +76,29 @@ Object.defineProperty(admin, 'firestore', { value: fakeFirestore, configurable: 
 
 const fns = fnRequire(fnIndex);
 const serveLp = fns.serveLp; // handler express (gen-2 onRequest) — apelabil ca (req,res)
+
+// ── PARITATE TS↔JS: variantKey/sanitizeVariantPart/buildLpUrl trebuie să producă IDENTIC în TS (Link
+// Builder scrie cheia) și JS (serveLp incrementează contorul). O divergență rupe varianta în două docs.
+console.log('e2e-lp-serve: verificare în proces a serveLp + compilatoare reale\n');
+console.log('P) Paritate atribuire TS↔JS (corpus adversarial)');
+{
+  let pf = 0;
+  const parts = ['Facebook', 'Black Friday!!!', 'Lansare Iarnă ăâîșț', '  ~Promo 50%~  ', '🔥viral🔥', 'a'.repeat(80), '', 'UPPER_case', 'reel-#1', 'noi&voi', '__direct'];
+  for (const p of parts) {
+    if (C.sanitizeVariantPart(p) !== fns.sanitizeVariantPart(p)) { pf++; console.error(`  ✗ sanitize diverge: ${JSON.stringify(p)} → TS ${JSON.stringify(C.sanitizeVariantPart(p))} vs JS ${JSON.stringify(fns.sanitizeVariantPart(p))}`); }
+  }
+  const attrs = [
+    { source: 'Facebook', medium: 'Video', campaign: 'Lansare', content: 'V2', term: 'x' },
+    { source: 'tiktok', content: 'Reel Iarnă #1' },
+    { campaign: 'Black Friday', medium: 'static' },
+    {}, { source: '🔥', medium: '~~~', campaign: 'a'.repeat(50), content: 'noi&voi' },
+  ];
+  for (const a of attrs) {
+    if (C.variantKey(a) !== fns.variantKey(a)) { pf++; console.error(`  ✗ variantKey diverge: TS ${C.variantKey(a)} vs JS ${fns.variantKey(a)}`); }
+    if (C.buildLpUrl('https://dataread-e1bd6.web.app', 'pg', a) !== fns.buildLpUrl('https://dataread-e1bd6.web.app', 'pg', a)) { pf++; console.error('  ✗ buildLpUrl diverge'); }
+  }
+  ok(pf === 0, `paritate TS↔JS pe ${parts.length} părți + ${attrs.length} atribuiri (sanitize/variantKey/buildLpUrl)`);
+}
 
 // ── 3) Construiește o LP de test reală (mod vizual, decor pagină, font, formular) ─
 const slug = 'test-verificare-lp';
@@ -107,10 +140,8 @@ const mkRes = () => {
 const mkReq = (over) => ({ path: '/', query: {}, method: 'GET', body: {}, headers: { host: 'dataread-e1bd6.web.app', 'user-agent': 'verif/1.0', referer: '' }, ...over });
 const reset = () => { state.calls = {}; };
 
-console.log('e2e-lp-serve: verificare în proces a serveLp + compilatoare reale\n');
-
 // ── TEST A: GET /p/{slug} pentru o pagină vizuală publicată ───────────────────
-console.log('A) GET /p/%s (pagină vizuală publicată)', slug);
+console.log('\nA) GET /p/%s (pagină vizuală publicată)', slug);
 state.lpDoc = servedDoc; reset();
 {
   const res = mkRes();
@@ -131,6 +162,10 @@ state.lpDoc = servedDoc; reset();
   ok(b.includes('fetch("/p/_submit"'), 'handler formular injectat (hasForm)');
   ok((state.calls['landingPages/stats:set'] || []).length === 1, 'vizită logată (rollup stats incrementat o dată)');
   ok((state.calls['landingPages/visits:add'] || []).length === 1, 'vizită brută adăugată');
+  const statsA = (state.calls['landingPages/stats:set'] || [])[0];
+  ok(statsA && statsA.data.byMedium && statsA.data.byMedium.other && statsA.data.byMedium.other.__inc === 1, 'byMedium în rollup (fără utm_medium → other)');
+  const varA = (state.calls['landingPages/variants:set'] || [])[0];
+  ok(varA && varA.id === '__direct' && varA.data.visits.__inc === 1, 'variantă __direct (vizită fără UTM)');
   writeFileSync(join(root, 'scripts', '.tmp-lp-page.html'), b); // pentru screenshot vizual
 }
 
@@ -151,11 +186,14 @@ state.lpDoc = servedDoc; reset();
   const res = mkRes();
   await serveLp(mkReq({ path: '/p/_track', method: 'POST', body: { slug, scrollPct: 80, timeMs: 40000, cta: 2 } }), res);
   const sets = state.calls['landingPages/stats:set'] || [];
+  const d0 = sets[0] && sets[0].data;
   ok(res._status === 204, 'status 204');
   ok(sets.length === 1, 'stats scris o dată');
-  ok(sets.length === 1 && sets[0].beacons && sets[0].beacons.__inc === 1, 'beacons incrementat');
-  ok(sets.length === 1 && sets[0].ctaClicks && sets[0].ctaClicks.__inc === 2, 'ctaClicks = 2');
-  ok(sets.length === 1 && sets[0].engaged && sets[0].engaged.__inc === 1, 'engaged = 1 (timeMs>15s)');
+  ok(d0 && d0.beacons && d0.beacons.__inc === 1, 'beacons incrementat');
+  ok(d0 && d0.ctaClicks && d0.ctaClicks.__inc === 2, 'ctaClicks = 2');
+  ok(d0 && d0.engaged && d0.engaged.__inc === 1, 'engaged = 1 (timeMs>15s)');
+  const varC = (state.calls['landingPages/variants:set'] || [])[0];
+  ok(varC && varC.data.beacons && varC.data.beacons.__inc === 1, 'engagement scris și pe variantă');
 }
 
 // ── TEST D: handleTrack pe slug INEXISTENT → integritate (nu scrie nimic) ─────
@@ -188,6 +226,8 @@ state.lpDoc = servedDoc; reset();
   ok((state.calls['landingPages/submissions:add'] || []).length === 1, 'submission salvat');
   ok((state.calls['leads:add'] || []).length === 1, 'lead creat (createLead=true)');
   ok((state.calls['landingPages/stats:set'] || []).length === 1, 'stats submissions incrementat');
+  const varF = (state.calls['landingPages/variants:set'] || [])[0];
+  ok(varF && varF.data.submissions && varF.data.submissions.__inc === 1, 'conversie atribuită pe variantă');
 }
 
 // ── TEST G: handleSubmit fără câmp obligatoriu → 400 ─────────────────────────
@@ -211,6 +251,28 @@ state.lpDoc = { ...servedDoc, design: { schema: 1, base: 'light' } }; reset();
   ok(res._status === 200, 'status 200');
   ok(b.includes('#f6f7f9'), 'bg light (#f6f7f9) din fallback-ul temei light, nu dark (#0a0f1e)');
   ok(!b.includes('radial-gradient(') || !b.includes('24px 24px'), 'fără grilă „digital" (light.digital=false)');
+}
+
+// ── TEST I: vizită cu UTM CUNOSCUT (în knownVariants) → contor pe cheia variantei + byMedium ──
+console.log('\nI) GET /p/{slug}?utm_* cunoscut → variants/{key} + byMedium');
+state.lpDoc = { ...servedDoc, knownVariants: { 'facebook~video~lansare~v2': true } }; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: `/p/${slug}`, query: { utm_source: 'Facebook', utm_medium: 'Video', utm_campaign: 'Lansare', utm_content: 'V2' } }), res);
+  const varI = (state.calls['landingPages/variants:set'] || [])[0];
+  ok(varI && varI.id === 'facebook~video~lansare~v2' && varI.data.visits.__inc === 1, 'variantă cunoscută → contor pe cheia ei');
+  const statsI = (state.calls['landingPages/stats:set'] || [])[0];
+  ok(statsI && statsI.data.byMedium && statsI.data.byMedium.video && statsI.data.byMedium.video.__inc === 1, 'byMedium=video în rollup');
+}
+
+// ── TEST J: vizită cu UTM NECUNOSCUT (lipsă din knownVariants) → __other (anti-bloat) ──
+console.log('\nJ) GET /p/{slug}?utm_* necunoscut → __other (anti-bloat)');
+state.lpDoc = { ...servedDoc, knownVariants: {} }; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: `/p/${slug}`, query: { utm_source: 'spam', utm_content: 'random-' + 'x'.repeat(30) } }), res);
+  const varJ = (state.calls['landingPages/variants:set'] || [])[0];
+  ok(varJ && varJ.id === '__other', 'UTM necunoscut → __other (nu creează doc per spam)');
 }
 
 rmSync(tmp, { force: true });

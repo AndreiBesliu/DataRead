@@ -17,6 +17,7 @@ export interface LpStatsDay {
   visits: number;
   byDevice: Record<string, number>;
   bySource: Record<string, number>;
+  byMedium: Record<string, number>; // tip asset (video/static/…) — pe whitelist la scriere
   byReferrerHost: Record<string, number>;
   byCountry: Record<string, number>;
   beacons: number; // câte beacon-uri de engagement au sosit (numitor pt. medii)
@@ -37,6 +38,7 @@ export interface LpTotals {
   submissions: number;
   byDevice: Record<string, number>;
   bySource: Record<string, number>;
+  byMedium: Record<string, number>;
   byReferrerHost: Record<string, number>;
   byCountry: Record<string, number>;
 }
@@ -79,6 +81,7 @@ export function coerceToLpStatsDay(v: unknown): LpStatsDay | null {
     visits: num(d.visits),
     byDevice: mapNums(d.byDevice),
     bySource: mapNums(d.bySource),
+    byMedium: mapNums(d.byMedium),
     byReferrerHost: mapNums(d.byReferrerHost),
     byCountry: mapNums(d.byCountry),
     beacons: num(d.beacons),
@@ -93,7 +96,7 @@ export function coerceToLpStatsDay(v: unknown): LpStatsDay | null {
 export function emptyLpTotals(): LpTotals {
   return {
     visits: 0, beacons: 0, scrollDepthSum: 0, timeOnPageSum: 0, engaged: 0, ctaClicks: 0,
-    submissions: 0, byDevice: {}, bySource: {}, byReferrerHost: {}, byCountry: {},
+    submissions: 0, byDevice: {}, bySource: {}, byMedium: {}, byReferrerHost: {}, byCountry: {},
   };
 }
 
@@ -113,6 +116,7 @@ export function sumLpStats(days: LpStatsDay[]): LpTotals {
     t.submissions += d.submissions;
     addMap(t.byDevice, d.byDevice);
     addMap(t.bySource, d.bySource);
+    addMap(t.byMedium, d.byMedium);
     addMap(t.byReferrerHost, d.byReferrerHost);
     addMap(t.byCountry, d.byCountry);
   }

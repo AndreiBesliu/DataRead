@@ -4,3 +4,4 @@ export { coerceToLandingPage } from '../src/types/landingPage';
 export { compileBlocks } from '../src/types/lpBlocks';
 export { compileDecor, coerceToLpDecor } from '../src/types/lpDecor';
 export { customThemeCss, defaultCustomTheme, coerceToCustomTheme } from '../src/theme/themes';
+export { sanitizeVariantPart, variantKey, buildLpUrl } from '../src/types/lpAttribution';

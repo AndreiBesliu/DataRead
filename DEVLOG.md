@@ -742,6 +742,32 @@ normaliser, secretele niciodată în chat/repo.
 > + indicator „date parțiale". Verificat: 8/8 suites + build:site (app.html prezent) + boot-smoke.
 > DEPLOYED: hosting.
 
+**2026-06-15 - Task Completed — analytics de atribuire per-link (UTM) pentru LP**
+> Model: Claude Fable 5
+> Andrei: linkul LP se postează pe multe platforme + assets video/statice cu versiuni diferite, codificate
+> prin UTM; vrem trafic + conversii + engagement PER variantă. Plan aprobat (plan mode). Implementat P0–P3:
+> - **Cheie partajată** `src/types/lpAttribution.ts` (PUR: sanitizeVariantPart/variantKey/buildLpUrl/coerce/
+>   LP_MEDIA/LP_PLATFORMS) + **port JS** în functions/index.js (exportat) — paritate TS↔JS testată cross-runtime
+>   în e2e-lp-serve.mjs (corpus adversarial: diacritice/emoji/over-length).
+> - **Anti-bloat fără citire:** `knownVariants:{[key]:true}` pe LP (scris de Link Builder); serveLp citește deja
+>   doc-ul → variantă cunoscută = contor dedicat, UTM necunoscut → `__other`, fără UTM → `__direct`. Plafon 200.
+> - **functions:** logLpVisit(lp)+batch {stats(+byMedium) + variants/{target}}; handleTrack batch {stats +
+>   engagement variantă}; handleSubmit batch {stats + submissions variantă} (variantKey SERVER-side din UTM);
+>   beacon trimite UTM, formular adaugă content/term. LP_SOURCE_WHITELIST extins (pinterest/snapchat/…).
+> - **model:** `byMedium` în lpStats (axă de timp); `landingPages/{slug}/variants/{key}` (contoare) +
+>   `links/{id}` (linkuri salvate). Reguli: variants read-only, links admin-rw (hasOnly + format variantKey),
+>   knownVariants bound ≤200.
+> - **UI:** tab „Linkuri" (LpLinkBuilder — compune URL etichetat, copiază, salvează în links+knownVariants,
+>   listă cu performanță per link); LpAnalytics: card „Tip asset" (byMedium) + tabel „Variante observate"
+>   (platformă/medium/campanie/versiune × vizite/conversii/rată/engagement). i18n ro+en.
+> **Review adversarial (Workflow ultracode, 11 agenți, 3 lentile)** → 8 constatări, remediate cele relevante:
+> (MEDIUM) knownCount stale pe sesiune → LpLinkBuilder abonat live la doc-ul LP; (LOW) eroare salvare raw →
+> mesaj tradus; (LOW) reguli links fără hasOnly/format → adăugate; (LOW) whitelist surse nu acoperea platformele
+> din builder → extins; (LOW) antet „Vizite" fragil → cheie i18n dedicată. Acceptate (documentat): boții în
+> visits (design „înregistrăm tot trafic"); validarea per-cheie a knownVariants (limită reguli Firestore —
+> acoperit de plafon + coerce la citire). Verificat: 9/9 suites + e2e (paritate+variant+byMedium+allowlist) +
+> build:site (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
