@@ -28,19 +28,43 @@ const BOOTSTRAP_ADMIN_UID = 'IMBKFBkONkOB7VVZCmqgS90JdBi2';
 // client). Crearea lui acordă claim-ul; ștergerea îl revocă. Clientul își reîmprospătează
 // tokenul (getIdToken(true)) ca să vadă claim-ul — AdminHome face asta o dată automat.
 
+// Rolul derivat din documentul admins/{uid}: rolul stocat câștigă; founder-ul (bootstrap) e owner
+// implicit cât timp rolul nu e setat (self-heal-ul din manageAdmin îl persistă la prima acțiune).
+function deriveAdminRole(uid, data) {
+  if (data && typeof data.role === 'string' && (data.role === 'owner' || data.role === 'operator')) return data.role;
+  return uid === BOOTSTRAP_ADMIN_UID ? 'owner' : 'operator';
+}
+
 async function recomputeAdminClaim(uid) {
   const db = admin.firestore();
   const snap = await db.collection('admins').doc(uid).get();
   const isAdmin = snap.exists;
+  const role = isAdmin ? deriveAdminRole(uid, snap.data()) : null;
   const user = await admin.auth().getUser(uid);
-  await admin.auth().setCustomUserClaims(uid, Object.assign({}, user.customClaims || {}, { admin: isAdmin }));
+  await admin.auth().setCustomUserClaims(uid, Object.assign({}, user.customClaims || {}, { admin: isAdmin, role }));
   // Oglindește rezolvarea pe cererea de acces (dacă există) — auditul fluxului de aprobare.
   await db.collection('adminRequests').doc(uid).set(
     { status: isAdmin ? 'approved' : 'revoked', resolvedAt: admin.firestore.FieldValue.serverTimestamp() },
     { merge: true }
   );
-  logger.info('admin claim recomputed', { uid, admin: isAdmin });
+  logger.info('admin claim recomputed', { uid, admin: isAdmin, role });
 }
+
+// Decizie PURĂ (testabilă) pentru mutațiile de administrare. `owners` = uid-urile cu rol owner (snapshot
+// consistent, citit în tranzacție). Întoarce {ok, code}. Protejează ultimul owner (anti-blocare).
+function canMutateAdmin(params) {
+  const p = params || {};
+  if (p.callerRole !== 'owner') return { ok: false, code: 'not-owner' };
+  const removesOwner =
+    (p.action === 'revoke' && p.targetCurrentRole === 'owner') ||
+    (p.action === 'setRole' && p.newRole === 'operator' && p.targetCurrentRole === 'owner');
+  if (removesOwner) {
+    const remaining = (p.owners || []).filter((u) => u !== p.targetUid);
+    if (remaining.length === 0) return { ok: false, code: 'last-owner' };
+  }
+  return { ok: true };
+}
+exports.canMutateAdmin = canMutateAdmin;
 
 exports.onAdminWrite = onDocumentWritten({ document: 'admins/{uid}', region: REGION }, async (event) => {
   try {
@@ -1287,4 +1311,89 @@ exports.backfillLpIndex = onCall({ region: REGION }, async (request) => {
   }
   await Promise.all(ops);
   return { written };
+});
+
+// ── Management administratori (RBAC owner/operator) — toate mutațiile prin acest callable owner-only.
+// Autorizarea apelantului se face DIN FIRESTORE (rol live), nu din token (poate fi vechi). Last-owner +
+// self-heal founder + audit, totul într-o tranzacție. Vezi canMutateAdmin (pur, testat).
+// Nucleul testabil: db injectat + context apelant explicit ({uid, admin, email}), data = {action,targetUid,role}.
+// onCall-ul de mai jos doar îl alimentează din request.auth. (Testat în e2e-lp-serve.mjs, TEST M.)
+async function performManageAdmin(db, caller, data) {
+  if (!caller || !caller.uid) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (caller.admin !== true) throw new HttpsError('permission-denied', 'Acces interzis.');
+  const callerUid = caller.uid;
+  const callerEmail = String(caller.email || '').slice(0, 120);
+  const action = data.action;
+  const targetUid = typeof data.targetUid === 'string' ? data.targetUid : '';
+  const newRole = data.role === 'owner' ? 'owner' : 'operator';
+  if (!['approve', 'reject', 'revoke', 'setRole'].includes(action)) throw new HttpsError('invalid-argument', 'Acțiune invalidă.');
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(targetUid)) throw new HttpsError('invalid-argument', 'targetUid invalid.');
+
+  const ts = admin.firestore.FieldValue.serverTimestamp();
+  let resultRole = null;
+
+  await db.runTransaction(async (tx) => {
+    // 1) Autorizează apelantul din Firestore (rol live).
+    const callerRef = db.collection('admins').doc(callerUid);
+    const callerSnap = await tx.get(callerRef);
+    if (!callerSnap.exists) throw new HttpsError('permission-denied', 'Nu mai ai acces.');
+    const callerRole = deriveAdminRole(callerUid, callerSnap.data());
+    // 2) Owneri curenți (pt. last-owner): query + founder dacă există (owner chiar pre-self-heal).
+    const ownersSnap = await tx.get(db.collection('admins').where('role', '==', 'owner'));
+    const owners = new Set(ownersSnap.docs.map((d) => d.id));
+    const bootSnap = callerUid === BOOTSTRAP_ADMIN_UID ? callerSnap : await tx.get(db.collection('admins').doc(BOOTSTRAP_ADMIN_UID));
+    if (bootSnap.exists) owners.add(BOOTSTRAP_ADMIN_UID);
+    // 3) Ținta + cererea.
+    const targetAdminSnap = await tx.get(db.collection('admins').doc(targetUid));
+    const targetReqSnap = await tx.get(db.collection('adminRequests').doc(targetUid));
+    const targetCurrentRole = targetAdminSnap.exists ? deriveAdminRole(targetUid, targetAdminSnap.data()) : null;
+    const targetEmail = String((targetAdminSnap.exists && targetAdminSnap.data().email) || (targetReqSnap.exists && targetReqSnap.data().email) || '').slice(0, 120);
+
+    const verdict = canMutateAdmin({ action, callerRole, targetUid, targetCurrentRole, newRole, owners: [...owners] });
+    if (!verdict.ok) throw new HttpsError(verdict.code === 'last-owner' ? 'failed-precondition' : 'permission-denied', verdict.code);
+
+    // 4) Self-heal founder (după autorizare): persistă role:'owner' dacă lipsește.
+    if (callerUid === BOOTSTRAP_ADMIN_UID && !(callerSnap.data() && callerSnap.data().role)) {
+      tx.set(callerRef, { role: 'owner' }, { merge: true });
+    }
+
+    // 5) Execută acțiunea.
+    if (action === 'approve') {
+      const req = targetReqSnap.exists ? targetReqSnap.data() : {};
+      tx.set(db.collection('admins').doc(targetUid), {
+        role: newRole,
+        email: String(req.email || '').slice(0, 120),
+        displayName: String(req.displayName || '').slice(0, 80),
+        approvedBy: callerUid, approvedAt: ts,
+      }, { merge: true });
+      resultRole = newRole;
+    } else if (action === 'reject') {
+      tx.set(db.collection('adminRequests').doc(targetUid), { status: 'rejected', resolvedAt: ts }, { merge: true });
+    } else if (action === 'revoke') {
+      if (!targetAdminSnap.exists) throw new HttpsError('not-found', 'Nu e administrator.');
+      tx.delete(db.collection('admins').doc(targetUid));
+    } else if (action === 'setRole') {
+      if (!targetAdminSnap.exists) throw new HttpsError('not-found', 'Nu e administrator.');
+      tx.update(db.collection('admins').doc(targetUid), { role: newRole });
+      resultRole = newRole;
+    }
+
+    // 6) Audit append-only (în tranzacție).
+    tx.set(db.collection('adminAudit').doc(), {
+      schema: 1, action, actorUid: callerUid, actorEmail: callerEmail, targetUid, targetEmail,
+      role: action === 'approve' || action === 'setRole' ? newRole : null, at: ts,
+    });
+  });
+
+  return { ok: true, role: resultRole };
+}
+exports.performManageAdmin = performManageAdmin;
+
+exports.manageAdmin = onCall({ region: REGION }, async (request) => {
+  const auth = request.auth;
+  return performManageAdmin(admin.firestore(), {
+    uid: auth && auth.uid,
+    admin: auth && auth.token && auth.token.admin,
+    email: auth && auth.token && auth.token.email,
+  }, request.data || {});
 });

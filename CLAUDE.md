@@ -85,6 +85,16 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `adminRequests/{uid}` (pending); un admin existent aprobă din `/admin` (creează `admins/{uid}` →
   trigger → claim). Bootstrap: UID-ul lui Andrei (`IMBKFBkONkOB7VVZCmqgS90JdBi2`, constantă în
   functions) e auto-aprobat la prima cerere, DOAR cât timp nu există niciun admin.
+- **RBAC admini (ACTIV 15.06.2026):** doi membri de claim — `admin` (boolean) + `role`
+  (`owner`|`operator`), setate de `recomputeAdminClaim`/`deriveAdminRole` (rolul stocat în `admins/{uid}`
+  câștigă; founder-ul = owner implicit cât timp rolul nu e setat, persistat prin self-heal). **Owner**
+  gestionează adminii; **operator** face munca zilnică. TOATE mutațiile (approve/reject/revoke/setRole)
+  trec prin callable-ul owner-only `manageAdmin` → nucleu testabil `performManageAdmin(db, caller, data)`:
+  autorizează apelantul DIN FIRESTORE (rol live, nu token vechi), tranzacție cu toate citirile înainte de
+  scrieri, protecția ultimului owner (`canMutateAdmin` pură), audit append-only `adminAudit/{id}`.
+  Reguli: `admins`/`adminRequests`(update,delete)/`adminAudit` = `write:false` (doar Admin SDK). UI: tab
+  „Administratori" (`AdminsPanel`) cu cereri+listă+roluri+revoke+jurnal. Amânat: invitație pe email;
+  permisiuni per-modul; suită reguli cu emulator.
 - **Design:** tema bannerului oficial (navy #0a1228, roșu #e02639, albastru electric #2e7fff,
   diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public.
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech

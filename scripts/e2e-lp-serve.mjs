@@ -287,6 +287,97 @@ console.log('\nK) lpIndexTarget (diff clientUid → unde se scrie/șterge indexu
   ok(eq(fns.lpIndexTarget('', '', true), { deleteUnder: '', upsertUnder: '' }), 'fără client → nicio acțiune');
 }
 
+// ── TEST L: canMutateAdmin (RBAC owner/operator + protecția ultimului owner) ──
+console.log('\nL) canMutateAdmin (autorizare + anti-blocare ultimul owner)');
+{
+  const cm = fns.canMutateAdmin;
+  ok(cm({ action: 'approve', callerRole: 'operator', owners: ['o1'] }).code === 'not-owner', 'operatorul nu poate gestiona (not-owner)');
+  ok(cm({ action: 'approve', callerRole: 'owner', targetUid: 'x', owners: ['o1'] }).ok === true, 'owner aprobă → ok');
+  ok(cm({ action: 'setRole', callerRole: 'owner', targetUid: 'x', newRole: 'owner', targetCurrentRole: 'operator', owners: ['o1'] }).ok === true, 'promovare la owner → mereu ok');
+  ok(cm({ action: 'revoke', callerRole: 'owner', targetUid: 'op1', targetCurrentRole: 'operator', owners: ['o1'] }).ok === true, 'revoke operator → ok');
+  ok(cm({ action: 'revoke', callerRole: 'owner', targetUid: 'o1', targetCurrentRole: 'owner', owners: ['o1'] }).code === 'last-owner', 'revoke ultimul owner → last-owner');
+  ok(cm({ action: 'revoke', callerRole: 'owner', targetUid: 'o1', targetCurrentRole: 'owner', owners: ['o1', 'o2'] }).ok === true, 'revoke owner cu alt owner → ok');
+  ok(cm({ action: 'setRole', callerRole: 'owner', targetUid: 'o1', newRole: 'operator', targetCurrentRole: 'owner', owners: ['o1'] }).code === 'last-owner', 'demoteaza ultimul owner → last-owner');
+  ok(cm({ action: 'setRole', callerRole: 'owner', targetUid: 'o1', newRole: 'operator', targetCurrentRole: 'owner', owners: ['o1', 'o2'] }).ok === true, 'demoteaza owner cu alt owner → ok');
+}
+
+// ── TEST M: performManageAdmin (tranzacția COMPLETĂ pe un Firestore în memorie). Prinde bug-uri pe
+// care canMutateAdmin pur nu le vede — ex. un câmp nedeclarat în scrierea de audit (regresie actorEmail). ──
+console.log('\nM) performManageAdmin (tranzacție reală: approve/setRole/revoke/audit + anti-blocare)');
+{
+  const FOUNDER = fns.BOOTSTRAP_ADMIN_UID || 'IMBKFBkONkOB7VVZCmqgS90JdBi2';
+  // Firestore în memorie cu tranzacție + query where('field','==',val). Cheie 'coll/id' → data.
+  function makeStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    const key = (coll, id) => `${coll}/${id}`;
+    const ref = (coll, id) => ({ _coll: coll, _id: id });
+    const snap = (coll, id) => { const k = key(coll, id); const has = store.has(k); const d = store.get(k); return { exists: has, id, data: () => (has ? d : undefined) }; };
+    let auto = 0;
+    const tx = {
+      async get(r) {
+        if (r._field) { const docs = []; for (const [k, v] of store) { const slash = k.indexOf('/'); if (k.slice(0, slash) === r._coll && v && v[r._field] === r._val) docs.push({ id: k.slice(slash + 1), data: () => v }); } return { docs }; }
+        return snap(r._coll, r._id);
+      },
+      set(r, data, opts) { const k = key(r._coll, r._id); store.set(k, opts && opts.merge ? Object.assign({}, store.get(k) || {}, data) : Object.assign({}, data)); },
+      update(r, data) { const k = key(r._coll, r._id); if (!store.has(k)) throw new Error('update inexistent: ' + k); store.set(k, Object.assign({}, store.get(k), data)); },
+      delete(r) { store.delete(key(r._coll, r._id)); },
+    };
+    const db = {
+      collection(coll) { return { doc(id) { return ref(coll, id === undefined ? `auto${auto++}` : id); }, where(field, op, val) { return { _coll: coll, _field: field, _op: op, _val: val }; } }; },
+      async runTransaction(fn) { return fn(tx); },
+    };
+    return { db, store };
+  }
+  const run = async (seed, caller, data) => { const { db, store } = makeStore(seed); let err = null, res = null; try { res = await fns.performManageAdmin(db, caller, data); } catch (e) { err = e; } return { store, err, res }; };
+  const owner = (uid) => ({ [`admins/${uid}`]: { role: 'owner', email: `${uid}@x.ro` } });
+  const operator = (uid) => ({ [`admins/${uid}`]: { role: 'operator', email: `${uid}@x.ro` } });
+
+  // 1) Non-admin (token) → permission-denied (pre-gate, înainte de orice citire).
+  ok((await run({}, { uid: 'x', admin: false }, { action: 'approve', targetUid: 'y' })).err?.message?.includes('Acces interzis'), 'non-admin token → permission-denied');
+  // 2) Operator (token admin) dar rol operator în Firestore → not-owner (autorizare LIVE din Firestore).
+  ok(/not-owner/.test((await run(operator('op1'), { uid: 'op1', admin: true }, { action: 'approve', targetUid: 'n' })).err?.message || ''), 'operator → not-owner (autoritate Firestore, nu token)');
+  // 3) Owner aprobă o cerere → admins/{target} operator + AUDIT cu actorEmail corect (regresia găsită manual).
+  {
+    const seed = Object.assign(owner('o1'), { 'adminRequests/req1': { email: 'req1@x.ro', displayName: 'Req One', status: 'pending' } });
+    const { err, store, res } = await run(seed, { uid: 'o1', admin: true, email: 'o1@x.ro' }, { action: 'approve', targetUid: 'req1', role: 'operator' });
+    ok(!err, 'owner approve → fără eroare');
+    ok(store.get('admins/req1')?.role === 'operator', 'approve → admins/req1 rol operator');
+    ok(store.get('admins/req1')?.email === 'req1@x.ro', 'approve → email copiat din cerere');
+    const aud = [...store.keys()].filter((k) => k.startsWith('adminAudit/')).map((k) => store.get(k));
+    ok(aud.length === 1, 'approve → exact un rând de audit');
+    ok(aud[0]?.actorEmail === 'o1@x.ro' && aud[0]?.actorUid === 'o1' && aud[0]?.targetEmail === 'req1@x.ro', 'audit: actorEmail/actorUid/targetEmail corecte (regresie actorEmail)');
+    ok(res?.role === 'operator', 'approve → întoarce role operator');
+  }
+  // 4) Promovare operator → owner.
+  {
+    const { err, store } = await run(Object.assign(owner('o1'), operator('op1')), { uid: 'o1', admin: true, email: 'o1@x.ro' }, { action: 'setRole', targetUid: 'op1', role: 'owner' });
+    ok(!err && store.get('admins/op1')?.role === 'owner', 'setRole → op1 devine owner');
+  }
+  // 5) Revoke ultimul owner → last-owner (blocat); doc-ul owner rămâne intact.
+  {
+    const { err, store } = await run(owner('o1'), { uid: 'o1', admin: true, email: 'o1@x.ro' }, { action: 'revoke', targetUid: 'o1' });
+    ok(/last-owner/.test(err?.message || ''), 'revoke ultimul owner → last-owner');
+    ok(store.get('admins/o1'), 'revoke blocat → doc owner rămâne');
+  }
+  // 6) Revoke owner cu al doilea owner prezent → șters.
+  {
+    const { err, store } = await run(Object.assign(owner('o1'), owner('o2')), { uid: 'o1', admin: true, email: 'o1@x.ro' }, { action: 'revoke', targetUid: 'o2' });
+    ok(!err && !store.get('admins/o2'), 'revoke owner cu alt owner → șters');
+  }
+  // 7) Founder fără rol stocat = owner implicit + self-heal (persistă role:'owner').
+  {
+    const seed = { [`admins/${FOUNDER}`]: { email: 'founder@x.ro' }, 'adminRequests/req2': { email: 'req2@x.ro', displayName: 'R2' } };
+    const { err, store } = await run(seed, { uid: FOUNDER, admin: true, email: 'founder@x.ro' }, { action: 'approve', targetUid: 'req2', role: 'operator' });
+    ok(!err, 'founder fără rol → tratat owner (approve trece)');
+    ok(store.get(`admins/${FOUNDER}`)?.role === 'owner', 'self-heal → founder primește role owner persistat');
+  }
+  // 8) setRole pe un uid care nu e admin → not-found.
+  ok(/Nu e administrator/.test((await run(owner('o1'), { uid: 'o1', admin: true, email: 'o1@x.ro' }, { action: 'setRole', targetUid: 'ghost', role: 'owner' })).err?.message || ''), 'setRole pe ne-admin → not-found');
+  // 9) Acțiune invalidă / targetUid invalid → invalid-argument.
+  ok(/invalid/i.test((await run(owner('o1'), { uid: 'o1', admin: true }, { action: 'nope', targetUid: 'x' })).err?.message || ''), 'acțiune necunoscută → invalid-argument');
+  ok(/invalid/i.test((await run(owner('o1'), { uid: 'o1', admin: true }, { action: 'approve', targetUid: 'bad id!' })).err?.message || ''), 'targetUid invalid → invalid-argument');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

@@ -831,6 +831,34 @@ normaliser, secretele niciodată în chat/repo.
 > notă necontrolat. Fără cross-tenant. Verificat: 9/9 suites (+csvCell+lpLeadState) + e2e + build:site
 > (app.html) + boot-smoke. DEPLOYED: hosting + rules (fără functions).
 
+**2026-06-15 - Task Completed — sistem management administratori (RBAC owner/operator + audit)**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei: „vreau un sistem de management pentru administratori, pentru cei care au acces la panoul admin".
+> Roluri owner+operator + jurnal de audit. Owner-ul gestionează adminii; operatorul face munca zilnică.
+> - **functions:** `recomputeAdminClaim` setează acum claim `{admin, role}` (`deriveAdminRole`: rolul stocat
+>   câștigă; founder=owner implicit cât timp rolul nu e setat). `canMutateAdmin` PUR+exportat (owner-only +
+>   anti-blocare ultimul owner). `manageAdmin` (onCall owner-only) delegă către nucleul testabil
+>   `performManageAdmin(db, caller, data)`: autorizează apelantul DIN FIRESTORE (rol live, nu token vechi
+>   ~1h), tranzacție cu TOATE citirile înainte de scrieri, owners = query(role==owner) ∪ {founder dacă
+>   există}, self-heal founder (role:'owner' la prima acțiune — fără backdoor permanent), execută approve/
+>   reject/revoke/setRole + audit append-only, atomic.
+> - **reguli:** `admins` + `adminRequests` (update/delete) + `adminAudit` toate `write:false` — orice mutație
+>   trece DOAR prin callable (Admin SDK). Închide gaura: înainte ORICE admin putea șterge/edita `admins/{uid}`
+>   din client (scotea owner-ul, pe sine, sau ultimul admin → blocare totală).
+> - **UI:** tab nou „Administratori" în /admin (`AdminsPanel`): cereri în așteptare (mutate din tabul Leads) +
+>   listă admini cu rol/revoke/schimbă-rol (owner-only, dezactivate pe ultimul owner) + feed audit (50).
+>   `src/types/adminRole.ts` (roluri/coerce). i18n `admin.*` ro+en paritate.
+> **Review:** Workflow-ul adversarial automat a eșuat de DOUĂ ori pe limite de rată Anthropic (agenți morți
+> cu 0 tool-uri — deci „0 constatări" = irelevant, NU cod curat). Pasul MANUAL de securitate a prins un BUG
+> REAL: scrierea de audit folosea `actorEmail` (identificator nedeclarat — numele corect era `callerEmail`)
+> → ReferenceError în tranzacție → FIECARE apel `manageAdmin` ar fi eșuat cu „internal". Niciun test nu-l
+> prindea (tranzacția nu era acoperită — doar funcția pură). Remediat + protejat cu regresie: am extras
+> `performManageAdmin` testabil și am adăugat TEST M în e2e (Firestore în memorie cu runTransaction+where:
+> approve/setRole/revoke/last-owner/operator-denied/self-heal founder/audit corect — 17 verificări). Review-ul
+> adversarial complet se poate re-rula când limitele se ridică.
+> Verificat: 9/9 suites + e2e (TEST L pur + TEST M tranzacțional) + build:site (app.html prezent) + boot-smoke.
+> DEPLOYED: functions (manageAdmin nou) + hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

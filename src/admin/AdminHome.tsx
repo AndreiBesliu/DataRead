@@ -24,17 +24,20 @@ import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type 
 import LeadRequests from './LeadRequests';
 import MarketingCenter from './MarketingCenter';
 import LandingStudio from './LandingStudio';
+import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
+import type { AdminRole } from '../types/adminRole';
 import { useAdminTheme } from '../theme/useAdminTheme';
 import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeStyle } from '../theme/themes';
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'marketing' | 'landing';
+type AdminView = 'leads' | 'marketing' | 'landing' | 'admins';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
   marketing: 'admin.navMarketing',
   landing: 'admin.navLanding',
+  admins: 'admin.navAdmins',
 };
 
 /** Cheia i18n a fiecărui status de pipeline. */
@@ -61,12 +64,6 @@ interface ClientRow {
   profile: ClientProfile;
 }
 
-interface RequestRow {
-  uid: string;
-  email: string;
-  displayName: string;
-  requestedAt: unknown;
-}
 
 interface LeadRow {
   id: string;
@@ -185,8 +182,8 @@ export default function AdminHome() {
   const { t } = useTranslation();
   const { user, initializing } = useAuthStore();
   const [isAdmin, setIsAdmin] = useState<'checking' | boolean>('checking');
+  const [myRole, setMyRole] = useState<AdminRole | null>(null);
   const [checkNonce, setCheckNonce] = useState(0);
-  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [clients, setClients] = useState<ClientRow[] | null>(null);
   const [openLead, setOpenLead] = useState<string | null>(null);
@@ -219,7 +216,10 @@ export default function AdminHome() {
       try {
         let tok = await u.getIdTokenResult();
         if (tok.claims.admin !== true) tok = await u.getIdTokenResult(true);
-        if (!cancelled) setIsAdmin(tok.claims.admin === true);
+        if (!cancelled) {
+          setIsAdmin(tok.claims.admin === true);
+          setMyRole(tok.claims.role === 'owner' ? 'owner' : tok.claims.admin === true ? 'operator' : null);
+        }
       } catch {
         if (!cancelled) setIsAdmin(false);
       }
@@ -228,25 +228,6 @@ export default function AdminHome() {
       cancelled = true;
     };
   }, [user, checkNonce]);
-
-  // Cererile de acces în așteptare.
-  useEffect(() => {
-    if (isAdmin !== true) return;
-    const q = query(collection(db, 'adminRequests'), where('status', '==', 'pending'));
-    return onSnapshot(q, (snap) => {
-      const out: RequestRow[] = [];
-      snap.forEach((d) => {
-        const x = d.data();
-        out.push({
-          uid: d.id,
-          email: typeof x.email === 'string' ? x.email : '',
-          displayName: typeof x.displayName === 'string' ? x.displayName : '',
-          requestedAt: x.requestedAt,
-        });
-      });
-      setRequests(out);
-    }, (err) => console.warn('admin requests listener:', err));
-  }, [isAdmin]);
 
   // Lead-urile formularului public (+ câmpurile de pipeline scrise de admini).
   useEffect(() => {
@@ -309,22 +290,8 @@ export default function AdminHome() {
     });
   }, [isAdmin]);
 
-  const approve = async (uid: string) => {
-    try {
-      // Crearea admins/{uid} declanșează onAdminWrite → claim + status 'approved' pe cerere.
-      await setDoc(doc(db, 'admins', uid), { approvedBy: user?.uid ?? '', approvedAt: serverTimestamp() });
-    } catch (e) {
-      console.warn('approve failed:', e);
-    }
-  };
-
-  const reject = async (uid: string) => {
-    try {
-      await updateDoc(doc(db, 'adminRequests', uid), { status: 'rejected', resolvedAt: serverTimestamp() });
-    } catch (e) {
-      console.warn('reject failed:', e);
-    }
-  };
+  // Aprobarea/respingerea/revocarea administratorilor s-a mutat în tabul „Administratori" (AdminsPanel),
+  // prin callable-ul owner-only `manageAdmin` (clientul nu mai scrie direct în admins/adminRequests).
 
   const setLeadStatus = async (id: string, status: LeadStatus) => {
     try {
@@ -555,36 +522,9 @@ export default function AdminHome() {
 
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'landing' && <LandingStudio adminUid={user.uid} />}
+      {view === 'admins' && <AdminsPanel myUid={user.uid} isOwner={myRole === 'owner' || user.uid === BOOTSTRAP_ADMIN_UID} />}
 
       {view === 'leads' && (<>
-      {/* Cereri de acces backend. */}
-      <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('admin.requestsTitle')}</h2>
-      {requests.length === 0 ? (
-        <p style={{ color: 'var(--fg-1)', fontSize: 14, marginBottom: 28 }}>{t('admin.requestsEmpty')}</p>
-      ) : (
-        <div style={sectionBox}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.uid}>
-                  <td style={td}>{r.email || r.uid}</td>
-                  <td style={td}>{r.displayName || '—'}</td>
-                  <td style={td}>{t('admin.requestedAt')}: {fmtTs(r.requestedAt)}</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12, marginRight: 8 }} onClick={() => void approve(r.uid)}>
-                      {t('admin.approve')}
-                    </button>
-                    <button className="btn" style={{ padding: '4px 12px', fontSize: 12 }} onClick={() => void reject(r.uid)}>
-                      {t('admin.reject')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* Lead-urile din formularul public /start — pipeline-ul operațional. */}
       {(() => {
         const q = leadSearch.trim().toLowerCase();

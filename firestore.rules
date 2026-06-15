@@ -18,14 +18,13 @@ service cloud.firestore {
 
     match /admins/{uid} {
       allow read: if signedInAs(uid) || isAdmin();
-      // Aprobarea unei cereri = un admin existent creează documentul (declanșează onAdminWrite →
-      // claim). Primul admin e creat de bootstrap-ul din functions (Admin SDK ocolește rules).
-      allow create, delete: if isAdmin();
-      allow update: if false;
+      // TOATE mutațiile trec prin callable-ul owner-only `manageAdmin` (Admin SDK ocolește rules) +
+      // bootstrap-ul. Clientul NU scrie direct (altfel orice admin ar putea scoate owner-ul/pe sine).
+      allow create, update, delete: if false;
     }
 
     // Cererile de acces la backend: orice cont logat care încearcă /admin își înregistrează
-    // cererea (o singură dată, pe propriul uid); doar adminii o rezolvă.
+    // cererea (o singură dată, pe propriul uid). Rezolvarea (approve/reject) = prin manageAdmin.
     match /adminRequests/{uid} {
       allow read: if signedInAs(uid) || isAdmin();
       allow create: if signedInAs(uid)
@@ -34,7 +33,13 @@ service cloud.firestore {
         && request.resource.data.email is string && request.resource.data.email.size() <= 120
         && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 80
         && request.resource.data.requestedAt == request.time;
-      allow update, delete: if isAdmin();
+      allow update, delete: if false; // doar functions (manageAdmin / recomputeAdminClaim)
+    }
+
+    // Jurnal de audit al acțiunilor de administrare (append-only, scris doar de manageAdmin).
+    match /adminAudit/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Lead-urile formularului public /start — site-ul NU are login, deci crearea e anonimă,
