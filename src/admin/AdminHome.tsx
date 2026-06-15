@@ -22,6 +22,7 @@ import { coerceToClientProfile, type ClientProfile } from '../types/client';
 import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
+import OpportunityBoard from './OpportunityBoard';
 import MarketingCenter from './MarketingCenter';
 import LandingStudio from './LandingStudio';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
@@ -654,6 +655,7 @@ export default function AdminHome() {
                                     {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
                                   </button>
                                 </div>
+                                {user && <OpportunityBoard leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
                                 {user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
 
                                 {/* Cont client (portal): conectează un cont logat la datele acestui client. */}

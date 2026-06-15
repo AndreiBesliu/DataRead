@@ -151,6 +151,15 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   inițială; ROTIREA rămâne în backlog înainte de scalare — la rotire: secrets:set cu cheia nouă +
   `npm run deploy:functions`). Comutatorul `AI_ENABLED` din functions/index.js stinge tot fluxul
   la nevoie (flip + deploy).
+- **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
+  (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
+  `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie
+  `leads/{id}.channelRecommendations={schema,channels}` (merge). UI `OpportunityBoard` în rândul de lead:
+  board sortabil după impact + „Creează cerere" pre-completată din oportunitate (→ LeadRequests). Coerce TS
+  `src/types/recommendation.ts`. **Paritate TS↔JS↔schema:** clamp-ul JS din callable se DERIVĂ din
+  `CHANNELS_SCHEMA` (anti-drift); coerce TS folosește aceleași 4 obiective + 4 niveluri de impact ca schema.
+  Inspirat de competitor (vezi `docs/ANALIZA-COMPETITOR-...`); pivotul self-serve (client-gen+credite) e
+  amânat post-MVP. Testat în test-landing (coerce/sort) + e2e TEST N (prompt+schema).
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`

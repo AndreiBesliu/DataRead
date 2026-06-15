@@ -378,6 +378,25 @@ console.log('\nM) performManageAdmin (tranzacție reală: approve/setRole/revoke
   ok(/invalid/i.test((await run(owner('o1'), { uid: 'o1', admin: true }, { action: 'approve', targetUid: 'bad id!' })).err?.message || ''), 'targetUid invalid → invalid-argument');
 }
 
+// ── TEST N: pasul „Oportunități" — buildChannelsPrompt + CHANNELS_SCHEMA (functions e JS netipizat,
+// deci require-ul + apelul prind syntax/ReferenceError pe care build-ul nu le vede). ──
+console.log('\nN) aiRecommendChannels — prompt + schema (pasul Oportunități)');
+{
+  const lead = { companyName: 'Presto Construct', industry: 'construction', industryOther: '', description: 'Materiale construcții și vopseluri pentru renovări', website: 'https://presto.ro', facebook: 'https://fb.com/presto', instagram: '', tiktok: '', objectives: ['leads', 'sales'], adBudget: 'b500_1000' };
+  const prompt = fns.buildChannelsPrompt(lead);
+  ok(typeof prompt === 'string' && prompt.includes('Presto Construct'), 'promptul conține numele firmei');
+  ok(prompt.includes('construction'), 'promptul conține industria');
+  ok(/500.?1000/.test(prompt), 'promptul conține bugetul lizibil');
+  ok(prompt.includes('lead-uri') && prompt.includes('vânzări online'), 'promptul conține obiectivele declarate (lizibil)');
+  ok(fns.buildChannelsPrompt(null).length > 0, 'buildChannelsPrompt(null) nu aruncă');
+  const sc = fns.CHANNELS_SCHEMA;
+  const items = sc?.properties?.channels?.items;
+  ok(sc?.required?.includes('channels') && sc.additionalProperties === false, 'CHANNELS_SCHEMA: channels required + additionalProperties false');
+  ok(items?.additionalProperties === false && Array.isArray(items?.required) && items.required.includes('title') && items.required.includes('impact'), 'item schema: required title/impact + additionalProperties false');
+  ok(JSON.stringify(items?.properties?.impact?.enum) === JSON.stringify(['ridicat', 'mediu-ridicat', 'mediu', 'scazut']), 'impact enum corect (paritate cu TS IMPACT_LEVELS)');
+  ok(JSON.stringify(items?.properties?.suggestedObjective?.enum) === JSON.stringify(['leads', 'sales', 'awareness', 'traffic']), 'suggestedObjective enum corect');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

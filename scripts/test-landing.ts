@@ -25,6 +25,7 @@ import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates'
 import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
 import { coerceToLpLeadState } from '../src/types/lpLeadState';
 import { csvCell, toCsv } from '../src/utils/csv';
+import { coerceToRecommendedChannels, sortByImpact } from '../src/types/recommendation';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -57,6 +58,24 @@ check('coerceToLpProject: nume + culoare validă; fallback culoare', (() => {
   const b = coerceToLpProject({ name: 'X', color: 'nu-e-hex' });
   return a.schema === 1 && a.name === 'Campanie Iarnă' && a.color === '#22c55e' && a.clientUid === 'u1' && b.color === LP_PROJECT_COLORS[0];
 })());
+// ── recomandarea de canale (pasul Oportunități) ──
+check('coerceToRecommendedChannels: null/gunoi → []', coerceToRecommendedChannels(null).length === 0 && coerceToRecommendedChannels('x').length === 0 && coerceToRecommendedChannels(42).length === 0);
+check('coerceToRecommendedChannels: impact/objective invalid → default; clamp titlu', (() => {
+  const c = coerceToRecommendedChannels([{ title: 'a'.repeat(300), impact: 'turbo', impactReason: 'x', description: 'd', suggestedObjective: 'nope', suggestedOffer: 'o' }])[0];
+  return c.title.length === 140 && c.impact === 'mediu' && c.suggestedObjective === '';
+})());
+check('coerceToRecommendedChannels: valori valide păstrate', (() => {
+  const c = coerceToRecommendedChannels([{ title: 'Google Ads', impact: 'ridicat', impactReason: 'intenție', description: 'd', suggestedObjective: 'leads', suggestedOffer: 'reducere' }])[0];
+  return c.impact === 'ridicat' && c.suggestedObjective === 'leads' && c.title === 'Google Ads';
+})());
+check('coerceToRecommendedChannels: suggestedObjective "other" → "" (paritate cu enum-ul schemei callable)', coerceToRecommendedChannels([{ title: 'x', suggestedObjective: 'other' }])[0].suggestedObjective === '');
+check('coerceToRecommendedChannels: plafon 8 carduri', coerceToRecommendedChannels(Array.from({ length: 20 }, () => ({ title: 'x', impact: 'mediu' }))).length === 8);
+check('sortByImpact: ordine ridicat→scazut, nu mutează input', (() => {
+  const input = coerceToRecommendedChannels([{ title: 'B', impact: 'scazut' }, { title: 'A', impact: 'ridicat' }, { title: 'C', impact: 'mediu' }]);
+  const sorted = sortByImpact(input);
+  return sorted.map((x) => x.impact).join(',') === 'ridicat,mediu,scazut' && input[0].impact === 'scazut';
+})());
+
 check('coerce(gunoi) nu aruncă, design valid', (() => {
   const lp = coerceToLandingPage({ status: 'turbo', design: { vars: { accent: 'nu-e-hex' } }, lang: 'fr' });
   return lp.status === 'draft' && HEX.test(lp.design.vars.accent) && lp.lang === 'ro';

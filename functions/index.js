@@ -259,6 +259,44 @@ const CONTENT_SCHEMA = {
   additionalProperties: false,
 };
 
+// Schema oportunităților de canale (callable-ul aiRecommendChannels — pasul „Oportunități").
+// Paritate de formă cu coerceToRecommendedChannels din src/types/recommendation.ts.
+const CHANNELS_SCHEMA = {
+  type: 'object',
+  properties: {
+    channels: {
+      type: 'array',
+      description: '4-6 oportunități de canale de marketing pentru firmă, ordonate descrescător după impact.',
+      items: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Numele canalului/abordării, specific firmei (ex. „Google Ads Search pe intenție locală", „Profil Google Business optimizat"), nu generic.',
+          },
+          impact: {
+            type: 'string',
+            enum: ['ridicat', 'mediu-ridicat', 'mediu', 'scazut'],
+            description: 'Impactul estimat realist pentru ACEASTĂ firmă și buget.',
+          },
+          impactReason: { type: 'string', description: 'O frază scurtă care justifică nivelul de impact.' },
+          description: { type: 'string', description: '2-3 fraze concrete: ce presupune canalul și de ce se potrivește firmei.' },
+          suggestedObjective: {
+            type: 'string',
+            enum: ['leads', 'sales', 'awareness', 'traffic'],
+            description: 'Obiectivul principal al canalului.',
+          },
+          suggestedOffer: { type: 'string', description: 'Propunere scurtă de ofertă / unghi de promovat pe acest canal.' },
+        },
+        required: ['title', 'impact', 'impactReason', 'description', 'suggestedObjective', 'suggestedOffer'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['channels'],
+  additionalProperties: false,
+};
+
 // Câmpurile de livrabile completate de AI, per tip de cerere.
 const KIND_FIELDS = {
   campaign: ['adTexts', 'videoScripts', 'campaignStructure'],
@@ -317,6 +355,34 @@ function buildCampaignPrompt(lead, req) {
     'Meta. Structura campaniei realistă pentru bugetul dat.',
   ].join('\n');
 }
+
+const AD_BUDGET_RO = {
+  under250: 'sub 250 €/lună',
+  b250_500: '250–500 €/lună',
+  b500_1000: '500–1000 €/lună',
+  over1000: 'peste 1000 €/lună',
+  undecided: 'nedecis încă',
+};
+
+// Promptul pasului „Oportunități": recomandă canale de achiziție pe baza profilului firmei (lead-ul).
+// Pur + exportat ca să fie testabil în e2e (functions/index.js e JS netipizat — vezi TEST N).
+function buildChannelsPrompt(lead) {
+  const l = lead || {};
+  return [
+    'Recomandă 4-6 OPORTUNITĂȚI de canale de marketing pentru firma de mai jos, în limba ROMÂNĂ.',
+    '',
+    leadContextBlock(l),
+    `Buget de reclame declarat: ${AD_BUDGET_RO[l.adBudget] || 'nespecificat'}`,
+    '',
+    'Pentru FIECARE oportunitate dă: un titlu specific firmei (nu generic), nivelul de impact estimat',
+    '(ridicat / mediu-ridicat / mediu / scazut) cu o frază de justificare, o descriere de 2-3 fraze',
+    'concrete, obiectivul principal (leads/sales/awareness/traffic) și o propunere scurtă de ofertă.',
+    'Ordonează descrescător după impact. Adaptează la industrie, buget și prezența online existentă.',
+    'Realist pentru o firmă mică din România — fără canale nepotrivite bugetului. Fără placeholder-e.',
+  ].join('\n');
+}
+exports.buildChannelsPrompt = buildChannelsPrompt;
+exports.CHANNELS_SCHEMA = CHANNELS_SCHEMA;
 
 /** Quota lunară per operator (tranzacție pe aiUsage/{uid}). Aruncă resource-exhausted la depășire. */
 async function consumeAiQuota(uid) {
@@ -671,6 +737,93 @@ if (AI_ENABLED) {
 
       logger.info('campaign generated', { leadId, requestId, kind, by: request.auth.uid, usage: response.usage });
       return { deliverables };
+    }
+  );
+
+  // ── Pasul „Oportunități": AI recomandă canale de achiziție pe baza profilului firmei (lead-ul). ──
+  // Admin-only, oglindește aiGenerateCampaign. Scrie leads/{id}.channelRecommendations (merge); UI-ul
+  // operatorului afișează un board sortabil după impact + „Creează cerere" pre-completată din oportunitate.
+  exports.aiRecommendChannels = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) {
+        throw new HttpsError('permission-denied', 'Doar operatorii pot genera recomandări.');
+      }
+      const { leadId } = request.data || {};
+      if (typeof leadId !== 'string' || !leadId) {
+        throw new HttpsError('invalid-argument', 'leadId este obligatoriu.');
+      }
+
+      // Validează existența lead-ului ÎNAINTE de a consuma quota (ca aiClientReport) — altfel un
+      // leadId invalid ar epuiza quota lunară fără a livra nimic.
+      const db = admin.firestore();
+      const leadRef = db.collection('leads').doc(leadId);
+      const leadSnap = await leadRef.get();
+      if (!leadSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
+
+      await consumeAiQuota(request.auth.uid);
+
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+
+      let response;
+      try {
+        response = await client.messages.create({
+          model: AI_MODEL,
+          max_tokens: 6000,
+          thinking: { type: 'adaptive' },
+          system:
+            'Ești strategul de marketing senior al agenției DataRead. Recomanzi canale de achiziție ' +
+            'pentru firme mici și mijlocii din România: realist, adaptat la buget și industrie, fără jargon gol.',
+          output_config: { format: { type: 'json_schema', schema: CHANNELS_SCHEMA } },
+          messages: [{ role: 'user', content: buildChannelsPrompt(leadSnap.data()) }],
+        });
+      } catch (err) {
+        logger.error('anthropic call failed', { err: String(err) });
+        throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
+      }
+
+      if (response.stop_reason === 'refusal') {
+        throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează contextul firmei.');
+      }
+      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+      let out;
+      try {
+        out = JSON.parse(text);
+      } catch (err) {
+        logger.error('ai response unparsable', { stop: response.stop_reason });
+        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
+      }
+
+      // Clamp + validare. Listele se DERIVĂ din schema (sursa unică) → fără drift între enum și clamp.
+      // Paritate cu coerceToRecommendedChannels din src/types/recommendation.ts (aceleași valori).
+      const itemProps = CHANNELS_SCHEMA.properties.channels.items.properties;
+      const IMPACTS = itemProps.impact.enum;
+      const OBJ = itemProps.suggestedObjective.enum;
+      const channels = (Array.isArray(out.channels) ? out.channels : []).slice(0, 8).map((c) => {
+        const x = c || {};
+        return {
+          title: String(x.title || '').slice(0, 140),
+          impact: IMPACTS.includes(x.impact) ? x.impact : 'mediu',
+          impactReason: String(x.impactReason || '').slice(0, 300),
+          description: String(x.description || '').slice(0, 1200),
+          suggestedObjective: OBJ.includes(x.suggestedObjective) ? x.suggestedObjective : '',
+          suggestedOffer: String(x.suggestedOffer || '').slice(0, 500),
+        };
+      });
+
+      await leadRef.set(
+        {
+          channelRecommendations: { schema: 1, channels },
+          channelRecommendationsAt: admin.firestore.FieldValue.serverTimestamp(),
+          channelRecommendationsBy: request.auth.uid,
+        },
+        { merge: true }
+      );
+
+      logger.info('channels recommended', { leadId, count: channels.length, by: request.auth.uid, usage: response.usage });
+      return { channels };
     }
   );
 

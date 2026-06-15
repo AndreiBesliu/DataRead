@@ -859,6 +859,32 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 9/9 suites + e2e (TEST L pur + TEST M tranzacțional) + build:site (app.html prezent) + boot-smoke.
 > DEPLOYED: functions (manageAdmin nou) + hosting + rules.
 
+**2026-06-15 - Task Completed — pas „Oportunități": aiRecommendChannels (recomandare canale AI cu scor de impact)**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei a analizat un competitor (AI Marketing Explorer / STRATEGY LAB, self-serve + credite — analiză în
+> `docs/ANALIZA-COMPETITOR-...md`). Decizie roadmap: pivotul self-serve (client-gen + credite + trial +
+> checkout + sold) se amână post-MVP/lansare; ACUM câștiguri rapide pe modelul de agenție. PRIMUL = pasul
+> „Oportunități" al competitorului, dar pentru OPERATOR (admin-only, ca restul generării AI).
+> - **functions:** `aiRecommendChannels(leadId)` (onCall admin-only, oglindă `aiGenerateCampaign`) → citește
+>   lead-ul, model `claude-opus-4-8` cu `CHANNELS_SCHEMA` (structured output: 4-6 canale cu titlu/impact/
+>   motiv/descriere/obiectiv/ofertă), scrie `leads/{id}.channelRecommendations` (merge). `buildChannelsPrompt`
+>   pur+exportat. **Fără modificări de reguli** (lead admin-only).
+> - **UI:** `OpportunityBoard` (montat în rândul de lead din AdminHome): board de carduri sortabile după
+>   impact + regenerare + **„Creează cerere"** care pre-completează o cerere de marketing din oportunitate
+>   (kind=campanie) → apare automat în LeadRequests. `src/types/recommendation.ts` (coerce + sortByImpact +
+>   IMPACT_LEVELS). i18n `admin.opp*` ro+en paritate.
+> **Review adversarial (Workflow ultracode, 17 agenți, 3 lentile + verificare per finding)** → 6 reale, 4
+> parțiale, 4 fals-pozitive. Remediate: (HIGH) paritate obiective TS↔JS↔schema (`OBJ`/`OBJECTIVES`/enum
+> divergeau pe „other") → clamp-ul JS se DERIVĂ acum din `CHANNELS_SCHEMA` (anti-drift) + coerce TS restrâns
+> la cele 4 valori ale schemei (+ test „other"→""); (MEDIUM) `consumeAiQuota` rula înainte de verificarea
+> existenței lead-ului (drenaj de quota) → reordonat ca la `aiClientReport`; (MEDIUM) maparea bugetului
+> `t()` pe cheie nevalidată → gardă `AD_BUDGETS.includes`; (LOW) callback-ul de eroare reseta channels dar
+> nu adBudget. Amânat (task separat, pre-existent): `onRequestWrite` nu validează că `clientUid` există
+> înainte de mirror (defense-in-depth, afectează și campaigns/LP). Acceptate (by design): izolare per-echipă
+> (single-team), buget free-text pe cerere, câmpuri metadata pe MarketingRequest.
+> Verificat: 9/9 suites (+6 teste recomandare) + e2e (TEST N) + build:site (app.html) + boot-smoke.
+> DEPLOYED: functions (aiRecommendChannels nou) + hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
