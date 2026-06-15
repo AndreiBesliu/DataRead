@@ -728,6 +728,20 @@ normaliser, secretele niciodată în chat/repo.
 > boot-smoke + re-deploy hosting. Verificat live: /admin, /app, /, /pachete, /start → HTTP 200.
 > **Lecție:** deploy de hosting DOAR cu `npm run build:site` (sau `npm run deploy`), niciodată `build` simplu.
 
+**2026-06-15 - Task Completed — overview de performanță în lista LP Studio (nexus de trafic)**
+> Model: Claude Fable 5
+> „continua" → lista de Landing Pages devine un mic dashboard: per pagină **Vizite / Lead-uri /
+> Conversie (7 zile)** + sumar total în header. Citește rollup-urile zilnice (limit 7/pagină, în
+> paralel cu Promise.all), agregare prin motorul PUR `lpStats.ts` (deja testat). Read-only, fără
+> schimbări de functions/reguli (stats = admin read). i18n ro+en (col*/ov*).
+> **Review adversarial (Workflow ultracode, 6 agenți)** → 4 constatări reale, toate remediate înainte
+> de deploy: (MEDIUM) `slugKey` era sensibil la ORDINE (rows sortat după updatedAt) → o editare
+> reordona lista și refăcea toate citirile; **+amplificare O(N²) la „recompilează toate"** → cheie
+> sortată `[...slugs].sort().join('|')`; (LOW) header arăta „0/0" în timpul încărcării vs rândurile
+> „—" → flag `metricsLoaded`; (LOW) totalul sub-număra tăcut dacă o citire eșua → flag `metricsPartial`
+> + indicator „date parțiale". Verificat: 8/8 suites + build:site (app.html prezent) + boot-smoke.
+> DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
