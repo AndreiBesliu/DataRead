@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import { coerceToLandingPage, htmlByteSize, LP_HTML_MAX, recompileLpAssets, type LandingPage } from '../types/landingPage';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, type LpKpis, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpProject, type LpProject } from '../types/lpProject';
@@ -44,6 +45,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   const [projectFilter, setProjectFilter] = useState<string>('all'); // 'all' | projectId | 'none'
   const [clientFilter, setClientFilter] = useState<string>('all'); // 'all' | clientUid
   const [managingProjects, setManagingProjects] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'landingPages'), (snap) => {
@@ -165,6 +167,18 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
     await deleteDoc(doc(db, 'landingPages', id)).catch(() => {});
   }
 
+  // Backfill: reconstruiește indexul de portal pentru LP-urile deja atribuite unui client (one-shot).
+  async function syncClientPortal() {
+    setSyncMsg('');
+    try {
+      const fn = httpsCallable<Record<string, never>, { written: number }>(functions, 'backfillLpIndex');
+      const res = await fn({});
+      setSyncMsg(t('admin.lpStudio.syncDone', { n: res.data?.written ?? 0 }));
+    } catch {
+      setSyncMsg(t('admin.lpStudio.syncErr'));
+    }
+  }
+
   // Recompilează asset-urile servite (html din blocuri + pageDecorHtml) ale TUTUROR paginilor cu logica
   // curentă de compilare — paginile vechi prind îmbunătățirile (ex. scalarea decorului) fără re-salvare.
   // Tranzacție per pagină: re-citim documentul PROASPĂT, recompilăm din el și scriem — ca o editare
@@ -205,6 +219,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.lpStudio.title')}</h2>
         <button onClick={() => setManagingProjects(true)} style={{ ...btn, marginLeft: 'auto' }}>📁 {t('admin.lpStudio.prManage')}</button>
+        <button onClick={syncClientPortal} style={btn} title={t('admin.lpStudio.syncHint')}>↺ {t('admin.lpStudio.sync')}</button>
         {rows.length > 0 ? (
           <button onClick={recompileAll} disabled={recompiling} style={{ ...btn, opacity: recompiling ? 0.6 : 1 }} title={t('admin.lpStudio.recompileHint')}>
             ↻ {recompiling ? t('admin.lpStudio.recompileRunning') : t('admin.lpStudio.recompileAll')}
@@ -215,6 +230,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
         </button>
       </div>
       {recompileMsg ? <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: -6, marginBottom: 12 }}>{recompileMsg}</p> : null}
+      {syncMsg ? <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: -6, marginBottom: 12 }}>{syncMsg}</p> : null}
 
       {rows.length > 0 ? (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>

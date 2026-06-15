@@ -275,6 +275,18 @@ state.lpDoc = { ...servedDoc, knownVariants: {} }; reset();
   ok(varJ && varJ.id === '__other', 'UTM necunoscut → __other (nu creează doc per spam)');
 }
 
+// ── TEST K: lpIndexTarget (diff client pentru indexul de descoperire al portalului) ──
+console.log('\nK) lpIndexTarget (diff clientUid → unde se scrie/șterge indexul LP)');
+{
+  const eq = (a, b) => a.deleteUnder === b.deleteUnder && a.upsertUnder === b.upsertUnder;
+  ok(eq(fns.lpIndexTarget('', 'c1', true), { deleteUnder: '', upsertUnder: 'c1' }), 'atribuire nouă → upsert sub client, fără delete');
+  ok(eq(fns.lpIndexTarget('c1', 'c1', true), { deleteUnder: '', upsertUnder: 'c1' }), 'neschimbat → re-upsert sub același client');
+  ok(eq(fns.lpIndexTarget('c1', 'c2', true), { deleteUnder: 'c1', upsertUnder: 'c2' }), 'reatribuire → delete vechi + upsert nou');
+  ok(eq(fns.lpIndexTarget('c1', '', true), { deleteUnder: 'c1', upsertUnder: '' }), 'deconectare → delete vechi, fără upsert');
+  ok(eq(fns.lpIndexTarget('c1', 'c1', false), { deleteUnder: 'c1', upsertUnder: '' }), 'ștergere LP → delete sub client');
+  ok(eq(fns.lpIndexTarget('', '', true), { deleteUnder: '', upsertUnder: '' }), 'fără client → nicio acțiune');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

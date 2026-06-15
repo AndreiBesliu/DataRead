@@ -852,6 +852,21 @@ exports.sanitizeVariantPart = sanitizeVariantPart;
 exports.variantKey = variantKey;
 exports.buildLpUrl = buildLpUrl;
 
+// Domeniul canonic pentru URL-ul public al LP (= fallback-ul din composeLpPage).
+const LP_CANONICAL_HOST = 'dataread-e1bd6.web.app';
+
+// Decizie pură (testabilă): unde se șterge/scrie indexul LP per client, după diff-ul clientUid.
+// Sub ce client ștergem indexul vechi și sub ce client îl (re)scriem. '' = nicio acțiune pe latura aia.
+function lpIndexTarget(beforeUid, afterUid, hasAfter) {
+  const b = typeof beforeUid === 'string' ? beforeUid : '';
+  const a = typeof afterUid === 'string' ? afterUid : '';
+  return {
+    deleteUnder: b && (b !== a || !hasAfter) ? b : '',
+    upsertUnder: a && hasAfter ? a : '',
+  };
+}
+exports.lpIndexTarget = lpIndexTarget;
+
 function lpDevice(ua) {
   const s = (ua || '').toLowerCase();
   if (/bot|crawl|spider|slurp|bingpreview|facebookexternalhit|headless/.test(s)) return 'bot';
@@ -1215,4 +1230,61 @@ exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public
     logger.error('serveLp failed', { err: String(err) });
     res.status(500).set('Content-Type', 'text/html; charset=utf-8').send(lpNotFound());
   }
+});
+
+// ── Portal client: index de descoperire al LP-urilor per client (clients/{uid}/lpIndex/{slug}). ──
+// Oglindește DOAR câmpuri publice (slug/title/publicUrl/status) — doc-ul landingPages rămâne intern.
+// Diff before/after pe clientUid (ca onRequestWrite): upsert sub noul client, delete sub cel vechi.
+exports.onLandingPageWrite = onDocumentWritten({ document: 'landingPages/{slug}', region: REGION }, async (event) => {
+  const slug = event.params.slug;
+  try {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    const { deleteUnder, upsertUnder } = lpIndexTarget(before && before.clientUid, after && after.clientUid, !!after);
+    const db = admin.firestore();
+    if (deleteUnder) {
+      await db.collection('clients').doc(deleteUnder).collection('lpIndex').doc(slug).delete().catch(() => {});
+    }
+    if (upsertUnder) {
+      await db.collection('clients').doc(upsertUnder).collection('lpIndex').doc(slug).set({
+        schema: 1,
+        slug,
+        title: typeof after.title === 'string' ? after.title.slice(0, 140) : '',
+        publicUrl: `https://${LP_CANONICAL_HOST}/p/${slug}`,
+        status: after.status === 'published' ? 'published' : 'draft',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    logger.error('onLandingPageWrite index failed', { slug, err: String(err) });
+  }
+});
+
+// Backfill (admin, one-shot): reconstruiește clients/{uid}/lpIndex pentru LP-urile deja atribuite
+// ÎNAINTE de deploy-ul trigger-ului (triggerul nu se declanșează retroactiv). Idempotent.
+exports.backfillLpIndex = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+  const db = admin.firestore();
+  const snap = await db.collection('landingPages').get();
+  let written = 0;
+  const ops = [];
+  for (const d of snap.docs) {
+    const lp = d.data() || {};
+    const uid = typeof lp.clientUid === 'string' ? lp.clientUid : '';
+    if (!uid) continue;
+    ops.push(
+      db.collection('clients').doc(uid).collection('lpIndex').doc(d.id).set({
+        schema: 1,
+        slug: d.id,
+        title: typeof lp.title === 'string' ? lp.title.slice(0, 140) : '',
+        publicUrl: `https://${LP_CANONICAL_HOST}/p/${d.id}`,
+        status: lp.status === 'published' ? 'published' : 'draft',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    );
+    written++;
+  }
+  await Promise.all(ops);
+  return { written };
 });

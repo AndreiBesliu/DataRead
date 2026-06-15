@@ -92,6 +92,13 @@ service cloud.firestore {
         allow write: if false; // doar functions (Admin SDK)
       }
 
+      // Index de descoperire a LP-urilor clientului (oglindit de onLandingPageWrite, DOAR câmpuri
+      // publice slug/title/publicUrl/status) — clientul își enumeră paginile fără a citi doc-ul intern.
+      match /lpIndex/{slug} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false; // doar functions (Admin SDK)
+      }
+
       match /onboarding/{docId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)
@@ -152,20 +159,27 @@ service cloud.firestore {
         && (!('knownVariants' in request.resource.data) || (request.resource.data.knownVariants is map && request.resource.data.knownVariants.size() <= 200));
       allow delete: if isAdmin();
 
+      // Portal client: clientul logat citește submisiile/statisticile/variantele LP-urilor LUI
+      // (LP.clientUid == uid), prin get() pe doc-ul părinte (ca la campaigns/metrics). Doc-ul
+      // landingPages rămâne admin-only (câmpuri interne); unlink = instant (regula reevaluată).
+      // submissions = LEAD-urile clientului (proprii) — vede doc-ul întreg, inclusiv ua/referrer/
+      // geoCountry ale propriului prospect (date legitime de CRM). `visits` (telemetria brută a
+      // ÎNTREGULUI trafic anonim, nu doar a lead-urilor) rămâne admin-only mai jos.
       match /submissions/{subId} {
-        allow read, update, delete: if isAdmin();
+        allow read: if isAdmin() || (request.auth != null && get(/databases/$(database)/documents/landingPages/$(slug)).data.clientUid == request.auth.uid);
+        allow update, delete: if isAdmin();
         allow create: if false; // doar prin functions/submitLpForm (Admin SDK, validare completă)
       }
       match /visits/{visitId} {
         allow read: if isAdmin();
-        allow write: if false; // doar functions (serveLp)
+        allow write: if false; // doar functions (serveLp) — UA/IP brut, NU se expune clientului
       }
       match /stats/{date} {
-        allow read: if isAdmin();
+        allow read: if isAdmin() || (request.auth != null && get(/databases/$(database)/documents/landingPages/$(slug)).data.clientUid == request.auth.uid);
         allow write: if false; // doar functions (rollup-uri incrementate server-side)
       }
       match /variants/{key} {
-        allow read: if isAdmin();
+        allow read: if isAdmin() || (request.auth != null && get(/databases/$(database)/documents/landingPages/$(slug)).data.clientUid == request.auth.uid);
         allow write: if false; // doar functions (contoare incrementate server-side)
       }
       // Linkuri etichetate generate de operator (Link Builder). Scrise din client de admin.

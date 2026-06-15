@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { deliverableFieldsFor, type RequestKind } from '../types/request';
+import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
+import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { useEntitlementStore } from '../store/entitlementStore';
@@ -147,6 +149,180 @@ function MarketingPortal({ uid }: { uid: string }) {
     </section>
   );
 }
+
+interface LpIdx { slug: string; title: string; publicUrl: string; status: string }
+interface LpSub { id: string; values: Record<string, string>; createdAtMs: number; source: string; campaign: string }
+interface LpData { visits: number; submissions: number; convRate: number | null; engRate: number | null; bySource: Record<string, number>; byMedium: Record<string, number>; variants: LpVariant[]; subs: LpSub[] }
+
+function lpTs(v: unknown): number {
+  const t = v as { toMillis?: () => number } | null;
+  return t && typeof t.toMillis === 'function' ? t.toMillis() : 0;
+}
+
+/** Secțiunea de Landing Pages a clientului: paginile LUI (clients/{uid}/lpIndex) + performanța,
+ *  defalcarea pe canal/versiune și lead-urile capturate (scoped prin rules — vede DOAR ce e al lui). */
+function LandingPagesPortal({ uid }: { uid: string }) {
+  const { t } = useTranslation();
+  const [lps, setLps] = useState<LpIdx[] | null>(null);
+  const [data, setData] = useState<Record<string, LpData>>({});
+
+  useEffect(() => {
+    const off = onSnapshot(
+      collection(db, 'clients', uid, 'lpIndex'),
+      (snap) => {
+        const out = snap.docs.map((d) => {
+          const x = d.data();
+          return { slug: d.id, title: String(x.title || d.id), publicUrl: String(x.publicUrl || ''), status: String(x.status || 'draft') };
+        });
+        out.sort((a, b) => a.title.localeCompare(b.title));
+        setLps(out);
+      },
+      () => setLps([])
+    );
+    return off;
+  }, [uid]);
+
+  const slugKey = (lps || []).map((l) => l.slug).sort().join('|');
+  useEffect(() => {
+    if (!lps || lps.length === 0) { setData({}); return; }
+    let cancel = false;
+    (async () => {
+      const out: Record<string, LpData> = {};
+      await Promise.all(lps.map(async (lp) => {
+        try {
+          const [statsSnap, varSnap, subSnap] = await Promise.all([
+            getDocs(query(collection(db, 'landingPages', lp.slug, 'stats'), orderBy('date', 'desc'), limit(30))),
+            getDocs(collection(db, 'landingPages', lp.slug, 'variants')),
+            getDocs(query(collection(db, 'landingPages', lp.slug, 'submissions'), orderBy('createdAt', 'desc'), limit(100))),
+          ]);
+          const days = statsSnap.docs.map((d) => coerceToLpStatsDay(d.data())).filter((x): x is LpStatsDay => !!x);
+          const totals = sumLpStats(days);
+          const k = lpKpis(totals);
+          const variants = varSnap.docs.map((d) => coerceToLpVariant(d.id, d.data())).filter((v) => v.key !== '__direct' && v.key !== '__other').sort((a, b) => b.visits - a.visits);
+          const subs: LpSub[] = subSnap.docs.map((d) => {
+            const x = d.data();
+            const vals: Record<string, string> = {};
+            if (x.values && typeof x.values === 'object') for (const [vk, vv] of Object.entries(x.values as Record<string, unknown>)) if (typeof vv === 'string') vals[vk] = vv;
+            const utm = (x.utm && typeof x.utm === 'object' ? x.utm : {}) as Record<string, string>;
+            return { id: d.id, values: vals, createdAtMs: lpTs(x.createdAt), source: String(utm.source || ''), campaign: String(utm.campaign || '') };
+          });
+          out[lp.slug] = { visits: k.visits, submissions: k.submissions, convRate: k.convRate, engRate: k.engagementRate, bySource: totals.bySource, byMedium: totals.byMedium, variants, subs };
+        } catch { /* citire refuzată/eroare per pagină — sărim */ }
+      }));
+      if (!cancel) setData(out);
+    })();
+    return () => { cancel = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slugKey]);
+
+  if (lps === null || lps.length === 0) return null;
+
+  const fmtN = (n: number) => n.toLocaleString('ro-RO');
+  const fmtPct = (n: number | null) => (n === null ? '—' : `${(n * 100).toFixed(1)}%`);
+  const cardS: React.CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: 14 };
+  const kpiCell = (label: string, val: string, hero?: boolean) => (
+    <div><div style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div><div style={{ fontSize: hero ? 18 : 14, fontWeight: 700, color: hero ? 'var(--accent, #2563eb)' : 'var(--fg-0)' }}>{val}</div></div>
+  );
+  const breakdown = (label: string, map: Record<string, number>) => {
+    const rows = topEntries(map, 5).filter(([key]) => key !== 'other' || Object.keys(map).length === 1);
+    if (rows.length === 0) return null;
+    return (
+      <div style={{ flex: '1 1 160px' }}>
+        <div style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>{label}</div>
+        {rows.map(([key, n]) => <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>{key}</span><span style={{ color: 'var(--fg-1)' }}>{fmtN(n)}</span></div>)}
+      </div>
+    );
+  };
+
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 20, marginBottom: 12 }}>{t('appHome.lpTitle')}</h2>
+      {lps.map((lp) => {
+        const d = data[lp.slug];
+        const subKeys = d ? [...new Set(d.subs.flatMap((s) => Object.keys(s.values)))].slice(0, 6) : [];
+        return (
+          <div key={lp.slug} style={cardS}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 15 }}>{lp.title}</strong>
+              {lp.status === 'published' && lp.publicUrl ? <a href={lp.publicUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent, #2563eb)' }}>{t('appHome.lpOpen')}</a> : <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('appHome.lpDraft')}</span>}
+            </div>
+            {!d ? <p style={{ color: 'var(--fg-1)', fontSize: 13, margin: 0 }}>…</p> : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 12 }}>
+                  {kpiCell(t('appHome.lpVisits'), fmtN(d.visits), true)}
+                  {kpiCell(t('appHome.lpLeadsKpi'), fmtN(d.submissions))}
+                  {kpiCell(t('appHome.lpConvRate'), fmtPct(d.convRate))}
+                  {kpiCell(t('appHome.lpEngagement'), fmtPct(d.engRate))}
+                </div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {breakdown(t('appHome.lpBySource'), d.bySource)}
+                  {breakdown(t('appHome.lpByMedium'), d.byMedium)}
+                </div>
+                {d.variants.length > 0 ? (
+                  <div style={{ marginBottom: d.subs.length ? 12 : 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)', marginBottom: 6 }}>{t('appHome.lpVariants')}</div>
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead><tr style={{ background: 'var(--bg-0)' }}>
+                          <th style={lpTd}>{t('appHome.lpBySource')}</th>
+                          <th style={lpTd}>{t('appHome.lpByMedium')}</th>
+                          <th style={lpTd}>{t('appHome.lpVariantVersion')}</th>
+                          <th style={{ ...lpTd, textAlign: 'right' }}>{t('appHome.lpVisits')}</th>
+                          <th style={{ ...lpTd, textAlign: 'right' }}>{t('appHome.lpLeadsKpi')}</th>
+                          <th style={{ ...lpTd, textAlign: 'right' }}>{t('appHome.lpConvRate')}</th>
+                        </tr></thead>
+                        <tbody>
+                          {d.variants.slice(0, 6).map((v) => {
+                            const c = (x: string) => (x && x !== '-' ? x : '—');
+                            return (
+                              <tr key={v.key}>
+                                <td style={lpTd}>{c(v.source)}</td>
+                                <td style={lpTd}>{c(v.medium)}</td>
+                                <td style={lpTd}>{c(v.content)}</td>
+                                <td style={{ ...lpTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(v.visits)}</td>
+                                <td style={{ ...lpTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtN(v.submissions)}</td>
+                                <td style={{ ...lpTd, textAlign: 'right', color: 'var(--fg-1)' }}>{fmtPct(variantConvRate(v))}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+                {d.subs.length > 0 ? (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)', marginBottom: 6 }}>{t('appHome.lpLeads')} ({d.subs.length})</div>
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead><tr style={{ background: 'var(--bg-0)' }}>
+                          <th style={lpTd}>{t('appHome.lpLeadDate')}</th>
+                          {subKeys.map((kk) => <th key={kk} style={lpTd}>{kk}</th>)}
+                          <th style={lpTd}>{t('appHome.lpBySource')}</th>
+                        </tr></thead>
+                        <tbody>
+                          {d.subs.slice(0, 25).map((s) => (
+                            <tr key={s.id}>
+                              <td style={{ ...lpTd, whiteSpace: 'nowrap', color: 'var(--fg-1)' }}>{s.createdAtMs ? fmtDate(s.createdAtMs) : '—'}</td>
+                              {subKeys.map((kk) => <td key={kk} style={lpTd}>{s.values[kk] || ''}</td>)}
+                              <td style={{ ...lpTd, color: 'var(--fg-1)' }}>{s.source || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+const lpTd: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid var(--border)', textAlign: 'left' };
 
 function fmtDate(ms: number): string {
   try {
@@ -308,6 +484,8 @@ export default function AppHome() {
 
       {/* Portalul de marketing — datele reale ale clientului (read-only). */}
       <MarketingPortal uid={user.uid} />
+      {/* Landing Pages ale clientului — performanță + lead-uri capturate (scoped prin rules). */}
+      <LandingPagesPortal uid={user.uid} />
     </main>
   );
 }

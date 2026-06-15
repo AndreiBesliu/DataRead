@@ -787,6 +787,29 @@ normaliser, secretele niciodată în chat/repo.
 > onSnapshot plafonat (500); reguli lpProjects validează clientUid; tabel/comparație etichetate „(total, toate
 > timpurile)". Verificat: 9/9 suites + e2e + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
 
+**2026-06-15 - Task Completed — acces client la datele LP în portal (/app, scoped per client)**
+> Model: Claude Fable 5
+> Andrei: clienții vor folosi portalul și pentru a-și monitoriza propriii clienți (lead-urile), nu doar
+> succesul campaniilor. Plan aprobat (plan mode). Abordare HIBRID (scoped reads + index descoperire),
+> NU mirror programat (mai ieftin, unlink instant, fără Cloud Scheduler):
+> - **reguli (firestore.rules):** clientul logat citește `landingPages/{slug}/stats|variants|submissions`
+>   DOAR dacă `get(parinte).clientUid == auth.uid` (gardă auth!=null, ca la campaigns/metrics). Doc-ul
+>   landingPages + `visits` rămân admin-only. `clients/{uid}/lpIndex` read scoped. Unlink = instant.
+> - **functions:** `onLandingPageWrite` (diff clientUid prin `lpIndexTarget` pur, clonă onRequestWrite)
+>   oglindește `clients/{uid}/lpIndex/{slug}` (DOAR slug/title/publicUrl/status) — descoperire fără a
+>   expune doc-ul intern. + `backfillLpIndex` (callable admin, one-shot pt. LP-uri deja atribuite).
+> - **portal (AppHome `LandingPagesPortal`):** citește lpIndex → per LP stats/variants/submissions
+>   (scoped) → KPI (vizite/conversii/rată/engagement) + defalcare sursă/asset + tabel performanță pe
+>   versiuni + **tabel lead-uri capturate** (clienții clientului). Reutilizează lpStats/lpAttribution pure.
+> - buton „↺ Sincronizează portalul" în LP Studio (cheamă backfillLpIndex). i18n appHome.lp* + sync* ro+en.
+> **Review adversarial (Workflow ultracode, 9 agenți, lentilă strictă de securitate)** → 6 constatări;
+> remediate: (MEDIUM) lipsă backfill → callable + buton; (LOW) variante fetch-uite dar nerandate + import
+> nefolosit → tabel performanță pe versiuni; (LOW) submissions expun ua/referrer/geoCountry → ACCEPTAT
+> (lead-uri proprii ale clientului) + comentariu de politică clarificat (visits rămâne intern). Securitate
+> confirmată: fără cale cross-tenant, doc-ul LP + visits rămân admin-only. Verificat: 9/9 suites + e2e
+> (incl. lpIndexTarget) + build:site (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules.
+> **Notă business (non-cod):** acordurile cu clienții trebuie să acopere prelucrarea datelor lead-urilor.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

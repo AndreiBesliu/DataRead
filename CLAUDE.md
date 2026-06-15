@@ -193,8 +193,16 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **Analytics LP extins:** tabel variante sortabil + export CSV + comparație A/B/n (agregare după
   versiune/asset/platformă/campanie, câștigător după rata de conversie). Contoarele `variants/{key}` sunt
   all-time (fără axă de zi); tabelul/comparația sunt etichetate „(total, toate timpurile)".
+- **Acces client la datele LP în portal (ACTIV 15.06.2026):** clientul logat în `/app` vede LP-urile LUI
+  (`LP.clientUid == uid`) — performanță + defalcare canal/versiune + **lead-urile capturate** (clienții
+  lui; portalul = și CRM de monitorizare a propriilor clienți). HIBRID: scoped reads (reguli `get(parinte)
+  .clientUid == auth.uid` pe `stats|variants|submissions`, ca la campaigns/metrics; doc-ul `landingPages`
+  + `visits` rămân admin-only; unlink INSTANT) + index de descoperire `clients/{uid}/lpIndex/{slug}`
+  (oglindit de `onLandingPageWrite`, doar slug/title/publicUrl/status). `backfillLpIndex` (callable admin,
+  buton „Sincronizează portalul") pt. LP-uri deja atribuite. Portal = `LandingPagesPortal` în AppHome,
+  reutilizează lpStats/lpAttribution. Notă: acordurile cu clienții trebuie să acopere datele lead-urilor.
 - Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
-  Storage; `/en/p/**`; portal client pentru date LP scoped pe clientUid.
+  Storage; `/en/p/**`; management lead-uri de către client (status/CRM propriu); suită reguli cu emulator.
 
 ## Capcane cunoscute
 
