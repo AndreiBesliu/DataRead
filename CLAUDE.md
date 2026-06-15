@@ -201,8 +201,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (oglindit de `onLandingPageWrite`, doar slug/title/publicUrl/status). `backfillLpIndex` (callable admin,
   buton „Sincronizează portalul") pt. LP-uri deja atribuite. Portal = `LandingPagesPortal` în AppHome,
   reutilizează lpStats/lpAttribution. Notă: acordurile cu clienții trebuie să acopere datele lead-urilor.
+- **Mini-CRM client pe lead-uri LP (ACTIV 15.06.2026):** clientul gestionează lead-urile capturate —
+  status (Nou→Contactat→Calificat→Câștigat/Pierdut) + notă + filtrare/numărare + export CSV. Stare
+  deținută de client în `clients/{uid}/lpLeadState/{submissionId}` (`src/types/lpLeadState.ts`), SEPARAT
+  de `submissions` (pipeline-ul agenției). Reguli owner-rw (hasOnly+enum+size+`updatedAt==request.time`).
+  Exporturile CSV trec prin `src/utils/csv.ts` (`toCsv`/`csvCell` — anti formula-injection; și în LpAnalytics).
 - Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
-  Storage; `/en/p/**`; management lead-uri de către client (status/CRM propriu); suită reguli cu emulator.
+  Storage; `/en/p/**`; atribuire lead la membru de echipă + istoric status; suită reguli cu emulator.
 
 ## Capcane cunoscute
 

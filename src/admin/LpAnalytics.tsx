@@ -8,6 +8,7 @@ import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
+import { toCsv } from '../utils/csv';
 
 interface SubRow {
   id: string;
@@ -104,8 +105,7 @@ export default function LpAnalytics({ slug }: { slug: string }) {
       const eng = v.visits > 0 ? v.engaged / v.visits : null;
       return [lab || v.source, lab ? '' : v.medium, lab ? '' : v.campaign, lab ? '' : v.content, String(v.visits), String(v.submissions), cr === null ? '' : (cr * 100).toFixed(1) + '%', eng === null ? '' : (eng * 100).toFixed(1) + '%'];
     });
-    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([toCsv([header, ...rows])], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url; a.download = `lp-${slug}-variante.csv`; a.click();
     URL.revokeObjectURL(url);
@@ -143,10 +143,9 @@ export default function LpAnalytics({ slug }: { slug: string }) {
     const header = ['data', ...subKeys];
     const rows = subs.map((s) => {
       const dt = s.createdAt?.toDate ? s.createdAt.toDate().toISOString() : '';
-      return [dt, ...subKeys.map((kk) => (s.values[kk] || '').replace(/"/g, '""'))];
+      return [dt, ...subKeys.map((kk) => s.values[kk] || '')];
     });
-    const csv = [header, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([toCsv([header, ...rows])], { type: 'text/csv;charset=utf-8' })); // anti formula-injection
     const a = document.createElement('a');
     a.href = url;
     a.download = `lp-${slug}-submissions.csv`;

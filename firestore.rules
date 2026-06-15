@@ -99,6 +99,20 @@ service cloud.firestore {
         allow write: if false; // doar functions (Admin SDK)
       }
 
+      // Mini-CRM al clientului pe lead-urile LP (status + notă), SEPARAT de submissions (pipeline-ul
+      // agenției). Deținut + scris de client (owner-only). Cheia = submissionId (anotare privată).
+      match /lpLeadState/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow create, update: if signedInAs(uid)
+          && request.resource.data.keys().hasOnly(['schema', 'status', 'note', 'slug', 'updatedAt'])
+          && request.resource.data.schema == 1
+          && request.resource.data.status in ['nou', 'contactat', 'calificat', 'castigat', 'pierdut']
+          && request.resource.data.note is string && request.resource.data.note.size() <= 1000
+          && request.resource.data.slug is string && request.resource.data.slug.size() <= 60
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if signedInAs(uid);
+      }
+
       match /onboarding/{docId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)

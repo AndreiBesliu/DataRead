@@ -23,6 +23,8 @@ import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from 
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
 import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
+import { coerceToLpLeadState } from '../src/types/lpLeadState';
+import { csvCell, toCsv } from '../src/utils/csv';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -41,6 +43,15 @@ check('coerce(null) → default sigur (draft, html gol, slug gol)', (() => {
   return lp.status === 'draft' && lp.html === '' && lp.slug === '' && lp.schema === 1 && lp.lang === 'ro' && lp.projectId === '' && Object.keys(lp.knownVariants).length === 0;
 })());
 check('coerce: projectId păstrat (organizare)', coerceToLandingPage({ projectId: 'proj123' }).projectId === 'proj123');
+check('csvCell: neutralizează injecția de formule (=,+,-,@) + escapează ghilimele', (() => {
+  return csvCell('=SUM(A1)') === '"\'=SUM(A1)"' && csvCell('+1') === '"\'+1"' && csvCell('@x') === '"\'@x"'
+    && csvCell('ok') === '"ok"' && csvCell('a"b') === '"a""b"' && toCsv([['=x', 'b']]) === '"\'=x","b"';
+})());
+check('coerceToLpLeadState: status valid păstrat, invalid → nou, note/slug clamp', (() => {
+  const a = coerceToLpLeadState({ status: 'castigat', note: 'x'.repeat(2000), slug: 'promo' });
+  const b = coerceToLpLeadState({ status: 'turbo' });
+  return a.schema === 1 && a.status === 'castigat' && a.note.length === 1000 && a.slug === 'promo' && b.status === 'nou' && b.note === '';
+})());
 check('coerceToLpProject: nume + culoare validă; fallback culoare', (() => {
   const a = coerceToLpProject({ name: 'Campanie Iarnă', color: '#22c55e', clientUid: 'u1' });
   const b = coerceToLpProject({ name: 'X', color: 'nu-e-hex' });

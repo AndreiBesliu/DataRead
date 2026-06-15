@@ -810,6 +810,27 @@ normaliser, secretele niciodată în chat/repo.
 > (incl. lpIndexTarget) + build:site (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules.
 > **Notă business (non-cod):** acordurile cu clienții trebuie să acopere prelucrarea datelor lead-urilor.
 
+**2026-06-15 - Task Completed — management lead-uri de către client (mini-CRM pe lead-urile LP)**
+> Model: Claude Fable 5
+> Andrei: „management lead-uri". Clientul gestionează în portal lead-urile capturate de LP-urile lui:
+> status pe pipeline + notă + filtrare/numărare + export CSV. SEPARAT de pipeline-ul agenției.
+> - **model:** `clients/{uid}/lpLeadState/{submissionId}` (deținut+scris de client) = {status,note,slug,
+>   updatedAt}. `src/types/lpLeadState.ts` (statusuri nou/contactat/calificat/câștigat/pierdut + culori +
+>   coerce). Pipeline = Nou→Contactat→Calificat→Câștigat/Pierdut.
+> - **reguli:** `clients/{uid}/lpLeadState` owner-rw (hasOnly + enum + size + `updatedAt==request.time`),
+>   delete owner. Primul subarbore client-WRITABLE după onboarding.
+> - **portal (LandingPagesPortal):** status `<select>` + notă (onBlur) editabile pe fiecare lead; chips de
+>   filtru + contoare pe status (peste toate LP-urile); export CSV per LP. Un singur listener lpLeadState.
+> **Review adversarial (Workflow ultracode, 8 agenți, lentilă securitate scriere)** → 6 constatări;
+> remediate: (MEDIUM) lost-update race în saveLeadState (scria docul plin din state vechi) → ref
+> `leadStateRef` + scriere optimistă; (MEDIUM) injecție de formule în CSV din valori controlate de
+> atacator → util nou `src/utils/csv.ts` (`csvCell`/`toCsv` prefixează =,+,-,@) aplicat la TOATE
+> exporturile cu date de utilizator (portal + LpAnalytics submissions/variante); (LOW) `updatedAt`
+> nevalidat → `==request.time`; (LOW) export ignora filtrul → exportă setul vizibil. Acceptate (low,
+> defense-in-depth): verificarea proprietății submissionId (subarbore propriu, orfani invizibili), input
+> notă necontrolat. Fără cross-tenant. Verificat: 9/9 suites (+csvCell+lpLeadState) + e2e + build:site
+> (app.html) + boot-smoke. DEPLOYED: hosting + rules (fără functions).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

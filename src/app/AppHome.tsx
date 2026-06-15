@@ -1,11 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { deliverableFieldsFor, type RequestKind } from '../types/request';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
+import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
+import { toCsv } from '../utils/csv';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { useEntitlementStore } from '../store/entitlementStore';
@@ -165,6 +167,36 @@ function LandingPagesPortal({ uid }: { uid: string }) {
   const { t } = useTranslation();
   const [lps, setLps] = useState<LpIdx[] | null>(null);
   const [data, setData] = useState<Record<string, LpData>>({});
+  const [leadState, setLeadState] = useState<Record<string, { status: LpLeadStatus; note: string }>>({});
+  const [statusFilter, setStatusFilter] = useState<'all' | LpLeadStatus>('all');
+  // Ref cu starea CRM cea mai recentă (snapshot + scrieri optimiste) — evită clobber-ul la editări rapide
+  // status↔notă înainte ca onSnapshot să revină (citim mereu valoarea curentă, nu closure-ul de la render).
+  const leadStateRef = useRef(leadState);
+
+  // Starea de CRM a clientului pe lead-uri (un singur listener; cheia = submissionId, globală).
+  useEffect(() => {
+    const off = onSnapshot(
+      collection(db, 'clients', uid, 'lpLeadState'),
+      (snap) => {
+        const m: Record<string, { status: LpLeadStatus; note: string }> = {};
+        snap.docs.forEach((d) => { const s = coerceToLpLeadState(d.data()); m[d.id] = { status: s.status, note: s.note }; });
+        leadStateRef.current = m;
+        setLeadState(m);
+      },
+      () => { leadStateRef.current = {}; setLeadState({}); }
+    );
+    return off;
+  }, [uid]);
+
+  async function saveLeadState(subId: string, slug: string, patch: { status?: LpLeadStatus; note?: string }) {
+    const cur = leadStateRef.current[subId] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
+    const next = { status: patch.status ?? cur.status, note: patch.note ?? cur.note };
+    leadStateRef.current = { ...leadStateRef.current, [subId]: next }; // optimist: păstrează celălalt câmp corect
+    setLeadState(leadStateRef.current);
+    try {
+      await setDoc(doc(db, 'clients', uid, 'lpLeadState', subId), { schema: 1, status: next.status, note: next.note, slug, updatedAt: serverTimestamp() });
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     const off = onSnapshot(
@@ -234,9 +266,46 @@ function LandingPagesPortal({ uid }: { uid: string }) {
     );
   };
 
+  const statusLabel = (s: LpLeadStatus) => t(`appHome.ls_${s}`);
+  const chip: React.CSSProperties = { borderRadius: 7, padding: '3px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' };
+  const statusBadgeStyle = (s: LpLeadStatus): React.CSSProperties => ({ border: `1px solid ${LP_LEAD_STATUS_COLORS[s]}`, borderRadius: 6, background: 'var(--bg-0)', color: 'var(--fg-0)', fontSize: 12, padding: '2px 6px' });
+
+  // Contoare pe status, peste TOATE lead-urile încărcate (lead fără stare = 'nou').
+  const counts: Record<string, number> = { all: 0 };
+  for (const s of LP_LEAD_STATUSES) counts[s] = 0;
+  for (const lp of lps) {
+    const d = data[lp.slug];
+    if (!d) continue;
+    for (const sub of d.subs) { const st = leadState[sub.id]?.status || LP_LEAD_STATUS_DEFAULT; counts[st] = (counts[st] || 0) + 1; counts.all += 1; }
+  }
+
+  function exportLeads(lp: LpIdx, subs: LpSub[], subKeys: string[]) {
+    const header = [t('appHome.lpLeadDate'), ...subKeys, t('appHome.lpBySource'), t('appHome.lsCol'), t('appHome.lsNote')];
+    const rows = subs.map((s) => {
+      const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
+      return [s.createdAtMs ? fmtDate(s.createdAtMs) : '', ...subKeys.map((k) => s.values[k] || ''), s.source || '', statusLabel(st.status), st.note || ''];
+    });
+    const url = URL.createObjectURL(new Blob([toCsv([header, ...rows])], { type: 'text/csv;charset=utf-8' })); // toCsv = escaping + anti formula-injection
+    const a = document.createElement('a');
+    a.href = url; a.download = `leads-${lp.slug}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section style={{ marginTop: 28 }}>
       <h2 style={{ fontSize: 20, marginBottom: 12 }}>{t('appHome.lpTitle')}</h2>
+      {counts.all > 0 ? (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+          {(['all', ...LP_LEAD_STATUSES] as const).map((st) => {
+            const active = statusFilter === st;
+            return (
+              <button key={st} onClick={() => setStatusFilter(st)} style={{ ...chip, background: active ? 'var(--accent)' : 'var(--bg-1)', color: active ? 'var(--accent-contrast)' : 'var(--fg-0)', border: active ? '1px solid var(--accent)' : '1px solid var(--border)' }}>
+                {st === 'all' ? t('appHome.lsAll') : statusLabel(st)} ({counts[st] || 0})
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {lps.map((lp) => {
         const d = data[lp.slug];
         const subKeys = d ? [...new Set(d.subs.flatMap((s) => Object.keys(s.values)))].slice(0, 6) : [];
@@ -290,29 +359,49 @@ function LandingPagesPortal({ uid }: { uid: string }) {
                     </div>
                   </div>
                 ) : null}
-                {d.subs.length > 0 ? (
+                {d.subs.length > 0 ? (() => {
+                  const visible = statusFilter === 'all' ? d.subs : d.subs.filter((s) => (leadState[s.id]?.status || LP_LEAD_STATUS_DEFAULT) === statusFilter);
+                  return (
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)', marginBottom: 6 }}>{t('appHome.lpLeads')} ({d.subs.length})</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)' }}>{t('appHome.lpLeads')} ({visible.length})</div>
+                      <button onClick={() => exportLeads(lp, visible, subKeys)} style={{ marginLeft: 'auto', ...chip, background: 'var(--bg-0)', color: 'var(--fg-0)', border: '1px solid var(--border)' }}>{t('appHome.lpExport')}</button>
+                    </div>
                     <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead><tr style={{ background: 'var(--bg-0)' }}>
                           <th style={lpTd}>{t('appHome.lpLeadDate')}</th>
                           {subKeys.map((kk) => <th key={kk} style={lpTd}>{kk}</th>)}
                           <th style={lpTd}>{t('appHome.lpBySource')}</th>
+                          <th style={lpTd}>{t('appHome.lsCol')}</th>
+                          <th style={lpTd}>{t('appHome.lsNote')}</th>
                         </tr></thead>
                         <tbody>
-                          {d.subs.slice(0, 25).map((s) => (
+                          {visible.slice(0, 50).map((s) => {
+                            const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
+                            return (
                             <tr key={s.id}>
                               <td style={{ ...lpTd, whiteSpace: 'nowrap', color: 'var(--fg-1)' }}>{s.createdAtMs ? fmtDate(s.createdAtMs) : '—'}</td>
                               {subKeys.map((kk) => <td key={kk} style={lpTd}>{s.values[kk] || ''}</td>)}
                               <td style={{ ...lpTd, color: 'var(--fg-1)' }}>{s.source || '—'}</td>
+                              <td style={lpTd}>
+                                <select value={st.status} onChange={(e) => saveLeadState(s.id, lp.slug, { status: e.target.value as LpLeadStatus })} style={statusBadgeStyle(st.status)}>
+                                  {LP_LEAD_STATUSES.map((ss) => <option key={ss} value={ss}>{statusLabel(ss)}</option>)}
+                                </select>
+                              </td>
+                              <td style={lpTd}>
+                                <input defaultValue={st.note} placeholder={t('appHome.lsNotePh')} onBlur={(e) => { const v = e.target.value.slice(0, 1000); if (v !== st.note) saveLeadState(s.id, lp.slug, { note: v }); }} style={{ width: 140, boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-0)', color: 'var(--fg-0)', fontSize: 12 }} />
+                              </td>
                             </tr>
-                          ))}
+                            );
+                          })}
+                          {visible.length === 0 ? <tr><td colSpan={subKeys.length + 4} style={{ ...lpTd, color: 'var(--fg-1)', textAlign: 'center' }}>{t('appHome.lsNoneInFilter')}</td></tr> : null}
                         </tbody>
                       </table>
                     </div>
                   </div>
-                ) : null}
+                  );
+                })() : null}
               </>
             )}
           </div>
