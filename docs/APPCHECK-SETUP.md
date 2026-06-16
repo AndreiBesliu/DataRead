@@ -7,10 +7,14 @@ publice de boți/account-farming. App Check atestă APLICAȚIA (nu utilizatorul)
 ## Stare curentă (2026-06-16)
 - ✅ Cheie reCAPTCHA v3 creată; **Site key public** = `6Le0KSMtAAAAAGz_vqk_Sp4Ork6XpkcvIHIbffiS`
   (legată de `dataread.ro`, `dataread-e1bd6.web.app`, `dataread-e1bd6.firebaseapp.com`, `localhost`).
-- ✅ `VITE_RECAPTCHA_V3_KEY` setat (`.env.local` + `.env.example`); clientul inițializează App Check
-  (`src/firebase.ts`) — **dar sare init-ul sub automatizare** (`navigator.webdriver`) ca să nu spargă
-  prerender/boot-smoke (Playwright). Deployat → clientul real trimite token-uri App Check.
-- ⏳ **Enforcement = ÎNCĂ OPRIT** (mod Monitor). Nimic nu e blocat încă.
+- ✅ `VITE_RECAPTCHA_V3_KEY` setat; clientul inițializează App Check **înainte** de getAuth/getFirestore
+  (`src/firebase.ts`) — sare init-ul sub automatizare (`navigator.webdriver`) ca să nu spargă prerender/boot.
+- ✅ Verificat în consolă: **Auth 100% verified, Firestore ~99% verified** (Monitor).
+- ✅ **Enforcement ACTIV pe callable-urile AI client-facing** (`selfGenerateStrategy`, `selfGenerateDetails`)
+  prin `enforceAppCheck: APP_CHECK_ENFORCED` (functions/index.js — enforcement-ul Functions se face în COD,
+  nu din consolă). Deployat 16.06.2026. Rollback: `APP_CHECK_ENFORCED=false` + `npm run deploy:functions`.
+- ⏳ **Rămas opțional:** enforce App Check pe **Cloud Firestore** din consolă (după ce confirmi că ~99% e stabil);
+    enforceAppCheck și pe callable-urile admin (aiGenerate*, manageAdmin) dacă vrei defense-in-depth.
 
 ## Pași rămași (în ordine — NU enforce înainte de monitor)
 1. **Monitor** (Andrei): Firebase Console → App Check → https://console.firebase.google.com/project/dataread-e1bd6/appcheck

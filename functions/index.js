@@ -230,6 +230,10 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 
 const AI_ENABLED = true; // activat 12.06.2026 — ANTHROPIC_API_KEY e în Secret Manager (v1)
+// Enforcement App Check pe callable-urile client-facing (selfGenerateStrategy/Details) — la Functions se face
+// ÎN COD (nu există toggle în consolă). Activat 16.06.2026 după ce App Check a ajuns la ~99-100% verified.
+// Rollback de urgență: pune false + `npm run deploy:functions` (sau dezactivează cheia reCAPTCHA în client).
+const APP_CHECK_ENFORCED = true;
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const AI_MODEL = 'claude-opus-4-8'; // cel mai capabil model disponibil (vezi CLAUDE.md → AI)
@@ -1079,7 +1083,7 @@ if (AI_ENABLED) {
   // câmpuri minime obligatorii, output constrâns de STRATEGY_SCHEMA + clamp. Scrie strategia sub
   // clients/{uid}/selfMarketing/strategy (Admin SDK; clientul o citește prin onSnapshot).
   exports.selfGenerateStrategy = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       assertAuth(request);
       const uid = request.auth.uid;
@@ -1145,7 +1149,7 @@ if (AI_ENABLED) {
   // Citește profil + strategie SERVER-SIDE (date validate de reguli), alege direcția după index, produce un
   // plan tactic. Aceeași quotă self (per-client + global) + refund la eșec. Scrie .../selfMarketing/details.
   exports.selfGenerateDetails = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       assertAuth(request);
       const uid = request.auth.uid;
