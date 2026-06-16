@@ -979,6 +979,23 @@ normaliser, secretele niciodată în chat/repo.
 > verificarea s-a bazat pe suita automată: 9/9 suites + e2e + build:site (app.html) + boot-smoke (toate
 > verzi). QA-ul live al părților autentificate rămâne pentru Andrei (checklist furnizat). DEPLOYED: hosting + rules.
 
+**2026-06-16 - Task Completed — LP Studio slice 1: 7 blocuri noi în builder**
+> Model: Claude Opus 4.8 (1M context)
+> Prima felie din dezvoltarea LP Studio (Andrei a ales 4 direcții; le luăm pe rând). 7 tipuri noi de bloc
+> în builder-ul vizual: **pricing, stats, logos, gallery (grid|carusel CSS), accordion (`<details>`),
+> countdown, video (YouTube/Vimeo)**. Pattern data-driven: `LP_BLOCK_TYPES` + `defaultBlockProps` +
+> `compileBlock` (lpBlocks.ts) + `BLOCK_FIELDS` (LpVisualBuilder, renderField generic) + i18n `bt_*`/`bf_*` + teste.
+> - **Securitate (paginile se servesc public):** tot textul prin `esc()`/`escAttr()`; imagini `SAFE_URL`
+>   (https-only); CTA `safeHref`; **video** = `ytVimeoEmbed` extrage DOAR id din charset restrâns →
+>   src ALLOWLIST (youtube-nocookie/vimeo), provider necunoscut → omis; **countdown** = `<script>` inline
+>   cu INTEGER embed (`var t=<ms>`) + `JSON.stringify` pe id/text (anti `</script>` breakout, dublă protecție).
+> - **Fără modificări de functions:** CSP serveLp deja are `frame-src https:` (iframe video) + `script-src
+>   'unsafe-inline'` (countdown), deci slice = DOAR client.
+> **Review adversarial (1 agent):** ZERO vulnerabilități reale (countdown breakout apărat corect; ytVimeoEmbed
+> sigur; escaping consecvent); doar NIT a11y. Verificat: 9/9 suites (+9 teste de blocuri) + e2e + build:site
+> (app.html) + boot-smoke. DEPLOYED: hosting + rules. Următoarele felii LP: #58 SEO/social, #59 conversie/
+> formulare, #60 A/B testing.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -7,7 +7,7 @@
 import type { LpFormConfig } from './landingPage';
 import { coerceToLpDecor, compileDecor, defaultDecor } from './lpDecor';
 
-export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor'] as const;
+export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor', 'pricing', 'stats', 'logos', 'gallery', 'accordion', 'countdown', 'video'] as const;
 export type LpBlockType = (typeof LP_BLOCK_TYPES)[number];
 
 export interface LpBlock {
@@ -50,6 +50,23 @@ export function defaultBlockProps(type: LpBlockType): Record<string, unknown> {
       return { size: 48 };
     case 'decor':
       return { decor: { ...defaultDecor(), effect: 'dots', interaction: 'mouseReact', density: 50 }, heading: '', subheading: '', ctaText: '', ctaHref: '#', minHeight: 360 };
+    case 'pricing':
+      return { columns: 3, items: [
+        { title: 'Start', price: '149€', period: '/lună', features: 'Funcție inclusă\nFuncție inclusă', ctaText: 'Alege', ctaHref: '#' },
+        { title: 'Pro', price: '399€', period: '/lună', features: 'Tot din Start\nFuncție extra', ctaText: 'Alege', ctaHref: '#' },
+      ] };
+    case 'stats':
+      return { columns: 3, items: [{ value: '120+', label: 'Clienți' }, { value: '4.9', label: 'Rating' }, { value: '24h', label: 'Timp răspuns' }] };
+    case 'logos':
+      return { heading: 'Au avut încredere în noi', columns: 4, items: [{ url: '', alt: '' }] };
+    case 'gallery':
+      return { columns: 3, layout: 'grid', items: [{ url: '', alt: '' }] };
+    case 'accordion':
+      return { items: [{ q: 'Întrebare?', a: 'Răspuns.' }] };
+    case 'countdown':
+      return { heading: 'Oferta expiră în', targetDate: '', expiredText: 'Oferta a expirat.', align: 'center' };
+    case 'video':
+      return { url: '', title: '' };
     default:
       return {};
   }
@@ -88,6 +105,23 @@ const safeHref = (v: unknown): string => {
 };
 
 const WRAP = 'max-width:1080px;margin:0 auto;padding:0 24px';
+
+/** Parsează o dată (ISO/text) → ms (int) sau null. PUR (Date.parse e determinist pe input; fără Date.now). */
+function parseDateMs(v: unknown): number | null {
+  const t = Date.parse(typeof v === 'string' ? v : '');
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Extrage DOAR un id valid din URL YouTube/Vimeo → src de embed ALLOWLIST. Provider necunoscut → ''.
+ *  Charset-ul id-ului e restrâns (anti-injecție în atribut src). */
+function ytVimeoEmbed(url: unknown): string {
+  const u = typeof url === 'string' ? url : '';
+  const yt = u.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (yt) return `https://www.youtube-nocookie.com/embed/${yt[1]}`;
+  const vm = u.match(/vimeo\.com\/(?:video\/)?(\d{6,12})/);
+  if (vm) return `https://player.vimeo.com/video/${vm[1]}`;
+  return '';
+}
 
 function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
   const p = block.props || {};
@@ -163,6 +197,69 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
       const cta = str(p.ctaText) ? `<a data-cta href="${escAttr(safeHref(p.ctaHref))}" style="display:inline-block;margin-top:22px;background:var(--accent);color:var(--accent-contrast);padding:14px 30px;border-radius:10px;font-weight:700;text-decoration:none">${esc(p.ctaText)}</a>` : '';
       const overlay = heading || sub || cta ? `<div style="position:relative;z-index:1;text-align:center;max-width:760px;margin:0 auto;padding:0 24px">${heading}${sub}${cta}</div>` : '';
       return `<section style="position:relative;min-height:${mh}px;display:flex;align-items:center;justify-content:center;padding:56px 0;overflow:hidden">${decorHtml}${overlay}</section>`;
+    }
+    case 'pricing': {
+      const cols = Math.min(Math.max(nbr(p.columns, 3), 1), 4);
+      const cards = arr(p.items)
+        .map((it) => {
+          const feats = str(it.features, TXT).split('\n').map((l) => l.trim()).filter(Boolean)
+            .map((l) => `<li style="padding:4px 0;color:var(--fg-1)">${esc(l)}</li>`).join('');
+          const cta = str(it.ctaText)
+            ? `<a data-cta href="${escAttr(safeHref(it.ctaHref))}" style="display:inline-block;margin-top:14px;background:var(--accent);color:var(--accent-contrast);padding:11px 24px;border-radius:8px;font-weight:700;text-decoration:none">${esc(it.ctaText)}</a>`
+            : '';
+          return `<div style="background:var(--bg-1);border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center"><h3 style="margin:0 0 6px;font-size:20px;color:var(--fg-0)">${esc(str(it.title))}</h3><div style="font-size:30px;font-weight:800;color:var(--fg-0)">${esc(str(it.price, 40))}<span style="font-size:14px;font-weight:400;color:var(--fg-1)">${esc(str(it.period, 40))}</span></div><ul style="list-style:none;padding:0;margin:14px 0;text-align:left">${feats}</ul>${cta}</div>`;
+        })
+        .join('');
+      return `<section style="${WRAP};padding:32px 24px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:${cols * 300}px;margin:0 auto">${cards}</div></section>`;
+    }
+    case 'stats': {
+      const cols = Math.min(Math.max(nbr(p.columns, 3), 1), 4);
+      const cells = arr(p.items)
+        .map((it) => `<div style="text-align:center"><div style="font-size:clamp(28px,5vw,44px);font-weight:800;color:var(--accent);line-height:1">${esc(str(it.value, 40))}</div><div style="font-size:15px;color:var(--fg-1);margin-top:6px">${esc(str(it.label))}</div></div>`)
+        .join('');
+      return `<section style="${WRAP};padding:32px 24px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:20px;max-width:${cols * 220}px;margin:0 auto">${cells}</div></section>`;
+    }
+    case 'logos': {
+      const cols = Math.min(Math.max(nbr(p.columns, 4), 2), 6);
+      const imgs = arr(p.items)
+        .map((it) => { const u = str(it.url, 600); return SAFE_URL.test(u) ? `<img src="${escAttr(u)}" alt="${escAttr(str(it.alt, 200))}" loading="lazy" style="max-height:46px;max-width:100%;object-fit:contain;opacity:.85">` : ''; })
+        .filter(Boolean).join('');
+      const heading = str(p.heading) ? `<p style="text-align:center;color:var(--fg-1);font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin:0 0 18px">${esc(p.heading)}</p>` : '';
+      return `<section style="${WRAP};padding:28px 24px">${heading}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:24px;align-items:center;max-width:${cols * 160}px;margin:0 auto">${imgs}</div></section>`;
+    }
+    case 'gallery': {
+      const cols = Math.min(Math.max(nbr(p.columns, 3), 1), 5);
+      const carousel = p.layout === 'carousel';
+      const imgs = arr(p.items)
+        .map((it) => { const u = str(it.url, 600); return SAFE_URL.test(u) ? `<img src="${escAttr(u)}" alt="${escAttr(str(it.alt, 200))}" loading="lazy" style="${carousel ? 'flex:0 0 280px;scroll-snap-align:start;height:200px' : 'width:100%;height:200px'};object-fit:cover;border-radius:10px">` : ''; })
+        .filter(Boolean).join('');
+      if (carousel) return `<section style="${WRAP};padding:24px"><div style="display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px">${imgs}</div></section>`;
+      return `<section style="${WRAP};padding:24px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;max-width:${cols * 240}px;margin:0 auto">${imgs}</div></section>`;
+    }
+    case 'accordion': {
+      const items = arr(p.items)
+        .map((it) => `<details style="background:var(--bg-1);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;color:var(--fg-0)">${esc(str(it.q))}</summary><p style="margin:10px 0 0;color:var(--fg-1);line-height:1.6">${esc(str(it.a, TXT))}</p></details>`)
+        .join('');
+      return `<section style="max-width:760px;margin:0 auto;padding:32px 24px">${items}</section>`;
+    }
+    case 'countdown': {
+      const a = align(p.align);
+      const heading = str(p.heading) ? `<h2 style="font-size:24px;color:var(--fg-0);margin:0 0 16px">${esc(str(p.heading, TXT))}</h2>` : '';
+      const ms = parseDateMs(p.targetDate);
+      const exp = esc(str(p.expiredText, TXT));
+      if (ms == null) return `<section style="${WRAP};padding:32px 24px;text-align:${a}">${heading}<p style="color:var(--fg-1);margin:0">${exp}</p></section>`;
+      const id = ('cd-' + block.id).replace(/[^a-zA-Z0-9_-]/g, '');
+      const cells = ['zile', 'ore', 'min', 'sec']
+        .map((l) => `<div style="text-align:center;min-width:62px"><div data-cd="${l}" style="font-size:clamp(28px,5vw,44px);font-weight:800;color:var(--accent);line-height:1">--</div><div style="font-size:12px;color:var(--fg-1);text-transform:uppercase;margin-top:4px">${l}</div></div>`)
+        .join('');
+      const expHtml = JSON.stringify(`<p style="color:var(--fg-1);margin:0">${exp}</p>`);
+      const script = `<script>(function(){var t=${ms},el=document.getElementById(${JSON.stringify(id)});if(!el)return;function p2(v){return(v<10?'0':'')+v;}function set(k,v){var n=el.querySelector('[data-cd="'+k+'"]');if(n)n.textContent=v;}function tick(){var d=t-Date.now();if(d<=0){el.innerHTML=${expHtml};if(el._i)clearInterval(el._i);return;}var s=Math.floor(d/1000);set('zile',p2(Math.floor(s/86400)));set('ore',p2(Math.floor(s%86400/3600)));set('min',p2(Math.floor(s%3600/60)));set('sec',p2(s%60));}tick();el._i=setInterval(tick,1000);})();</script>`;
+      return `<section style="${WRAP};padding:32px 24px;text-align:${a}">${heading}<div id="${id}" style="display:inline-flex;gap:16px;justify-content:center;flex-wrap:wrap">${cells}</div></section>${script}`;
+    }
+    case 'video': {
+      const src = ytVimeoEmbed(p.url);
+      if (!src) return '';
+      return `<section style="${WRAP};padding:24px"><div style="position:relative;width:100%;max-width:760px;margin:0 auto;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000"><iframe src="${escAttr(src)}" title="${escAttr(str(p.title, 140))}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;border:0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe></div></section>`;
     }
     default:
       return '';

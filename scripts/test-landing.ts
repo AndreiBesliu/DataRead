@@ -182,6 +182,39 @@ check('compileBlocks: form → <form data-lp-form> cu câmpul din config', (() =
   return html.includes('data-lp-form') && html.includes('name="email"');
 })());
 check('compileBlocks: escapează HTML din text (anti-rupere)', !compileBlocks([{ id: '1', type: 'heading', props: { text: '<script>x' } }], { form }).includes('<script>x'));
+
+// ── blocuri noi (slice 1: pricing/stats/logos/gallery/accordion/countdown/video) ──
+check('coerceToLpBlock: tip nou pricing acceptat', coerceToLpBlock({ type: 'pricing', props: {} })?.type === 'pricing');
+check('block pricing: grid + features pe linii + CTA safeHref', (() => {
+  const h = compileBlocks([{ id: '1', type: 'pricing', props: { columns: 2, items: [{ title: 'Pro', price: '99€', period: '/lună', features: 'A\nB', ctaText: 'Ia', ctaHref: 'https://x.ro' }] } }], { form });
+  return h.includes('Pro') && h.includes('99€') && (h.match(/<li/g) || []).length === 2 && h.includes('https://x.ro') && h.includes('grid-template-columns');
+})());
+check('block stats: cifre + etichete', (() => {
+  const h = compileBlocks([{ id: '1', type: 'stats', props: { items: [{ value: '120+', label: 'Clienți' }] } }], { form });
+  return h.includes('120+') && h.includes('Clienți');
+})());
+check('block logos/gallery: img https acceptat, non-https omis', (() => {
+  const ok = compileBlocks([{ id: '1', type: 'logos', props: { items: [{ url: 'https://x/a.png', alt: 'a' }] } }], { form });
+  const bad = compileBlocks([{ id: '2', type: 'gallery', props: { items: [{ url: 'http://x/b.png' }] } }], { form });
+  return ok.includes('<img') && !bad.includes('<img');
+})());
+check('block gallery carousel: scroll-snap', compileBlocks([{ id: '1', type: 'gallery', props: { layout: 'carousel', items: [{ url: 'https://x/a.png' }] } }], { form }).includes('scroll-snap-type'));
+check('block accordion: <details>/<summary>', (() => {
+  const h = compileBlocks([{ id: '1', type: 'accordion', props: { items: [{ q: 'Ix?', a: 'R.' }] } }], { form });
+  return h.includes('<details') && h.includes('<summary') && h.includes('Ix?');
+})());
+check('block countdown: dată validă → script+container; invalidă → static expiredText', (() => {
+  const valid = compileBlocks([{ id: 'x', type: 'countdown', props: { targetDate: '2030-01-01', heading: 'Gata în' } }], { form });
+  const invalid = compileBlocks([{ id: 'y', type: 'countdown', props: { targetDate: 'aiurea', expiredText: 'Expirat' } }], { form });
+  return valid.includes('<script>') && valid.includes('data-cd') && /var t=\d+,/.test(valid) && !invalid.includes('<script>') && invalid.includes('Expirat');
+})());
+check('block video: YouTube/Vimeo → iframe allowlist; necunoscut → gol', (() => {
+  const yt = compileBlocks([{ id: '1', type: 'video', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } }], { form });
+  const vm = compileBlocks([{ id: '2', type: 'video', props: { url: 'https://vimeo.com/123456789' } }], { form });
+  const bad = compileBlocks([{ id: '3', type: 'video', props: { url: 'https://evil.com/x' } }], { form });
+  return yt.includes('youtube-nocookie.com/embed/dQw4w9WgXcQ') && vm.includes('player.vimeo.com/video/123456789') && bad === '';
+})());
+check('block video: escaping pe titlu (anti-injecție atribut)', !compileBlocks([{ id: '1', type: 'video', props: { url: 'https://youtu.be/dQw4w9WgXcQ', title: '"><script>x' } }], { form }).includes('"><script>'));
 check('defaultBlockProps: features are 3 items', (defaultBlockProps('features').items as unknown[]).length === 3);
 
 // ── decor (lpDecor) ──

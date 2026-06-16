@@ -37,6 +37,13 @@ const BLOCK_FIELDS: Partial<Record<LpBlockType, Field[]>> = {
   faq: [{ k: 'items', t: 'items', item: [{ k: 'q', t: 'text' }, { k: 'a', t: 'textarea' }] }],
   form: [{ k: 'heading', t: 'text' }],
   spacer: [{ k: 'size', t: 'number' }],
+  pricing: [{ k: 'columns', t: 'number' }, { k: 'items', t: 'items', item: [{ k: 'title', t: 'text' }, { k: 'price', t: 'text' }, { k: 'period', t: 'text' }, { k: 'features', t: 'textarea' }, { k: 'ctaText', t: 'text' }, { k: 'ctaHref', t: 'url' }] }],
+  stats: [{ k: 'columns', t: 'number' }, { k: 'items', t: 'items', item: [{ k: 'value', t: 'text' }, { k: 'label', t: 'text' }] }],
+  logos: [{ k: 'heading', t: 'text' }, { k: 'columns', t: 'number' }, { k: 'items', t: 'items', item: [{ k: 'url', t: 'url' }, { k: 'alt', t: 'text' }] }],
+  gallery: [{ k: 'columns', t: 'number' }, { k: 'layout', t: 'select', opts: ['grid', 'carousel'] }, { k: 'items', t: 'items', item: [{ k: 'url', t: 'url' }, { k: 'alt', t: 'text' }] }],
+  accordion: [{ k: 'items', t: 'items', item: [{ k: 'q', t: 'text' }, { k: 'a', t: 'textarea' }] }],
+  countdown: [{ k: 'heading', t: 'text' }, { k: 'targetDate', t: 'text' }, { k: 'expiredText', t: 'text' }, { k: 'align', t: 'align' }],
+  video: [{ k: 'url', t: 'url' }, { k: 'title', t: 'text' }],
 };
 
 function newId(): string {

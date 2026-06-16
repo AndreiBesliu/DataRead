@@ -182,7 +182,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`
-  servit de serveLp — servirea/regulile nu se schimbă; eject one-way visual→cod) + preview live
+  servit de serveLp — servirea/regulile nu se schimbă; eject one-way visual→cod). Tipuri de bloc:
+  hero/heading/text/image/button/features/testimonial/faq/form/spacer/decor + (slice 1, 16.06.2026)
+  **pricing/stats/logos/gallery(grid|carusel)/accordion/countdown/video**. Securitate compile: `esc()` pe
+  tot textul, `SAFE_URL` (https) pe imagini, `safeHref` pe linkuri, video = `ytVimeoEmbed` (id allowlist
+  youtube-nocookie/vimeo), countdown = `<script>` cu INTEGER embed + JSON.stringify (anti `</script>`). Plus preview live
   (iframe sandbox FĂRĂ same-origin) + agent AI
   (`aiGenerateLandingPage`/`aiEditLandingPage` — întorc `{html}`, NU scriu în Firestore; quota
   `aiUsage`) + panou design (refolosește `CustomTheme` via `ThemeControls`) + config formular +
