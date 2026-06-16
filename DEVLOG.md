@@ -907,6 +907,18 @@ normaliser, secretele niciodată în chat/repo.
 > la coerce (pattern existent). Verificat: 9/9 suites (+9 teste noi) + e2e (serveLp 2 straturi pg0+pg1) +
 > build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules (fără functions).
 
+**2026-06-15 - Task Completed — hardening onRequestWrite/onLandingPageWrite: validează clientUid există înainte de mirror**
+> Model: Claude Opus 4.8 (1M context)
+> Defense-in-depth (principiul #3, izolare multi-tenant) găsit la review-ul feature-ului Oportunități.
+> Trigger-ele care oglindesc pe baza unui `clientUid` DENORMALIZAT scriau sub `clients/{uid}/**` fără să
+> verifice că acel cont client există → un clientUid greșit (typo/import) ar fi creat date orfane sub un UID
+> care poate deveni cont real. Helper nou `clientExists(db, uid)` (fail-closed la eroare); gardează UPSERT-ul
+> în `onRequestWrite` (deliverables), `onLandingPageWrite` (lpIndex) și bucla din `backfillLpIndex` (skip +
+> logger.warn dacă lipsește clientul). Ștergerile NU se gardează (idempotente, cleanup). Campaniile NU au
+> mirror (clientul le citește direct, scoped prin reguli) — nimic de gardat acolo. Test e2e TEST O
+> (clientExists: existent→true, inexistent/gol/null→false, eroare→false fail-closed). Verificat: 9/9 suites
+> + e2e (TEST O) + boot-smoke. DEPLOYED: functions (fără hosting/reguli).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

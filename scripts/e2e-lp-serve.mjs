@@ -401,6 +401,20 @@ console.log('\nN) aiRecommendChannels — prompt + schema (pasul Oportunități)
   ok(JSON.stringify(items?.properties?.suggestedObjective?.enum) === JSON.stringify(['leads', 'sales', 'awareness', 'traffic']), 'suggestedObjective enum corect');
 }
 
+// ── TEST O: clientExists — gardă defense-in-depth pe oglindirile cu clientUid denormalizat
+// (deliverables/lpIndex). Un client inexistent NU trebuie să producă oglindire. ──
+console.log('\nO) clientExists (gardă oglindire pe clientUid)');
+{
+  const mkDb = (existing) => ({ collection: (c) => ({ doc: (id) => ({ async get() { return { exists: c === 'clients' && existing.has(id) }; } }) }) });
+  const db = mkDb(new Set(['real-uid']));
+  ok((await fns.clientExists(db, 'real-uid')) === true, 'client existent → true (oglindim)');
+  ok((await fns.clientExists(db, 'fake-uid')) === false, 'client inexistent → false (NU oglindim)');
+  ok((await fns.clientExists(db, '')) === false, 'uid gol → false');
+  ok((await fns.clientExists(db, null)) === false, 'uid null → false');
+  const errDb = { collection: () => ({ doc: () => ({ async get() { throw new Error('boom'); } }) }) };
+  ok((await fns.clientExists(errDb, 'x')) === false, 'eroare la get → false (fail-closed)');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

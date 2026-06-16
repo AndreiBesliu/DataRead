@@ -162,6 +162,22 @@ exports.onSubscriptionWrite = onDocumentWritten(
 // before/after pe clientUid ca să gestioneze create/update/delete/relink/unlink fără cod special.
 const CLIENT_SAFE_DELIVERABLES = ['adTexts', 'videoScripts', 'campaignStructure', 'calendar', 'posts', 'ideas'];
 
+/** Gardă defense-in-depth (principiul #3, izolare multi-tenant): oglindirile bazate pe un clientUid
+ *  DENORMALIZAT (deliverables, lpIndex) scriu sub clients/{uid}/** DOAR dacă acel cont client EXISTĂ.
+ *  Altfel un clientUid greșit (typo/import) ar crea date orfane sub un UID care poate deveni cont real.
+ *  Fail-closed: la eroare NU oglindim (mirror-ul se reface la următoarea scriere). NU gardăm ștergerile
+ *  (idempotente, cleanup). Campaniile NU au mirror (clientul le citește direct, scoped prin reguli). */
+async function clientExists(db, uid) {
+  if (!uid || typeof uid !== 'string') return false;
+  try {
+    return (await db.collection('clients').doc(uid).get()).exists;
+  } catch (err) {
+    logger.error('clientExists check failed', { uid, err: String(err) });
+    return false;
+  }
+}
+exports.clientExists = clientExists;
+
 exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/{reqId}', region: REGION }, async (event) => {
   try {
     const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
@@ -182,15 +198,19 @@ exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/
     if (beforeUid && (beforeUid !== afterUid || !hasContent || !after)) {
       await db.collection('clients').doc(beforeUid).collection('deliverables').doc(reqId).delete().catch(() => {});
     }
-    // Scrie/actualizează oglinda client-safe (notele interne NU sunt incluse).
+    // Scrie/actualizează oglinda client-safe (notele interne NU sunt incluse) — DOAR dacă clientul există.
     if (afterUid && hasContent) {
-      await db.collection('clients').doc(afterUid).collection('deliverables').doc(reqId).set({
-        kind: after.kind === 'content' ? 'content' : 'campaign',
-        title: typeof after.title === 'string' ? after.title : '',
-        deliverables: safe,
-        leadId: event.params.leadId,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      if (await clientExists(db, afterUid)) {
+        await db.collection('clients').doc(afterUid).collection('deliverables').doc(reqId).set({
+          kind: after.kind === 'content' ? 'content' : 'campaign',
+          title: typeof after.title === 'string' ? after.title : '',
+          deliverables: safe,
+          leadId: event.params.leadId,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        logger.warn('onRequestWrite: oglindă sărită — client inexistent', { reqId, afterUid });
+      }
     }
   } catch (err) {
     logger.error('onRequestWrite mirror failed', { reqId: event.params.reqId, err: String(err) });
@@ -1423,14 +1443,18 @@ exports.onLandingPageWrite = onDocumentWritten({ document: 'landingPages/{slug}'
       await db.collection('clients').doc(deleteUnder).collection('lpIndex').doc(slug).delete().catch(() => {});
     }
     if (upsertUnder) {
-      await db.collection('clients').doc(upsertUnder).collection('lpIndex').doc(slug).set({
-        schema: 1,
-        slug,
-        title: typeof after.title === 'string' ? after.title.slice(0, 140) : '',
-        publicUrl: `https://${LP_CANONICAL_HOST}/p/${slug}`,
-        status: after.status === 'published' ? 'published' : 'draft',
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      if (await clientExists(db, upsertUnder)) {
+        await db.collection('clients').doc(upsertUnder).collection('lpIndex').doc(slug).set({
+          schema: 1,
+          slug,
+          title: typeof after.title === 'string' ? after.title.slice(0, 140) : '',
+          publicUrl: `https://${LP_CANONICAL_HOST}/p/${slug}`,
+          status: after.status === 'published' ? 'published' : 'draft',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        logger.warn('onLandingPageWrite: index sărit — client inexistent', { slug, upsertUnder });
+      }
     }
   } catch (err) {
     logger.error('onLandingPageWrite index failed', { slug, err: String(err) });
@@ -1450,6 +1474,7 @@ exports.backfillLpIndex = onCall({ region: REGION }, async (request) => {
     const lp = d.data() || {};
     const uid = typeof lp.clientUid === 'string' ? lp.clientUid : '';
     if (!uid) continue;
+    if (!(await clientExists(db, uid))) { logger.warn('backfillLpIndex: sărit — client inexistent', { slug: d.id, uid }); continue; }
     ops.push(
       db.collection('clients').doc(uid).collection('lpIndex').doc(d.id).set({
         schema: 1,
