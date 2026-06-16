@@ -46,7 +46,7 @@ export default function LpFormConfigPanel({ value, onChange }: { value: LpFormCo
                   <input type="checkbox" checked={f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
                   {t('admin.lpStudio.fieldRequired')}
                 </label>
-                {f.type === 'select' ? (
+                {f.type === 'select' || f.type === 'radio' ? (
                   <input
                     value={f.options.join(', ')}
                     onChange={(e) => setField(i, { options: e.target.value.split(',').map((o) => o.trim()).filter(Boolean).slice(0, 20) })}
@@ -65,10 +65,22 @@ export default function LpFormConfigPanel({ value, onChange }: { value: LpFormCo
           <input value={value.submitLabel} onChange={(e) => onChange({ ...value, submitLabel: e.target.value })} maxLength={40} style={{ ...field, width: '100%' }} />
           <label style={label}>{t('admin.lpStudio.successMessage')}</label>
           <input value={value.successMessage} onChange={(e) => onChange({ ...value, successMessage: e.target.value })} maxLength={300} style={{ ...field, width: '100%' }} />
+          <label style={label}>{t('admin.lpStudio.redirectUrl')}</label>
+          <input
+            value={value.redirectUrl}
+            onChange={(e) => onChange({ ...value, redirectUrl: e.target.value.trim() })}
+            placeholder="https://…"
+            maxLength={500}
+            style={{ ...field, width: '100%' }}
+          />
+          <div style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 4 }}>{t('admin.lpStudio.redirectUrlHint')}</div>
           <label style={{ ...label, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={value.createLead} onChange={(e) => onChange({ ...value, createLead: e.target.checked })} />
             {t('admin.lpStudio.createLead')}
           </label>
+          <div style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+            🛡️ {t('admin.lpStudio.honeypotNote')}
+          </div>
         </>
       ) : null}
     </div>

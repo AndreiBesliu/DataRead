@@ -203,6 +203,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (`/p/_submit` → `submissions` + opțional lead în pipeline). Motor analytics pur:
   `src/analytics/lpStats.ts`. Submissions/visits/stats = scrise DOAR de functions (rules:
   create/write false).
+  **Formulare avansate (slice 3a, 16.06.2026):** tipuri câmp `LP_FIELD_TYPES` =
+  text/email/tel/number/date/textarea/select/radio/checkbox (radio capătă `options` ca select).
+  **Honeypot anti-spam**: input ascuns off-screen `LP_HP_FIELD='lp_hp_url'` (paritate TS în
+  `landingPage.ts` + JS în `functions/index.js`); `handleSubmit` îl detectează completat → fake-success
+  fără scriere; `coerceField` ELIMINĂ un câmp real numit `lp_hp_url` (anti coliziune / pierdere lead).
+  **Redirect după submit**: `LpFormConfig.redirectUrl` (https-only `SAFE_HTTPS`/`LP_SAFE_IMG`, validat la
+  coerce ȘI la serve, niciodată din body); `handleSubmit` întoarce `{ok:true,redirectUrl}`, scriptul de
+  form navighează `location.href` după ~1.2s (re-check https client-side).
 - **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
   `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 7 efecte (dots/
   constellation/shapes(7 forme)/grid/waves/bubbles/rings) × 4 interacțiuni (none/mouseReact/

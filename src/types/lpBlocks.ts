@@ -4,7 +4,7 @@
  * îl servește deja — deci servirea + regulile rămân neatinse. Blocurile folosesc variabilele de temă
  * (var(--accent) etc.), injectate de design. Compilarea e PURĂ (testabilă headless).
  */
-import type { LpFormConfig } from './landingPage';
+import { LP_HP_FIELD, type LpFormConfig } from './landingPage';
 import { coerceToLpDecor, compileDecor, defaultDecor } from './lpDecor';
 
 export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor', 'pricing', 'stats', 'logos', 'gallery', 'accordion', 'countdown', 'video'] as const;
@@ -178,13 +178,23 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
             const opts = (f.options || []).map((o) => `<option value="${escAttr(o)}">${esc(o)}</option>`).join('');
             return `<select ${common}><option value="">${esc(f.label || f.name)}</option>${opts}</select>`;
           }
-          const t = f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : 'text';
+          if (f.type === 'radio') {
+            // Grup de radio: un singur name, câte un input per opțiune; `required` pe primul (HTML cere doar pe unul din grup).
+            const opts = (f.options || []).map((o, i) =>
+              `<label style="display:flex;gap:8px;align-items:center;margin:0 0 8px;color:var(--fg-1)"><input type="radio" name="${escAttr(f.name)}" value="${escAttr(o)}"${i === 0 ? req : ''}> ${esc(o)}</label>`).join('');
+            const legend = f.label || f.name ? `<div style="margin:0 0 8px;color:var(--fg-1);font-size:14px">${esc(f.label || f.name)}</div>` : '';
+            return `<fieldset style="border:none;padding:0;margin:0 0 12px">${legend}${opts}</fieldset>`;
+          }
+          const t = f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
           return `<input type="${t}" ${common}>`;
         })
         .join('');
       const heading = str(p.heading) ? `<h2 style="text-align:center;color:var(--fg-0);margin:0 0 18px;font-size:26px">${esc(p.heading)}</h2>` : '';
       const submit = esc((ctx.form && ctx.form.submitLabel) || 'Trimite');
-      return `<section style="max-width:520px;margin:0 auto;padding:36px 24px">${heading}<form data-lp-form>${fields}<button type="submit" style="width:100%;background:var(--accent);color:var(--accent-contrast);border:none;padding:14px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer">${submit}</button></form></section>`;
+      // Honeypot anti-spam: câmp ascuns off-screen pe care un utilizator real nu-l vede/completează,
+      // dar boții care completează orbește da. Server-side → fake-success fără scriere (vezi handleSubmit).
+      const honeypot = `<input type="text" name="${LP_HP_FIELD}" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">`;
+      return `<section style="max-width:520px;margin:0 auto;padding:36px 24px">${heading}<form data-lp-form>${honeypot}${fields}<button type="submit" style="width:100%;background:var(--accent);color:var(--accent-contrast);border:none;padding:14px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer">${submit}</button></form></section>`;
     }
     case 'spacer':
       return `<div style="height:${Math.min(Math.max(nbr(p.size, 48), 0), 400)}px"></div>`;

@@ -166,6 +166,7 @@ state.lpDoc = servedDoc; reset();
   ok(b.includes('id="lpd-pg0"') && b.includes('id="lpd-pg1"') && b.includes('<canvas'), 'decor pagină injectat — DOUĂ straturi suprapuse (pg0 + pg1)');
   ok(b.includes('Titlu Hero de Test'), 'bloc hero compilat în pagină');
   ok(b.includes('data-lp-form'), 'formular randat (bloc form → auto-activat)');
+  ok(b.includes('name="lp_hp_url"') && b.includes('left:-9999px'), 'honeypot anti-spam injectat (off-screen)');
   ok(b.includes('navigator.sendBeacon("/p/_track"'), 'beacon de engagement injectat');
   ok(b.includes('fetch("/p/_submit"'), 'handler formular injectat (hasForm)');
   ok((state.calls['landingPages/stats:set'] || []).length === 1, 'vizită logată (rollup stats incrementat o dată)');
@@ -260,6 +261,40 @@ state.lpDoc = servedDoc; reset();
   ok(res._status === 400 && res._body && res._body.ok === false, 'status 400 + {ok:false}');
   ok(!(state.calls['landingPages/submissions:add']), 'niciun submission salvat');
 }
+
+// ── TEST F2: honeypot completat → fake-success (ok:true) FĂRĂ nicio scriere ──
+console.log('\nF2) POST /p/_submit cu honeypot completat → fake-success fără scriere');
+state.lpDoc = servedDoc; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: '/p/_submit', method: 'POST', body: { slug, values: { email: 'bot@spam.io', nume: 'Bot', lp_hp_url: 'http://spam' } } }), res);
+  ok(res._status === 200 && res._body && res._body.ok === true, 'status 200 + {ok:true} (botul nu primește semnal)');
+  ok(!(state.calls['landingPages/submissions:add']), 'NICIUN submission salvat (honeypot)');
+  ok(!(state.calls['leads:add']), 'NICIUN lead creat (honeypot)');
+  ok(!(state.calls['landingPages/stats:set']), 'NICIO statistică incrementată (honeypot)');
+}
+
+// ── TEST F3: redirectUrl https valid în doc → întors în răspuns ───────────────
+console.log('\nF3) POST /p/_submit, form.redirectUrl https → răspuns conține redirectUrl');
+state.lpDoc = { ...servedDoc, form: { ...servedDoc.form, redirectUrl: 'https://exemplu.ro/multumesc' } }; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: '/p/_submit', method: 'POST', body: { slug, values: { email: 'a@b.ro' } } }), res);
+  ok(res._status === 200 && res._body && res._body.ok === true, 'status 200 + {ok:true}');
+  ok(res._body.redirectUrl === 'https://exemplu.ro/multumesc', 'redirectUrl https returnat în răspuns');
+  ok((state.calls['landingPages/submissions:add'] || []).length === 1, 'submission tot salvat (redirect nu blochează)');
+}
+
+// ── TEST F4: redirectUrl non-https în doc → omis din răspuns ──────────────────
+console.log('\nF4) POST /p/_submit, form.redirectUrl non-https → omis din răspuns');
+state.lpDoc = { ...servedDoc, form: { ...servedDoc.form, redirectUrl: 'http://insecure.ro/x' } }; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: '/p/_submit', method: 'POST', body: { slug, values: { email: 'a@b.ro' } } }), res);
+  ok(res._status === 200 && res._body && res._body.ok === true, 'status 200 + {ok:true}');
+  ok(!('redirectUrl' in res._body), 'redirectUrl non-https omis (anti open-redirect)');
+}
+state.lpDoc = servedDoc;
 
 // ── TEST H: lpThemeCss fallback pe baza temei (audit) ────────────────────────
 // O temă „light" parțial salvată (fără vars) NU trebuie să cadă pe dark.

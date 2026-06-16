@@ -11,6 +11,8 @@ import {
   LP_HTML_MAX,
   LP_FORM_FIELDS_MAX,
   LP_PAGE_DECORS_MAX,
+  LP_FIELD_TYPES,
+  LP_HP_FIELD,
   type LpFormField,
 } from '../src/types/landingPage';
 import { coerceToPreviewScreens, defaultScreens, LP_PREVIEW_SCREENS_MAX, LP_PV_W_MAX, withIds } from '../src/types/lpPreviewScreens';
@@ -114,6 +116,28 @@ check('coerce: tip câmp necunoscut → text; options doar pt select', (() => {
   return a.type === 'text' && a.options.length === 0 && b.type === 'select' && b.options.length === 2;
 })());
 check('coerce: câmp fără name → eliminat', coerceToLandingPage({ form: { enabled: true, fields: [{ type: 'text' }] } }).form.fields.length === 0);
+// 3a — câmpuri noi + radio cu options + redirect https-only + honeypot
+check('LP_FIELD_TYPES: include number/date/radio', ['number', 'date', 'radio'].every((t) => (LP_FIELD_TYPES as readonly string[]).includes(t)));
+check('coerce: radio capătă options (ca select); number/date fără options', (() => {
+  const lp = coerceToLandingPage({ form: { enabled: true, fields: [
+    { name: 'r', type: 'radio', options: ['da', 'nu'] },
+    { name: 'n', type: 'number', options: ['x'] },
+    { name: 'd', type: 'date' },
+  ] } });
+  const [r, n, d] = lp.form.fields;
+  return r.type === 'radio' && r.options.length === 2 && n.type === 'number' && n.options.length === 0 && d.type === 'date';
+})());
+check('coerce: form.redirectUrl https păstrat', coerceToLandingPage({ form: { enabled: true, redirectUrl: 'https://x.ro/multumesc' } }).form.redirectUrl === 'https://x.ro/multumesc');
+check('coerce: form.redirectUrl non-https → "" (anti open-redirect/js:)', (() => {
+  const a = coerceToLandingPage({ form: { enabled: true, redirectUrl: 'http://x.ro' } }).form.redirectUrl;
+  const b = coerceToLandingPage({ form: { enabled: true, redirectUrl: 'javascript:alert(1)' } }).form.redirectUrl;
+  return a === '' && b === '';
+})());
+check('coerce: form.redirectUrl gol implicit', coerceToLandingPage({ form: { enabled: true } }).form.redirectUrl === '');
+check('coerce: câmp cu numele rezervat honeypot → eliminat (anti pierdere lead)', (() => {
+  const lp = coerceToLandingPage({ form: { enabled: true, fields: [{ name: LP_HP_FIELD, type: 'text' }, { name: 'email', type: 'email' }] } });
+  return lp.form.fields.length === 1 && lp.form.fields[0].name === 'email';
+})());
 
 // ── sanitizeSlug ──
 check('slug: "Hello World!" → hello-world', sanitizeSlug('Hello World!') === 'hello-world');
@@ -169,7 +193,7 @@ check('bucketKey: whitelist păstrat, restul → other', (() => {
 })());
 
 // ── blocuri builder vizual (lpBlocks) ──
-const form = { enabled: true, fields: [{ name: 'email', label: 'Email', type: 'email' as const, required: true, options: [] }], submitLabel: 'Trimite', successMessage: '', createLead: false, notifyEmail: '' };
+const form = { enabled: true, fields: [{ name: 'email', label: 'Email', type: 'email' as const, required: true, options: [] }], submitLabel: 'Trimite', successMessage: '', redirectUrl: '', createLead: false, notifyEmail: '' };
 check('coerceToLpBlock: tip necunoscut → null', coerceToLpBlock({ type: 'banana' }) === null);
 check('coerceToLpBlock: valid → păstrat cu id', (() => {
   const b = coerceToLpBlock({ type: 'hero', props: { heading: 'Salut' } }, 3);
@@ -186,6 +210,21 @@ check('compileBlocks: image https → <img>', compileBlocks([{ id: '1', type: 'i
 check('compileBlocks: form → <form data-lp-form> cu câmpul din config', (() => {
   const html = compileBlocks([{ id: '1', type: 'form', props: {} }], { form });
   return html.includes('data-lp-form') && html.includes('name="email"');
+})());
+check('compileBlocks: form → honeypot off-screen, fără value, name=lp_hp_url', (() => {
+  const html = compileBlocks([{ id: '1', type: 'form', props: {} }], { form });
+  return html.includes(`name="${LP_HP_FIELD}"`) && html.includes('left:-9999px') && html.includes('aria-hidden="true"')
+    && html.includes('tabindex="-1"') && !/name="lp_hp_url"[^>]*value=/.test(html);
+})());
+check('compileBlocks: form → number/date ca <input type>; radio ca grup', (() => {
+  const f3 = { ...form, fields: [
+    { name: 'varsta', label: 'Vârsta', type: 'number' as const, required: false, options: [] },
+    { name: 'data', label: 'Data', type: 'date' as const, required: false, options: [] },
+    { name: 'plan', label: 'Plan', type: 'radio' as const, required: true, options: ['A', 'B'] },
+  ] };
+  const html = compileBlocks([{ id: '1', type: 'form', props: {} }], { form: f3 });
+  return html.includes('type="number"') && html.includes('type="date"')
+    && html.includes('type="radio"') && html.includes('name="plan"') && html.includes('value="A"') && html.includes('<fieldset');
 })());
 check('compileBlocks: escapează HTML din text (anti-rupere)', !compileBlocks([{ id: '1', type: 'heading', props: { text: '<script>x' } }], { form }).includes('<script>x'));
 

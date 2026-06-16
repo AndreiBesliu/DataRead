@@ -986,6 +986,8 @@ const LP_CSP =
   "frame-ancestors 'none'; base-uri 'none'";
 const LP_HEX = /^#[0-9a-fA-F]{6}$/;
 const LP_SAFE_IMG = /^https:\/\/[^\s"')]+$/i;
+// Honeypot anti-spam: paritate cu LP_HP_FIELD din src/types/landingPage.ts (numele câmpului-capcană).
+const LP_HP_FIELD = 'lp_hp_url';
 
 function lpBucket(key, whitelist) {
   const k = (typeof key === 'string' ? key : '').toLowerCase().slice(0, 60);
@@ -1256,7 +1258,7 @@ function lpScripts(slug, lp) {
     'f.addEventListener("submit",function(e){e.preventDefault();var fd=new FormData(f);var v={};fd.forEach(function(val,k){v[k]=String(val).slice(0,2000);});' +
     'var u=new URLSearchParams(location.search);' +
     'fetch("/p/_submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:s,values:v,referrer:document.referrer,utm:{source:u.get("utm_source")||"",medium:u.get("utm_medium")||"",campaign:u.get("utm_campaign")||"",content:u.get("utm_content")||"",term:u.get("utm_term")||""}})})' +
-    '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){f.innerHTML="<p style=\\"padding:24px;text-align:center;color:var(--fg-0)\\">"+OK+"</p>";}else{alert(ERR);}}).catch(function(){alert(ERR);});});})();</script>';
+    '.then(function(r){return r.json();}).then(function(d){if(d&&d.ok){f.innerHTML="<p style=\\"padding:24px;text-align:center;color:var(--fg-0)\\">"+OK+"</p>";if(d.redirectUrl&&/^https:\\/\\//i.test(d.redirectUrl)){setTimeout(function(){window.location.href=d.redirectUrl;},1200);}}else{alert(ERR);}}).catch(function(){alert(ERR);});});})();</script>';
   return beacon + form;
 }
 
@@ -1370,6 +1372,18 @@ async function handleSubmit(req, res) {
       return;
     }
     const fields = (lp.form && Array.isArray(lp.form.fields)) ? lp.form.fields : [];
+    // Redirect post-submit (https-only, plafonat) — întors în răspuns ca scriptul de form să navigheze
+    // după ce se afișează mesajul de succes. Validat aici (sursa = doc), niciodată luat din client.
+    const redirectUrl = lp.form && typeof lp.form.redirectUrl === 'string' && LP_SAFE_IMG.test(lp.form.redirectUrl)
+      ? lp.form.redirectUrl.slice(0, 500) : '';
+    const okResponse = redirectUrl ? { ok: true, redirectUrl } : { ok: true };
+    // Honeypot anti-spam: dacă câmpul-capcană (off-screen, invizibil utilizatorilor reali) e completat,
+    // e bot → fake-success FĂRĂ nicio scriere, ca botul să nu primească semnal că a fost filtrat.
+    const hp = body.values && typeof body.values === 'object' ? body.values[LP_HP_FIELD] : '';
+    if (typeof hp === 'string' && hp.trim() !== '') {
+      res.status(200).json(okResponse);
+      return;
+    }
     const { values, missing } = sanitizeLpValues(body.values, fields);
     if (missing.length || Object.keys(values).length === 0) {
       res.status(400).json({ ok: false });
@@ -1400,7 +1414,7 @@ async function handleSubmit(req, res) {
     if (lp.form && lp.form.createLead === true) {
       await db.collection('leads').add(mapSubmissionToLead(values, fields, slug, lp.lang));
     }
-    res.status(200).json({ ok: true });
+    res.status(200).json(okResponse);
   } catch (e) {
     logger.error('lp submit failed', { slug, e: String(e) });
     res.status(500).json({ ok: false });

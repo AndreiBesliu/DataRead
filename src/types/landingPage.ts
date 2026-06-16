@@ -27,8 +27,13 @@ export const LP_PAGE_DECORS_MAX = 5; // straturi de fundal decorativ suprapuse p
 export const LP_STATUSES = ['draft', 'published'] as const;
 export type LpStatus = (typeof LP_STATUSES)[number];
 
-export const LP_FIELD_TYPES = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'] as const;
+export const LP_FIELD_TYPES = ['text', 'email', 'tel', 'number', 'date', 'textarea', 'select', 'radio', 'checkbox'] as const;
 export type LpFieldType = (typeof LP_FIELD_TYPES)[number];
+
+/** Numele câmpului-capcană (honeypot) anti-spam. Injectat ascuns off-screen în formular; orice valoare
+ *  completată = bot. NU e un câmp configurat (sanitizeSubmissionValues îl ignoră oricum la stocare).
+ *  Sursă unică TS↔JS (functions are propria const identică, comentată). */
+export const LP_HP_FIELD = 'lp_hp_url';
 
 export interface LpFormField {
   name: string; // [a-z0-9_], <= 40 — cheia sub care valoarea ajunge în submission
@@ -43,6 +48,8 @@ export interface LpFormConfig {
   fields: LpFormField[];
   submitLabel: string; // <= 40
   successMessage: string; // <= 300
+  /** După trimitere, redirect către această pagină (https) — gol = rămâne pe LP cu mesajul de succes. */
+  redirectUrl: string; // <= LP_URL_MAX, https-only
   createLead: boolean; // și creează un lead în pipeline la submit?
   notifyEmail: string; // <= 120 (opțional, notificare ops)
 }
@@ -106,9 +113,13 @@ function coerceField(v: unknown): LpFormField | null {
       ? d.name.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40)
       : '';
   if (!name) return null;
+  // Numele honeypot e rezervat: un câmp real cu acest nume ar coincide cu capcana anti-spam și ar face ca
+  // ORICE trimitere legitimă să fie tratată ca bot (fake-success, fără scriere) — pierdere silențioasă de lead-uri.
+  if (name === LP_HP_FIELD) return null;
   const type = LP_FIELD_TYPES.includes(d.type as LpFieldType) ? (d.type as LpFieldType) : 'text';
+  // 'select' și 'radio' au liste de opțiuni (același model); restul tipurilor → fără opțiuni.
   const options =
-    type === 'select' && Array.isArray(d.options)
+    (type === 'select' || type === 'radio') && Array.isArray(d.options)
       ? d.options.filter((o): o is string => typeof o === 'string').map((o) => o.slice(0, 60)).slice(0, LP_FIELD_OPTIONS_MAX)
       : [];
   return { name, label: str(d.label, 80), type, required: bool(d.required), options };
@@ -125,6 +136,7 @@ function coerceForm(v: unknown): LpFormConfig {
     fields,
     submitLabel: str(d.submitLabel, 40),
     successMessage: str(d.successMessage, 300),
+    redirectUrl: coerceHttpsUrl(d.redirectUrl),
     createLead: bool(d.createLead),
     notifyEmail: str(d.notifyEmail, 120),
   };

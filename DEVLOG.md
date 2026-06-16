@@ -1011,6 +1011,29 @@ normaliser, secretele niciodată în chat/repo.
 > 9/9 suites (+coerce) + e2e (og:image/twitter/favicon prezent + caz negativ non-https omis) + build:site
 > (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules. QA: testează cardul cu opengraph.xyz.
 
+**2026-06-16 - Task Completed — LP Studio slice 3a: formulare avansate (honeypot + redirect + câmpuri noi)**
+> Model: Claude Opus 4.8 (1M context)
+> Prima sub-felie din #59 (conversie & formulare). Trei lucruri care ating același flux `form`→`/p/_submit`:
+> - **Honeypot anti-spam**: `compileBlock` (cazul form) injectează un input ascuns off-screen `name="lp_hp_url"`
+>   (`left:-9999px`, `tabindex=-1`, `aria-hidden`, `autocomplete=off`). `handleSubmit`: dacă e completat → bot →
+>   **fake-success** `200 {ok:true}` FĂRĂ nicio scriere (submission/lead/stats/variants sărite). Const partajat
+>   `LP_HP_FIELD='lp_hp_url'` (TS+JS). Gardă: `coerceField` ELIMINĂ un câmp real numit `lp_hp_url` (altfel ar
+>   coincide cu capcana și ar înghiți TOATE trimiterile legitime — pierdere silențioasă de lead-uri).
+> - **Redirect după trimitere**: `LpFormConfig.redirectUrl` (≤500, https-only la coerce `SAFE_HTTPS`). `handleSubmit`
+>   întoarce `{ok:true, redirectUrl}` doar dacă trece `LP_SAFE_IMG` (https); scriptul de form navighează
+>   `location.href` după ~1.2s (cu re-check https client-side). Sursa = doc, niciodată body-ul clientului.
+> - **Tipuri noi de câmp**: `number`, `date`, `radio`. radio capătă `options` (ca select) → grup `<fieldset>` de
+>   radio; number/date = `<input type=...>`. UI: dropdown + input opțiuni pt radio + input redirectUrl + notă honeypot.
+> **Securitate (review adversarial 1 agent):** redirect doar https pe ambele capete (server+client) — `javascript:`/
+>   `data:`/`http:`/protocol-relative/whitespace toate cad pe `^https://`; escaping pe radio (name/value/label);
+>   paritate TS↔JS (LP_HP_FIELD identic, SAFE_HTTPS≡LP_SAFE_IMG). Finding MEDIUM (coliziune nume honeypot) → fixat
+>   în coerceField + test regresie. Open-redirect spre orice https = by-design (redirect spre pagina clientului).
+> Fără modificări `firestore.rules` (`form` e map admin-only, nevalidat granular). Verificat: 9/9 suites (+7 teste
+> pure noi: câmpuri/radio-options/redirect coerce/honeypot markup/nume rezervat) + e2e (honeypot fără scriere,
+> redirectUrl https returnat, non-https omis) + build + build:site (app.html) + boot-smoke. DEPLOYED: functions +
+> hosting. #59 rămâne deschis pt. 3b (sticky CTA + exit-popup). QA Andrei: formular cu redirect → submit → pagina
+> de mulțumire; câmp date/radio randate; trimitere normală tot creează lead.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
