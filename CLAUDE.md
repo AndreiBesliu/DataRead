@@ -167,6 +167,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   într-un iframe ascuns (utilizatorul alege „Salvează ca PDF"). Butoane „📄 PDF" pe raportul lunar
   (`MarketingCenter`) + livrabile (`LeadRequests`) și în portalul clientului (`AppHome`). Testat headless
   (escape + compose). Amânat: jsPDF (descărcare fără dialog); logo imagine în antet; PDF pe KPI.
+- **Tab „Sugestii" — next-step proactiv operator (ACTIV 16.06.2026):** `src/admin/suggestions.ts`
+  (`buildSuggestions` PUR, testat) derivă „ce ai de făcut" din date DEJA generate (NU AI nou): lead-uri
+  netratate (new ≥2 zile / contacted ≥14), campanii cu `aiInsight.verdict` pause/test/scale, lead-uri cu
+  campanii fără raport luna curentă. `SuggestionsPanel` (tab nou în AdminHome) listenează `leads`/`campaigns`
+  (limit 200/300), randează lista sortată pe severitate cu „Deschide" → schimbă tabul. Notă: la livrarea
+  RBAC tabul Administratori lipsea din nav array (inaccesibil) — reparat odată cu acest tab.
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`

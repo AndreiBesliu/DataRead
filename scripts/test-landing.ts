@@ -30,6 +30,7 @@ import { coerceToLpLeadState } from '../src/types/lpLeadState';
 import { csvCell, toCsv } from '../src/utils/csv';
 import { coerceToRecommendedChannels, sortByImpact } from '../src/types/recommendation';
 import { composePrintHtml, escapeHtml } from '../src/utils/printDoc';
+import { buildSuggestions } from '../src/admin/suggestions';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -291,6 +292,42 @@ check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul d
   const html = composePrintHtml({ title: 'T', sections: [{ label: 'S', body: '<script>alert(1)</script>' }] });
   return html.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && !html.includes('<script>alert(1)');
 })());
+
+// ── sugestii proactive operator (buildSuggestions, pur) ──
+{
+  const NOW = 1_700_000_000_000;
+  const day = 86_400_000;
+  const lead = (over: Record<string, unknown>) => ({ id: 'l1', companyName: 'Acme', status: 'new', createdAtMs: NOW, reportAtMs: 0, clientUid: '', ...over }) as Parameters<typeof buildSuggestions>[0]['leads'][number];
+  const camp = (over: Record<string, unknown>) => ({ id: 'c1', name: 'Camp', leadId: 'l1', clientName: 'Acme', verdict: '', headline: '', ...over }) as Parameters<typeof buildSuggestions>[0]['campaigns'][number];
+
+  check('buildSuggestions: input gol → []', buildSuggestions({ leads: [], campaigns: [], nowMs: NOW }).length === 0);
+  check('sugestii: lead new vechi → leadUntouched high', (() => {
+    const s = buildSuggestions({ leads: [lead({ createdAtMs: NOW - 5 * day })], campaigns: [], nowMs: NOW });
+    return s.length === 1 && s[0].kind === 'leadUntouched' && s[0].severity === 'high';
+  })());
+  check('sugestii: lead new proaspăt → none', buildSuggestions({ leads: [lead({ createdAtMs: NOW })], campaigns: [], nowMs: NOW }).length === 0);
+  check('sugestii: lead contacted vechi → leadStale medium', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'contacted', createdAtMs: NOW - 20 * day })], campaigns: [], nowMs: NOW });
+    return s.some((x) => x.kind === 'leadStale' && x.severity === 'medium');
+  })());
+  check('sugestii: campanie verdict pause → campaignAction high (detail conține headline)', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW })], campaigns: [camp({ verdict: 'pause', headline: 'CPL prea mare' })], nowMs: NOW });
+    return s.some((x) => x.kind === 'campaignAction' && x.severity === 'high' && x.detail.includes('CPL prea mare'));
+  })());
+  check('sugestii: campanie verdict maintain → fără campaignAction', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW })], campaigns: [camp({ verdict: 'maintain' })], nowMs: NOW });
+    return !s.some((x) => x.kind === 'campaignAction');
+  })());
+  check('sugestii: lead cu campanie fără raport luna curentă → reportMissing', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW - 60 * day })], campaigns: [camp({})], nowMs: NOW });
+    return s.some((x) => x.kind === 'reportMissing');
+  })());
+  check('sugestii: lead cu raport luna curentă → fără reportMissing', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW })], campaigns: [camp({})], nowMs: NOW });
+    return !s.some((x) => x.kind === 'reportMissing');
+  })());
+  check('sugestii: sortare după severitate (high prima)', buildSuggestions({ leads: [lead({ createdAtMs: NOW - 5 * day })], campaigns: [camp({ verdict: 'test' })], nowMs: NOW })[0].severity === 'high');
+}
 
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
   const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });

@@ -936,6 +936,24 @@ normaliser, secretele niciodată în chat/repo.
 > escapează `<script>`/HTML. Verificat: 9/9 suites (+escape/compose) + e2e + build:site (app.html) + boot-smoke.
 > DEPLOYED: hosting + rules (fără functions).
 
+**2026-06-16 - Task Completed — tab „Sugestii" proactiv pentru operator + fix nav Administratori**
+> Model: Claude Opus 4.8 (1M context)
+> Câștig rapid din analiza competitorului (#50). Strat care suprafațează „următorul pas" din date DEJA
+> generate — NU generează AI. Decizii (AskUserQuestion): tab dedicat „Sugestii" + 3 semnale.
+> - **agregator PUR `src/admin/suggestions.ts`** (`buildSuggestions({leads,campaigns,nowMs})`, testat):
+>   lead 'new' netratat ≥2 zile → leadUntouched (high); 'contacted' ≥14 zile → leadStale; campanie cu
+>   `aiInsight.verdict` pause/test/scale → campaignAction (pause=high); lead cu campanii fără raport luna
+>   curentă (monthKey UTC) → reportMissing. Sortare după severitate.
+> - **`SuggestionsPanel`**: listeneri pe `leads` (limit 200, orderBy createdAt) + `campaigns` (limit 300),
+>   normalizează snapshot-urile, randează lista cu badge severitate + „Deschide" → `onNavigate(view)`.
+> - **AdminHome**: tab nou „Sugestii". **FIX**: nav array omitea `'admins'` (tabul Administratori era
+>   inaccesibil de la livrarea RBAC) — adăugat acum. i18n `admin.navSuggestions`+`sug*` (ro+en).
+> **Review adversarial (1 agent, limitele resetate).** Remediat: (MEDIUM) listeneri fără `limit()` → limit
+> 200/300 (ca pattern-ul AdminHome); (NIT) monthKey format `YYYY-M` → `YYYY-MM` (padded, intern+simetric).
+> Acceptat: `Date.now()` în useMemo (recompune la schimbarea datelor — ok pt. panou advisory). Restul
+> confirmat corect (nav, paritate i18n, logică pură, edge-cases). Verificat: 9/9 suites (+9 buildSuggestions)
+> + e2e + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -23,6 +23,7 @@ import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
 import OpportunityBoard from './OpportunityBoard';
+import SuggestionsPanel from './SuggestionsPanel';
 import MarketingCenter from './MarketingCenter';
 import LandingStudio from './LandingStudio';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
@@ -32,10 +33,11 @@ import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeS
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'marketing' | 'landing' | 'admins';
+type AdminView = 'leads' | 'suggestions' | 'marketing' | 'landing' | 'admins';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
+  suggestions: 'admin.navSuggestions',
   marketing: 'admin.navMarketing',
   landing: 'admin.navLanding',
   admins: 'admin.navAdmins',
@@ -500,7 +502,7 @@ export default function AdminHome() {
 
       {/* Taburi: Lead-uri vs Marketing Center. */}
       <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'marketing', 'landing'] as const).map((v) => (
+        {(['leads', 'suggestions', 'marketing', 'landing', 'admins'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -521,6 +523,7 @@ export default function AdminHome() {
         ))}
       </div>
 
+      {view === 'suggestions' && <SuggestionsPanel onNavigate={(v) => setView(v as AdminView)} />}
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'landing' && <LandingStudio adminUid={user.uid} />}
       {view === 'admins' && <AdminsPanel myUid={user.uid} isOwner={myRole === 'owner' || user.uid === BOOTSTRAP_ADMIN_UID} />}
