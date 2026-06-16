@@ -14,19 +14,18 @@ import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
-import LpDecorControls from './LpDecorControls';
+import LpDecorLayers from './LpDecorLayers';
 import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
-import { htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
+import { compilePageDecors, htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import type { LpProject } from '../types/lpProject';
-import { compileDecor } from '../types/lpDecor';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
 type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'links' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
-  const pageDecor = compileDecor(lp.pageDecor, 'pg', 'page');
+  const pageDecor = compilePageDecors(lp.pageDecors);
   return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${pageDecor}${lp.html}</body></html>`;
 }
 
@@ -68,7 +67,7 @@ export default function LpEditor({
   useEffect(() => {
     const id = setTimeout(() => setPreviewDoc(composeDoc({ ...draft, html: effectiveHtml(draft) })), 400);
     return () => clearTimeout(id);
-  }, [draft.html, draft.design, draft.lang, draft.editor, draft.blocks, draft.form, draft.pageDecor]);
+  }, [draft.html, draft.design, draft.lang, draft.editor, draft.blocks, draft.form, draft.pageDecors]);
 
   const setHtml = (html: string) => setDraft((d) => ({ ...d, html }));
 
@@ -85,7 +84,7 @@ export default function LpEditor({
       blocks: draft.blocks,
       html: assets.html, // mod visual → blocuri compilate; serveLp servește tot `html`
       design: draft.design,
-      pageDecor: draft.pageDecor,
+      pageDecors: draft.pageDecors,
       pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
       hasForm: assets.hasForm,
       form: assets.form,
@@ -99,8 +98,9 @@ export default function LpEditor({
     setErr('');
     const status = nextStatus ?? draft.status;
     // Gardă de mărime: refuzăm salvarea în loc să trunchiem tăcut html-ul (truncare = pagină ruptă).
-    // Cu decor pe fiecare bloc, codul compilat poate crește; mai bine un mesaj clar decât o pagină stricată.
-    if (htmlByteSize(payload.html) > LP_HTML_MAX) {
+    // Validăm DOCUMENTUL SERVIT integral — serveLp compune pageDecorHtml + html în <body> — deci straturile
+    // de decor multiple intră în plafon (altfel 5 straturi ar putea împinge pagina peste limită fără gardă).
+    if (htmlByteSize(payload.html) + htmlByteSize(payload.pageDecorHtml) > LP_HTML_MAX) {
       setErr(t('admin.lpStudio.errTooLarge', { max: Math.round(LP_HTML_MAX / 1000) }));
       return;
     }
@@ -292,7 +292,7 @@ export default function LpEditor({
                 <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 12 }}>{t('admin.lpStudio.designHint')}</p>
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '2px solid var(--border)' }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('admin.lpStudio.decor_pageTitle')}</div>
-                  <LpDecorControls value={draft.pageDecor} onChange={(pageDecor) => setDraft((d) => ({ ...d, pageDecor }))} />
+                  <LpDecorLayers value={draft.pageDecors} onChange={(pageDecors) => setDraft((d) => ({ ...d, pageDecors }))} />
                 </div>
               </div>
             )}

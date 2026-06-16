@@ -2,6 +2,7 @@
 import {
   coerceToLandingPage,
   coerceToLpSubmission,
+  compilePageDecors,
   effectiveLpForm,
   htmlByteSize,
   recompileLpAssets,
@@ -9,8 +10,10 @@ import {
   sanitizeSubmissionValues,
   LP_HTML_MAX,
   LP_FORM_FIELDS_MAX,
+  LP_PAGE_DECORS_MAX,
   type LpFormField,
 } from '../src/types/landingPage';
+import { coerceToPreviewScreens, defaultScreens, LP_PREVIEW_SCREENS_MAX, LP_PV_W_MAX, withIds } from '../src/types/lpPreviewScreens';
 import {
   bucketKey,
   coerceToLpStatsDay,
@@ -245,6 +248,38 @@ check('recompileLpAssets: mod cod → html-ul brut rămâne neatins', (() => {
   const a = recompileLpAssets(lp);
   return a.html === '<h1>Manual</h1>' && a.pageDecorHtml === '';
 })());
+// ── fundaluri decorative multiple pe pagină (straturi) ──
+check('coerce: migrare legacy pageDecor single (non-none) → pageDecors[1]', (() => {
+  const lp = coerceToLandingPage({ pageDecor: { effect: 'waves' } });
+  return Array.isArray(lp.pageDecors) && lp.pageDecors.length === 1 && lp.pageDecors[0].effect === 'waves';
+})());
+check('coerce: legacy pageDecor none → pageDecors []', coerceToLandingPage({ pageDecor: { effect: 'none' } }).pageDecors.length === 0);
+check('coerce: pageDecors array păstrat + plafon LP_PAGE_DECORS_MAX', (() => {
+  const many = Array.from({ length: 9 }, () => ({ effect: 'dots' }));
+  const lp = coerceToLandingPage({ pageDecors: many });
+  return lp.pageDecors.length === LP_PAGE_DECORS_MAX && lp.pageDecors.every((d) => d.effect === 'dots');
+})());
+check('compilePageDecors: 2 straturi → id-uri pg0 + pg1 distincte', (() => {
+  const html = compilePageDecors(coerceToLandingPage({ pageDecors: [{ effect: 'dots' }, { effect: 'waves' }] }).pageDecors);
+  return html.includes('lpd-pg0') && html.includes('lpd-pg1');
+})());
+check('compilePageDecors: stratul none nu contribuie', (() => {
+  const html = compilePageDecors(coerceToLandingPage({ pageDecors: [{ effect: 'none' }, { effect: 'dots' }] }).pageDecors);
+  return html.includes('lpd-pg1') && !html.includes('lpd-pg0');
+})());
+
+// ── ecrane de previzualizare (preferință de workspace) ──
+check('coerceToPreviewScreens: non-array → default', coerceToPreviewScreens(null).length === defaultScreens().length && coerceToPreviewScreens('x').length > 0);
+check('coerceToPreviewScreens: clamp lățime + cap număr + id pozițional', (() => {
+  const screens = coerceToPreviewScreens(Array.from({ length: 12 }, () => ({ width: 99999, height: 700 })));
+  return screens.length === LP_PREVIEW_SCREENS_MAX && screens[0].width === LP_PV_W_MAX && screens[0].id === 'scr0' && screens[1].id === 'scr1';
+})());
+check('coerceToPreviewScreens: listă goală → default (nu rămâne gol)', coerceToPreviewScreens([]).length === defaultScreens().length);
+check('withIds: label ne-string → "", reindexează', (() => {
+  const s = withIds([{ label: 42 as unknown as string, width: 400, height: 800 }]);
+  return s[0].label === '' && s[0].width === 400 && s[0].id === 'scr0';
+})());
+
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
   const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });
   return d.effect === 'custom' && d.elements.length === 1 && d.elements[0].shape === 'circle' && d.elements[0].x === 100 && d.elements[0].size === 400;

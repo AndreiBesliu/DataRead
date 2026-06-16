@@ -113,7 +113,11 @@ const lp = C.coerceToLandingPage({
     { type: 'form', props: { heading: 'Contactează-ne' } },
   ],
   // Valori realiste, exact din intervalul slider-elor (size 1..20, opacity 0.05..1) — ca ce produce studio-ul.
-  pageDecor: { effect: 'constellation', interaction: 'mouseReact', density: 60, speed: 40, size: 3, color: '', opacity: 0.55, intensity: 50 },
+  // DOUĂ straturi de fundal suprapuse (feature: fundaluri decorative multiple pe pagină).
+  pageDecors: [
+    { effect: 'constellation', interaction: 'mouseReact', density: 60, speed: 40, size: 3, color: '', opacity: 0.55, intensity: 50 },
+    { effect: 'waves', interaction: 'none', density: 40, speed: 30, size: 4, color: '', opacity: 0.4, intensity: 0 },
+  ],
   design: C.coerceToCustomTheme(rawDesign),
   form: {
     enabled: false, submitLabel: 'Trimite', successMessage: 'Mersi!', createLead: true,
@@ -124,7 +128,7 @@ const lp = C.coerceToLandingPage({
 // Replică logica LpEditor: un bloc `form` forțează formularul activ; html/pageDecorHtml se compilează la salvare.
 const form = { ...lp.form, enabled: true };
 const html = C.compileBlocks(lp.blocks, { form });
-const pageDecorHtml = C.compileDecor(lp.pageDecor, 'pg', 'page');
+const pageDecorHtml = C.compilePageDecors(lp.pageDecors);
 const servedDoc = { ...lp, html, pageDecorHtml, hasForm: true, form };
 
 // ── Helpers de request/response ─────────────────────────────────────────────
@@ -155,7 +159,7 @@ state.lpDoc = servedDoc; reset();
   ok(b.includes(':root{') && b.includes('#2dd4bf'), 'CSS design pe :root + accent temă Ocean (#2dd4bf)');
   ok(b.includes('position:relative;z-index:0'), 'body stacking (canvas decor în spate fără a împacheta conținutul)');
   ok(b.includes('@import') && /Poppins/i.test(b), 'font @import (Poppins) aplicat');
-  ok(b.includes('id="lpd-pg"') && b.includes('<canvas'), 'decor pagină injectat (canvas constellation)');
+  ok(b.includes('id="lpd-pg0"') && b.includes('id="lpd-pg1"') && b.includes('<canvas'), 'decor pagină injectat — DOUĂ straturi suprapuse (pg0 + pg1)');
   ok(b.includes('Titlu Hero de Test'), 'bloc hero compilat în pagină');
   ok(b.includes('data-lp-form'), 'formular randat (bloc form → auto-activat)');
   ok(b.includes('navigator.sendBeacon("/p/_track"'), 'beacon de engagement injectat');

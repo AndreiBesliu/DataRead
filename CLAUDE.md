@@ -122,10 +122,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **LP Studio — galerie de șabloane:** „Pagină nouă" → `LpTemplatePicker` (carduri cu mini-preview)
   cu 6 șabloane RO gata făcute (`src/admin/lpTemplates.ts`; `landingPageFromTemplate` → coerceToLandingPage,
   mod vizual) sau pagină goală. Șabloanele sunt date statice generate prin workflow.
-- **LP Studio — panou de previzualizare:** `LpPreviewPane` (mare, redimensionabil vertical) cu lățimi
-  de dispozitiv (mobil 390 / tabletă 820 / desktop plin) pentru testarea responsive (iframe = viewport)
-  + fundal-canvas distinct (`.lp-preview-surface`, transparency grid). Previzualizarea decorului/
-  paginii se face aici, nu într-o cutie separată în controale.
+- **LP Studio — panou de previzualizare MULTI-ECRAN (ACTIV 15.06.2026):** `LpPreviewPane` arată mai multe
+  ecrane de dimensiuni diferite SIMULTAN (toate cu același srcDoc live): presete dispozitiv + dimensiune
+  custom W×H + șterge/resetează. Setul de ecrane = preferință de workspace, salvată per-browser în
+  localStorage (`src/types/lpPreviewScreens.ts`, coerce/clamp, prefix `dataread`). Fundal-canvas distinct
+  (`.lp-preview-surface`, transparency grid).
 - Un singur SPA Vite + React + TS + Zustand: rute publice prerenderizate (`/`, `/pachete`,
   `/start`, `/contact`, `/legal/*`; en sub `/en/*`) + `/app` (portal client, noindex) + `/admin`.
 - Limba pe rutele publice derivă STRICT din path (`src/i18n/routing.ts`) — nu din localStorage
@@ -184,12 +185,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   mouseAttract/mouseParallax/scrollParallax) + intensitate reglabilă (0-100) + **plasare liberă** (effect 'custom': elemente individuale
   poziționate prin drag în `LpFreeformEditor`, 9 forme, animație per element float/pulse/spin/drift,
   randate ca DOM via `compileCustomDecor`/`elementStyle`); culoare
-  = `--accent` la runtime; respectă `prefers-reduced-motion`. Două locuri: **fundal de pagină**
-  (`LandingPage.pageDecor` + `pageDecorHtml` compilat la salvare, injectat de serveLp după `<body>`;
-  `body{position:relative;z-index:0}` ⇒ canvas `z-index:-1` în spatele conținutului) și **bloc `decor`**
-  (în builder, cu overlay text). `LpDecorControls` (refolosit Design tab + builder). serveLp servește
-  tot string-ul precompilat (fără port JS al motorului). Amânat: editor de plasare liberă; decor pe
-  orice bloc existent; WebGL.
+  = `--accent` la runtime; respectă `prefers-reduced-motion`. Două locuri: **fundal de pagină** — STRATURI
+  MULTIPLE (`LandingPage.pageDecors: LpDecor[]`, cap 5, suprapuse; ACTIV 15.06.2026) gestionate de
+  `LpDecorLayers` (add/remove/reorder peste `LpDecorControls`); `compilePageDecors` concatenează straturile
+  (id unic pg0,pg1…) în `pageDecorHtml`, injectat de serveLp după `<body>` (`body{position:relative;z-index:0}`
+  ⇒ canvas `z-index:-1`). Coerce migrează legacy `pageDecor` single → `[strat]`. Și **bloc `decor`** (în
+  builder, cu overlay text; rămâne single). serveLp servește tot string-ul precompilat (fără port JS al
+  motorului). Gardă de mărime la salvare = `html + pageDecorHtml ≤ 200KB`. Amânat: fundaluri multiple pe
+  BLOC; WebGL.
 - **Atribuire per-link (UTM, ACTIV 15.06.2026):** linkul LP se postează pe multe platforme + assets
   video/statice cu versiuni, codificate prin UTM. Cheia variantei = `src/types/lpAttribution.ts`
   (`variantKey` = [source,medium,campaign,content] sanitizate, unite cu `~`; PUR) + **port JS** în

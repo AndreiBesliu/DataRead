@@ -22,6 +22,7 @@ export const LP_SLUG_MAX = 60;
 export const LP_FORM_FIELDS_MAX = 12;
 export const LP_FIELD_OPTIONS_MAX = 20;
 export const LP_VALUE_MAX = 2000;
+export const LP_PAGE_DECORS_MAX = 5; // straturi de fundal decorativ suprapuse pe pagină
 
 export const LP_STATUSES = ['draft', 'published'] as const;
 export type LpStatus = (typeof LP_STATUSES)[number];
@@ -59,8 +60,9 @@ export interface LandingPage {
   blocks: LpBlock[];
   html: string; // pagina self-contained (cod, <= LP_HTML_MAX)
   design: CustomTheme; // refolosit din motorul de teme
-  /** Decor de fundal pe toată pagina (config) + markup-ul compilat (injectat de serveLp). */
-  pageDecor: LpDecor;
+  /** Straturi de decor de fundal pe toată pagina (suprapuse, în ordine) + markup-ul compilat al TUTUROR
+   *  (concatenat, injectat de serveLp). Legacy `pageDecor` single → migrat la `[pageDecor]` de coerce. */
+  pageDecors: LpDecor[];
   pageDecorHtml: string;
   hasForm: boolean; // oglindă a form.enabled (invariant)
   form: LpFormConfig;
@@ -136,7 +138,7 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     blocks: [],
     html: '',
     design: coerceToCustomTheme(null),
-    pageDecor: coerceToLpDecor(null),
+    pageDecors: [],
     pageDecorHtml: '',
     hasForm: false,
     form: coerceForm({}),
@@ -146,6 +148,25 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     leadId: '',
     createdBy: str(createdBy, 128),
   };
+}
+
+/** Straturile de decor de pagină — normaliser unic. Acceptă forma nouă (`pageDecors` array) sau
+ *  migrează forma legacy (`pageDecor` single, dacă effect ≠ 'none' → un strat). Plafon LP_PAGE_DECORS_MAX. */
+function coercePageDecors(d: Record<string, unknown>): LpDecor[] {
+  if (Array.isArray(d.pageDecors)) {
+    return d.pageDecors.slice(0, LP_PAGE_DECORS_MAX).map((x) => coerceToLpDecor(x));
+  }
+  if (d.pageDecor != null) {
+    const one = coerceToLpDecor(d.pageDecor);
+    return one.effect !== 'none' ? [one] : [];
+  }
+  return [];
+}
+
+/** Compilează TOATE straturile de decor de pagină într-un singur markup (id unic per strat: pg0, pg1…).
+ *  Straturile 'none' produc '' (compileDecor) → contribuie nimic. Sursă unică (recompile + preview). */
+export function compilePageDecors(pageDecors: LpDecor[]): string {
+  return pageDecors.map((d, i) => compileDecor(d, 'pg' + i, 'page')).join('');
 }
 
 /** Unicul punct de intrare pentru orice date care pretind a fi o Landing Page. */
@@ -164,7 +185,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     blocks: coerceBlocks(d.blocks),
     html: str(d.html, LP_HTML_MAX),
     design: coerceToCustomTheme(d.design),
-    pageDecor: coerceToLpDecor(d.pageDecor),
+    pageDecors: coercePageDecors(d),
     pageDecorHtml: str(d.pageDecorHtml, LP_HTML_MAX),
     hasForm: form.enabled, // invariant: hasForm === form.enabled
     form,
@@ -196,7 +217,7 @@ export function effectiveLpForm(lp: LandingPage): LpFormConfig {
 export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; form: LpFormConfig; hasForm: boolean } {
   const form = effectiveLpForm(lp);
   const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form }) : lp.html;
-  const pageDecorHtml = compileDecor(lp.pageDecor, 'pg', 'page');
+  const pageDecorHtml = compilePageDecors(lp.pageDecors);
   return { html, pageDecorHtml, form, hasForm: form.enabled };
 }
 

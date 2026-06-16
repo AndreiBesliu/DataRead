@@ -885,6 +885,28 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 9/9 suites (+6 teste recomandare) + e2e (TEST N) + build:site (app.html) + boot-smoke.
 > DEPLOYED: functions (aiRecommendChannels nou) + hosting.
 
+**2026-06-15 - Task Completed — LP Studio: previzualizare multi-ecran + fundaluri decorative multiple**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei (2 cereri vizuale în LP Studio). DOAR pe client (serveLp servea deja string-ul precompilat).
+> - **Previzualizare multi-ecran:** `LpPreviewPane` rescris — mai multe iframe-uri de dimensiuni diferite
+>   afișate SIMULTAN, toate cu același srcDoc live; presete dispozitiv + dimensiune custom W×H + șterge +
+>   resetează. Setul salvat per-browser în localStorage (`src/types/lpPreviewScreens.ts`: coerce/clamp/
+>   load/save). Revine la redeschidere.
+> - **Fundaluri decorative multiple:** `LandingPage.pageDecor` (single) → `pageDecors: LpDecor[]` (straturi
+>   suprapuse, cap 5); coerce cu MIGRARE legacy (pageDecor single non-none → [strat]); `compilePageDecors`
+>   concatenează straturile (id unic pg0,pg1…); `LpDecorLayers` (add/remove/reorder peste LpDecorControls)
+>   în tab-ul Design. serveLp NESCHIMBAT (primește pageDecorHtml concatenat). i18n pv_*/decor_layer* ro+en.
+> **Review adversarial (Workflow ultracode, 19 agenți; verify-ul a picat pe limita de sesiune → triaj
+> MANUAL).** Din 16 findings: remediate — (HIGH) garda de mărime la salvare verifica doar html, NU și
+> pageDecorHtml → acum `html + pageDecorHtml ≤ LP_HTML_MAX` (5 straturi nu pot împinge pagina servită peste
+> plafon); (LOW) gardă NaN pe input-urile custom W×H; (LOW) curățat 3 chei i18n nefolosite (pv_full,
+> pv_resizeHint, decor_preview). Respins motivat — (HIGH) „React key={i} la reorder resetează starea":
+> FALS-POZITIV în practică (singura stare locală e modalul fullscreen LpFreeformEditor `position:fixed
+> inset:0 z60` care ACOPERĂ butoanele ▲▼ → reorder imposibil cât e deschis; închis, controalele sunt 100%
+> controlate de `value`). Acceptate by-design: straturi 'none' păstrate (slot adăugat de user), clamp tăcut
+> la coerce (pattern existent). Verificat: 9/9 suites (+9 teste noi) + e2e (serveLp 2 straturi pg0+pg1) +
+> build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules (fără functions).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

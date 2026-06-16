@@ -4,15 +4,14 @@
  */
 import { useMemo, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { emptyLandingPage, type LandingPage } from '../types/landingPage';
+import { compilePageDecors, emptyLandingPage, type LandingPage } from '../types/landingPage';
 import { compileBlocks } from '../types/lpBlocks';
-import { compileDecor } from '../types/lpDecor';
 import { customThemeCss } from '../theme/themes';
 import { LP_TEMPLATES, landingPageFromTemplate, type LpTemplate } from './lpTemplates';
 
 function thumbDoc(lp: LandingPage): string {
   const body = compileBlocks(lp.blocks, { form: lp.form });
-  const decor = compileDecor(lp.pageDecor, 'pg', 'page');
+  const decor = compilePageDecors(lp.pageDecors);
   // viewport lat → randare „desktop" pe care o micșorăm vizual în card (transform: scale)
   return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=1100,initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${decor}${body}</body></html>`;
 }
