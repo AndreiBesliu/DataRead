@@ -105,6 +105,9 @@ h3 {
 
 /* CTA-urile bannerului: roșu plin cu glow + varianta albastru-contur. */
 .theme-banner .btn-primary {
+  /* text alb pe roșu — necesar EXPLICIT: `.theme-banner a` (link albastru) ar bate altfel
+     culoarea moștenită din .btn-primary, lăsând textul butonului roșu albastru. */
+  color: var(--accent-contrast);
   box-shadow: 0 0 18px var(--red-glow);
   border: none;
   text-transform: uppercase;
