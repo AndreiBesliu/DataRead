@@ -503,8 +503,8 @@ export default function AdminHome() {
         );
       })()}
 
-      {/* Taburi: Lead-uri vs Marketing Center. */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
+      {/* Taburi (6 — wrap pe ecrane înguste ca să nu se reverse pe orizontală). */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
         {(['leads', 'suggestions', 'marketing', 'landing', 'admins', 'help'] as const).map((v) => (
           <button
             key={v}

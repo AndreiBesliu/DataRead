@@ -970,6 +970,15 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 9/9 suites (+acoperire chei) + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
 > RĂMÂNE DESCHIS pentru completarea incrementală a conținutului (bodyKey per secțiune).
 
+**2026-06-16 - Task Completed — polish + verificare (după feature-urile zilei)**
+> Model: Claude Opus 4.8 (1M context)
+> Trecere de polish/verificare pe ce s-a livrat azi. Fix: bara de taburi din `/admin` are acum 6 taburi
+> (Lead-uri/Sugestii/Marketing/Landing/Administratori/Ghid) → `flexWrap: 'wrap'` ca să nu se reverse pe
+> orizontală pe ecrane înguste. Verificare live în browser blocată de conflict de port (serverul de dev
+> CNCVS ocupă 5173; nu l-am oprit) + părțile /admin și /app sunt auth-gated (fără credențiale local) — deci
+> verificarea s-a bazat pe suita automată: 9/9 suites + e2e + build:site (app.html) + boot-smoke (toate
+> verzi). QA-ul live al părților autentificate rămâne pentru Andrei (checklist furnizat). DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
