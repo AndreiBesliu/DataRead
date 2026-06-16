@@ -453,6 +453,31 @@ console.log('\nN) aiRecommendChannels — prompt + schema (pasul Oportunități)
   ok(JSON.stringify(items?.properties?.suggestedObjective?.enum) === JSON.stringify(['leads', 'sales', 'awareness', 'traffic']), 'suggestedObjective enum corect');
 }
 
+// ── TEST Q: „Self Marketing" — buildStrategyPrompt + STRATEGY_SCHEMA + coerceSelfProfileServer
+// (functions e JS netipizat → require-ul + apelul prind syntax/ReferenceError pe care build-ul nu-i vede). ──
+console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil server-side');
+{
+  const profile = { companyName: 'Presto Construct', industry: 'construction', industryOther: '', productsServices: 'Materiale construcții și vopseluri', audience: 'Proprietari case Cluj', area: 'Cluj-Napoca', competitors: 'Dedeman', budget: '500-1000 €/lună', goals: 'Mai multe cereri de ofertă' };
+  const prompt = fns.buildStrategyPrompt(profile);
+  ok(typeof prompt === 'string' && prompt.includes('Presto Construct'), 'promptul conține numele firmei');
+  ok(prompt.includes('Materiale construcții') && prompt.includes('Proprietari case Cluj'), 'promptul conține oferta + publicul');
+  ok(prompt.includes('Cluj-Napoca') && prompt.includes('500-1000'), 'promptul conține zona + bugetul');
+  ok(/MAI MULTE|direcții/.test(prompt), 'promptul cere mai multe direcții');
+  ok(fns.buildStrategyPrompt(null).length > 0, 'buildStrategyPrompt(null) nu aruncă');
+  // coerce server: hard-cap pe câmpuri (anti-flood) + tipuri greșite → string gol.
+  const coerced = fns.coerceSelfProfileServer({ companyName: 'x'.repeat(500), goals: 42, audience: ['nope'], industry: 'magic' });
+  ok(coerced.companyName.length === 120, 'coerce server: companyName plafonat la 120');
+  ok(coerced.goals === '' && coerced.audience === '', 'coerce server: tipuri ne-string → ""');
+  ok(coerced.industry === '', 'coerce server: industry în afara allowlist → "" (paritate cu TS INDUSTRIES)');
+  ok(fns.coerceSelfProfileServer({ industry: 'horeca' }).industry === 'horeca', 'coerce server: industry valid păstrat');
+  // schema parity
+  const sc = fns.STRATEGY_SCHEMA;
+  const items = sc?.properties?.directions?.items;
+  ok(sc?.required?.includes('overview') && sc.required.includes('directions') && sc.additionalProperties === false, 'STRATEGY_SCHEMA: overview+directions required + additionalProperties false');
+  ok(items?.additionalProperties === false && Array.isArray(items?.required), 'item direcție: additionalProperties false + required listă');
+  ok(['title', 'positioningAngle', 'targetSegment', 'channelMix', 'keyMessages', 'campaignIdeas', 'kpis'].every((k) => items.required.includes(k)), 'item direcție: toate cele 7 câmpuri required (paritate cu TS)');
+}
+
 // ── TEST O: clientExists — gardă defense-in-depth pe oglindirile cu clientUid denormalizat
 // (deliverables/lpIndex). Un client inexistent NU trebuie să producă oglindire. ──
 console.log('\nO) clientExists (gardă oglindire pe clientUid)');

@@ -17,6 +17,7 @@ export interface PublicRoute {
 export const PUBLIC_ROUTES: PublicRoute[] = [
   { slug: '/', titleKey: 'seo.homeTitle', descriptionKey: 'seo.homeDescription' },
   { slug: '/pachete', titleKey: 'seo.packagesTitle', descriptionKey: 'seo.packagesDescription' },
+  { slug: '/self-marketing', titleKey: 'seo.selfMarketingTitle', descriptionKey: 'seo.selfMarketingDescription' },
   { slug: '/start', titleKey: 'seo.startTitle', descriptionKey: 'seo.startDescription' },
   { slug: '/contact', titleKey: 'seo.contactTitle', descriptionKey: 'seo.contactDescription' },
   { slug: '/legal/termeni', titleKey: 'seo.termsTitle', descriptionKey: 'seo.termsDescription', noindex: true },

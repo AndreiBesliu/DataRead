@@ -133,6 +133,33 @@ service cloud.firestore {
           && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
         allow delete: if false;
       }
+
+      // „Self Marketing" (felia self-serve): profilul firmei (scris de client) + strategia generată +
+      // quota de trial (scrise DOAR de functions, Admin SDK). Clientul își citește toate doc-urile.
+      match /selfMarketing/{docId} {
+        allow read: if signedInAs(uid) || isAdmin();
+        // DOAR 'profile' e scris de client (whitelist strict + plafoane + schema). 'strategy'/'quota'
+        // cad pe write:false → scrise exclusiv de functions; clientul nu-și poate falsifica strategia/quota.
+        allow create, update: if signedInAs(uid)
+          && docId == 'profile'
+          && request.resource.data.keys().hasOnly(
+            ['schema', 'companyName', 'industry', 'industryOther', 'productsServices',
+             'audience', 'area', 'competitors', 'budget', 'goals', 'locale', 'updatedAt']
+          )
+          && request.resource.data.schema == 1
+          && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120
+          && request.resource.data.industry is string && request.resource.data.industry.size() <= 40
+          && request.resource.data.industryOther is string && request.resource.data.industryOther.size() <= 80
+          && request.resource.data.productsServices is string && request.resource.data.productsServices.size() <= 2000
+          && request.resource.data.audience is string && request.resource.data.audience.size() <= 1000
+          && request.resource.data.area is string && request.resource.data.area.size() <= 200
+          && request.resource.data.competitors is string && request.resource.data.competitors.size() <= 1000
+          && request.resource.data.budget is string && request.resource.data.budget.size() <= 200
+          && request.resource.data.goals is string && request.resource.data.goals.size() <= 2000
+          && request.resource.data.locale in ['ro', 'en']
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
     }
 
     // Contoarele de generări AI (scrise doar de functions prin Admin SDK) — adminii le pot citi

@@ -39,6 +39,7 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
           </span>
           <nav style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
             <Link to={p('/pachete')} style={{ color: '#dbe4f5' }}>{t('nav.packages')}</Link>
+            <Link to={p('/self-marketing')} style={{ color: '#dbe4f5' }}>{t('nav.selfMarketing')}</Link>
             <Link to={p('/contact')} style={{ color: '#dbe4f5' }}>{t('nav.contact')}</Link>
             <Link
               to={toLocalizedPath(slug, otherLang)}

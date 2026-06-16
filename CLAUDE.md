@@ -161,6 +161,20 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `CHANNELS_SCHEMA` (anti-drift); coerce TS folosește aceleași 4 obiective + 4 niveluri de impact ca schema.
   Inspirat de competitor (vezi `docs/ANALIZA-COMPETITOR-...`); pivotul self-serve (client-gen+credite) e
   amânat post-MVP. Testat în test-landing (coerce/sort) + e2e TEST N (prompt+schema).
+- **„Self Marketing" — strategie AI self-serve (ACTIV 16.06.2026, felia 1):** PRIMUL callable AI accesibil
+  CLIENȚILOR non-admin: `selfGenerateStrategy({profile})` (auth obligatoriu, FĂRĂ admin-gate) → strategie amplă cu
+  3-4 direcții (`STRATEGY_SCHEMA`: overview + per direcție poziționare/segment/canale/mesaje/idei/KPI), scrie
+  `clients/{uid}/selfMarketing/strategy` (Admin SDK). Profilul firmei (`SelfCompanyProfile`: Firma/Ofertă/Piață/
+  Obiective) scris de client la `clients/{uid}/selfMarketing/profile` (reguli: doar `profile`, whitelist + plafoane
+  pe toate câmpurile; `strategy`/`quota` server-only, client-read). **Protecție cost (AI expus clienților):** quotă
+  de trial per-client `consumeSelfQuota` (5 lifetime + 2/zi, `clients/{uid}/selfMarketing/quota`, SEPARAT de aiUsage)
+  + **plafon GLOBAL/zi** `SELF_GLOBAL_DAILY_CAP=80` (`aiUsage/__selfGlobal`, backstop absolut nerestituit) contra
+  account-farming; `refundSelfQuota` restituie slotul clientului la eșec de model (global rămâne backstop). Input
+  hard-cap server-side + output schema-constrained + clamp. Coerce TS `src/types/selfMarketing.ts` (paritate plafoane/
+  industry-allowlist cu JS). UI: tab public `/self-marketing` (explicativ) → funnel logat `/app/self-marketing`
+  (`SelfMarketingFunnel` + `SelfStepper` + `SelfProfileFields`; pașii Oportunități/Detalii/Execuție = „în curând").
+  Hardening recomandat înainte de lansare publică largă: App Check (`VITE_RECAPTCHA_V3_KEY` + `enforceAppCheck`) +
+  gate email-verified. Testat: test-self-marketing (coerce/validare) + e2e TEST Q (prompt/schema/coerce/allowlist).
 - **Export PDF (ACTIV 16.06.2026):** `src/utils/printDoc.ts` — print-to-PDF din browser, FĂRĂ dependență
   (regula minimizare deps): `composePrintHtml` (pur) compune un document A4 brandat alb cu tot textul ESCAPAT
   (`escapeHtml` — anti-injecție din raport/livrabile, text liber AI/operator), `printHtmlDoc` tipărește

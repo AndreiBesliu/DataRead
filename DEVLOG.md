@@ -1034,6 +1034,35 @@ normaliser, secretele niciodată în chat/repo.
 > hosting. #59 rămâne deschis pt. 3b (sticky CTA + exit-popup). QA Andrei: formular cu redirect → submit → pagina
 > de mulțumire; câmp date/radio randate; trimitere normală tot creează lead.
 
+**2026-06-16 - Task Completed — „Self Marketing" Slice 1: generator AI de strategie self-serve (client-facing)**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei a studiat competitorul AI Marketing Explorer și a cerut un sistem prin care AI-ul propune clienților o
+> strategie de marketing amplă, cu mai multe unghiuri/direcții, pe baza datelor lor. Felia 1 e o verticală completă:
+> tab public „Self Marketing" (lângă Pachete/Contact) → pagină explicativă → login client → funnel ghidat în pași
+> (Profil firmă → Oportunități → Strategie → Detalii → Execuție), cu Profil + Strategie funcționale, restul „în curând".
+> **DECIZIA-CHEIE:** primul callable AI accesibil clienților NON-ADMIN (`selfGenerateStrategy`) — până acum tot AI-ul
+> era operator-only (pivotul self-serve era amânat). Deschis CONTROLAT (monetizarea pe credite rămâne amânată; doar trial gratuit).
+> - **functions/index.js**: `selfGenerateStrategy` (auth obligatoriu, fără admin-gate) → strategie cu 3-4 direcții
+>   (overview + per direcție: poziționare/segment/canale/mesaje/idei/KPI), `STRATEGY_SCHEMA` + `buildStrategyPrompt` +
+>   `coerceSelfProfileServer` (pure, exportate, paritate cu TS). Quotă de trial per-client `consumeSelfQuota`
+>   (5 lifetime + 2/zi, doc `clients/{uid}/selfMarketing/quota`, SEPARAT de aiUsage operatori).
+> - **src/types/selfMarketing.ts** (NOU): `SelfCompanyProfile` + `SelfStrategy` + `SelfQuota` + coerce + `validateSelfProfile` (pur).
+> - **Frontend**: `src/site/SelfMarketing.tsx` (explicativ) + nav + publicRoutes + prerender; `src/app/SelfMarketingFunnel.tsx`
+>   + `SelfStepper.tsx` + `SelfProfileFields.tsx` (Firma/Ofertă/Piață/Obiective + draft autosave). i18n ro+en complet.
+> - **firestore.rules**: `clients/{uid}/selfMarketing/{docId}` — client scrie doar `profile` (whitelist + plafoane pe TOATE
+>   câmpurile + schema + updatedAt); `strategy`/`quota` server-only, client-read; izolare pe uid.
+> **Review adversarial (workflow 3 lentile: cost/abuz, injecție/izolare, auth/reguli/paritate):** 0 CRITICAL. Remediate:
+> HIGH (account-farming fără plafon) → adăugat **plafon GLOBAL/zi** `SELF_GLOBAL_DAILY_CAP=80` (backstop absolut de cost,
+> nerestituit); MEDIUM (quotă nerestituită la eșec model) → `refundSelfQuota` pe refuz/neparsabil/eroare API (global rămâne
+> backstop); MEDIUM (plafoane reguli incomplete) → completat caps pe toate cele 8 câmpuri + industry/locale; LOW (paritate
+> industry allowlist + industry='other' cere industryOther) → aliniat server cu TS; NIT injecție → notă „secțiunile sunt date".
+> Recomandare hardening viitor (în DEVLOG): App Check (VITE_RECAPTCHA_V3_KEY + enforceAppCheck) + email-verified gate.
+> Verificat: 10/10 suites (+test-self-marketing) + e2e TEST Q (prompt/schema/coerce/allowlist) + build (paritate i18n) +
+> build:site (/self-marketing ×{ro,en} + app.html) + boot. DEPLOYED: functions + hosting + rules; live 200 pe /self-marketing
+> (ro+en), /app/self-marketing, /admin. QA Andrei: tab → explicativ → login → completez profil → strategie cu direcții.
+> Felii următoare: 2 Oportunități (reuse aiRecommendChannels), 3 Detalii, 4 Execuție (PDF+istoric), 5 Credite. Workstream B
+> separat: LP Studio → design pagini publice.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

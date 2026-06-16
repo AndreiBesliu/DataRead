@@ -9,10 +9,12 @@ import SiteLayout from './site/SiteLayout';
 import Landing from './site/Landing';
 import Packages from './site/Packages';
 import StartPage from './site/StartPage';
+import SelfMarketing from './site/SelfMarketing';
 import Contact from './site/Contact';
 import Legal from './site/Legal';
 import AppHome from './app/AppHome';
 import OnboardingForm from './app/OnboardingForm';
+import SelfMarketingFunnel from './app/SelfMarketingFunnel';
 import HelpHome from './app/HelpHome';
 import AdminHome from './admin/AdminHome';
 
@@ -43,6 +45,7 @@ function NotFound() {
 const PAGE_FOR_SLUG: Record<string, ReactElement> = {
   '/': <Landing />,
   '/pachete': <Packages />,
+  '/self-marketing': <SelfMarketing />,
   '/start': <StartPage />,
   '/contact': <Contact />,
   '/legal/termeni': <Legal kind="termeni" />,
@@ -65,6 +68,7 @@ function AppShell() {
       ))}
       <Route path="/app" element={<AppHome />} />
       <Route path="/app/onboarding" element={<OnboardingForm />} />
+      <Route path="/app/self-marketing" element={<SelfMarketingFunnel />} />
       <Route path="/app/ghid" element={<HelpHome />} />
       <Route path="/admin" element={<AdminHome />} />
       <Route path="*" element={<NotFound />} />
