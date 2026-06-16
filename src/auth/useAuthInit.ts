@@ -9,6 +9,7 @@ import { ensureClientDoc } from '../services/clients';
  *  La login se asigură (idempotent) că documentul clients/{uid} există. */
 export function useAuthInit(): void {
   const setUser = useAuthStore((s) => s.setUser);
+  const setIsAdmin = useAuthStore((s) => s.setIsAdmin);
   const setInitializing = useAuthStore((s) => s.setInitializing);
 
   useEffect(() => {
@@ -25,8 +26,15 @@ export function useAuthInit(): void {
           displayName: u.displayName,
           locale: i18n.language === 'en' ? 'en' : 'ro',
         });
+        // Claim-ul `admin` din token → arată/ascunde linkul spre /admin în antet. Eșec → non-admin
+        // (gardul real e oricum în AdminHome + rules, asta e doar afișare).
+        u.getIdTokenResult()
+          .then((tok) => setIsAdmin(tok.claims.admin === true))
+          .catch(() => setIsAdmin(false));
+      } else {
+        setIsAdmin(false);
       }
     });
     return off;
-  }, [setUser, setInitializing]);
+  }, [setUser, setIsAdmin, setInitializing]);
 }

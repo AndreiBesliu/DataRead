@@ -42,6 +42,8 @@ export interface Profile {
 
 interface AuthState {
   user: Profile | null;
+  /** Claim-ul `admin` din token (rezolvat în useAuthInit) — decide afișarea linkului spre /admin. */
+  isAdmin: boolean;
   initializing: boolean;
   busy: boolean;
   /** Chei i18n — componentele randează t(error)/t(info) (regula: zero text hardcodat). */
@@ -49,6 +51,7 @@ interface AuthState {
   info: string | null;
 
   setUser: (u: Profile | null) => void;
+  setIsAdmin: (b: boolean) => void;
   setInitializing: (b: boolean) => void;
   clearMessages: () => void;
 
@@ -80,12 +83,14 @@ function friendlyErrorKey(e: unknown): string {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  isAdmin: false,
   initializing: true,
   busy: false,
   error: null,
   info: null,
 
   setUser: (u) => set({ user: u }),
+  setIsAdmin: (b) => set({ isAdmin: b }),
   setInitializing: (b) => set({ initializing: b }),
   clearMessages: () => set({ error: null, info: null }),
 

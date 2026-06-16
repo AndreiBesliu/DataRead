@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { persistLanguage } from '../i18n';
 import { pathLanguage, stripLangPrefix, toLocalizedPath, type LanguageCode } from '../i18n/routing';
 import { cookieConsent, setCookieConsent } from '../services/analytics';
+import { useAuthStore } from '../store/authStore';
 import Seo from './Seo';
 import type { PublicRoute } from './publicRoutes';
 
@@ -18,6 +19,7 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   const slug = stripLangPrefix(pathname);
   const otherLang: LanguageCode = lang === 'ro' ? 'en' : 'ro';
   const p = (s: string) => toLocalizedPath(s, lang);
+  const { user, isAdmin, initializing, signOutUser } = useAuthStore();
 
   const [consent, setConsent] = useState(cookieConsent());
   const decide = (v: 'granted' | 'denied') => {
@@ -49,6 +51,27 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
             >
               {otherLang.toUpperCase()}
             </Link>
+            {/* Login/logout pe orice pagină publică. Linkul Admin apare DOAR pentru admini (gardul real
+                e în AdminHome + rules); non-adminii nu primesc acces la panou. */}
+            {!initializing && (
+              user ? (
+                <>
+                  <Link to="/app" style={{ color: '#dbe4f5' }}>{t('nav.account')}</Link>
+                  {isAdmin && <Link to="/admin" style={{ color: '#dbe4f5' }}>{t('nav.admin')}</Link>}
+                  <button
+                    type="button"
+                    onClick={() => void signOutUser()}
+                    style={{ fontSize: 13, border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', color: 'var(--fg-1)', background: 'transparent', cursor: 'pointer' }}
+                  >
+                    {t('nav.logout')}
+                  </button>
+                </>
+              ) : (
+                <Link to="/app" style={{ fontSize: 13, border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', color: 'var(--fg-1)' }}>
+                  {t('nav.login')}
+                </Link>
+              )
+            )}
             <Link to={p('/start')} className="btn btn-primary" style={{ padding: '7px 14px', fontSize: 13 }}>
               {t('landing.heroSecondary')}
             </Link>

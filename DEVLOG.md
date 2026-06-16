@@ -1063,6 +1063,24 @@ normaliser, secretele niciodată în chat/repo.
 > Felii următoare: 2 Oportunități (reuse aiRecommendChannels), 3 Detalii, 4 Execuție (PDF+istoric), 5 Credite. Workstream B
 > separat: LP Studio → design pagini publice.
 
+**2026-06-16 - Task Completed — Login/logout în antetul public + pagină de pachete Self Marketing**
+> Model: Claude Opus 4.8 (1M context)
+> Cerere Andrei (dataread.ro e live): (1) login/logout pe orice pagină publică, (2) acces la /admin doar pentru
+> admini, (3) o pagină de pachete DIFERITĂ pentru Self Marketing, accesibilă din pagina Self Marketing.
+> - **Auth în antet** (`SiteLayout`): controale conștiente de sesiune — delogat → „Autentificare" (→ /app, unde e
+>   AuthPanel); logat → „Cont" (→ /app) + „Ieși" (signOutUser) + „Admin" (→ /admin) DOAR dacă e admin. Claim-ul
+>   `admin` e rezolvat acum în `useAuthInit` (`getIdTokenResult`) și ținut în `authStore` (`isAdmin`). Gardul real
+>   de acces rămâne în AdminHome + rules (non-adminii primesc ecranul de cerere acces); linkul e doar afișare.
+> - **Pachete Self Marketing** (`src/site/SelfMarketingPackages.tsx`, rută `/self-marketing/pachete`): model self-serve
+>   pe CREDITE (o explorare AI = 1 credit), DISTINCT de pachetele de agenție (/pachete). 3 pachete (Starter/Business/
+>   Professional) cu prețuri+credite PROVIZORII (mirror competitor: 19/79/249 LEI, +10/50/200) — Andrei le rafinează.
+>   Plățile sunt dezactivate → CTA „Începe gratuit" → trialul (`/app/self-marketing`) + notă explicită. Linkul „Vezi
+>   pachetele" din pagina Self Marketing duce acum aici (nu la /pachete agenție). Prerandat ro+en.
+> i18n ro+en (nav.account/admin/login/logout, seo.selfPackages*, bloc selfPackages). Verificat: 10/10 suites + build
+> (paritate i18n) + build:site (16 pagini, /self-marketing/pachete ×{ro,en} + app.html) + boot. DEPLOYED: hosting;
+> live 200 pe /self-marketing/pachete (ro+en), antet cu „Autentificare". Felie viitoare: prețuri/servicii finale +
+> activare credite (Slice 5 monetizare).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

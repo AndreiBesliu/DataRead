@@ -10,6 +10,7 @@ import Landing from './site/Landing';
 import Packages from './site/Packages';
 import StartPage from './site/StartPage';
 import SelfMarketing from './site/SelfMarketing';
+import SelfMarketingPackages from './site/SelfMarketingPackages';
 import Contact from './site/Contact';
 import Legal from './site/Legal';
 import AppHome from './app/AppHome';
@@ -46,6 +47,7 @@ const PAGE_FOR_SLUG: Record<string, ReactElement> = {
   '/': <Landing />,
   '/pachete': <Packages />,
   '/self-marketing': <SelfMarketing />,
+  '/self-marketing/pachete': <SelfMarketingPackages />,
   '/start': <StartPage />,
   '/contact': <Contact />,
   '/legal/termeni': <Legal kind="termeni" />,

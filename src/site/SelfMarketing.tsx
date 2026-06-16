@@ -34,7 +34,7 @@ export default function SelfMarketing() {
           <Link to="/app/self-marketing" className="btn btn-primary" style={{ padding: '11px 26px', fontSize: 15 }}>
             {t('selfMarketing.cta')}
           </Link>
-          <Link to="/pachete" className="btn" style={{ padding: '11px 26px', fontSize: 15 }}>
+          <Link to="/self-marketing/pachete" className="btn" style={{ padding: '11px 26px', fontSize: 15 }}>
             {t('selfMarketing.ctaPackages')}
           </Link>
         </div>
