@@ -22,6 +22,10 @@ jobs:
         run: npm run build
       - name: Headless test suites
         run: npm test
+      - name: Install functions dependencies (for the e2e suite that loads functions/index.js)
+        run: npm ci --prefix functions
+      - name: E2E functions suite (require()s untyped functions/index.js — catches ReferenceError/syntax the build can't)
+        run: npm run test:e2e-lp
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Prerender public routes

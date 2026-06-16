@@ -147,6 +147,44 @@ export function coerceToSelfStrategy(v: unknown): SelfStrategy {
   };
 }
 
+// ── Detalii: aprofundarea tactică a UNEI direcții alese din strategie (pasul „Detalii") ──
+
+export const DETAILS_LIMITS = {
+  directionTitle: 140,
+  budgetSplit: 1000,
+  audienceDetail: 1000,
+  messaging: 1200,
+  funnel: 1200,
+  campaignBrief: 1500,
+  timeline: 800,
+} as const;
+
+export interface SelfDetails {
+  schema: typeof SELF_MARKETING_SCHEMA;
+  directionTitle: string; // direcția aprofundată (din strategie)
+  budgetSplit: string; // împărțirea bugetului pe canale
+  audienceDetail: string; // public țintă detaliat / segmentare
+  messaging: string; // mesaje & unghiuri de comunicare
+  funnel: string; // pâlnia (etape + acțiuni)
+  campaignBrief: string; // brief concret de campanie
+  timeline: string; // calendar / pași în timp
+}
+
+export function coerceToSelfDetails(v: unknown): SelfDetails {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const L = DETAILS_LIMITS;
+  return {
+    schema: SELF_MARKETING_SCHEMA,
+    directionTitle: str(d.directionTitle, L.directionTitle),
+    budgetSplit: str(d.budgetSplit, L.budgetSplit),
+    audienceDetail: str(d.audienceDetail, L.audienceDetail),
+    messaging: str(d.messaging, L.messaging),
+    funnel: str(d.funnel, L.funnel),
+    campaignBrief: str(d.campaignBrief, L.campaignBrief),
+    timeline: str(d.timeline, L.timeline),
+  };
+}
+
 // ── Quota de trial (clients/{uid}/selfMarketing/quota — scrisă doar de functions) ──
 
 export interface SelfQuota {

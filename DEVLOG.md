@@ -1081,6 +1081,31 @@ normaliser, secretele niciodată în chat/repo.
 > live 200 pe /self-marketing/pachete (ro+en), antet cu „Autentificare". Felie viitoare: prețuri/servicii finale +
 > activare credite (Slice 5 monetizare).
 
+**2026-06-16 - Task Completed — Sprint din audit: conversie Self Marketing + plasă de siguranță cod + pas Detalii**
+> Model: Claude Opus 4.8 (1M context)
+> După un audit pe 5 dimensiuni (workflow), Andrei a ales 4 seturi. Set 1 (securitate+canonical) e livrat separat.
+> Aici Set 2 (conversie) + Set 3 (cod) + Set 4 (Detalii):
+> - **Conversie (#6/#7/#9):** Self Marketing acum vizibil — CTA în hero Landing + card în portal /app (era îngropat
+>   într-un nav item, zero link în /app). Export pe strategie & detalii: butoane „Copiază tot" + „📄 PDF" (reuse
+>   `printDoc.ts`, text AI escapat). Quotă fără fundătură: la trial epuizat (lifetime) → CTA spre /self-marketing/
+>   pachete; plafonul zilnic distins de cel lifetime („revino mâine" vs „ia credite").
+> - **Cod (#10/#5/#11/#13):** helper partajat `runAiJson()` + `assertAuth`/`assertAdmin` (anti-drift pe apelul
+>   model/refuz/parse) — aplicat pe `selfGenerateStrategy` + `aiRecommendChannels` (restul 4 callable-uri AI rămân
+>   de convertit într-o felie dedicată). Quota self (`consumeSelfQuota`/`consumeGlobalSelfQuota`/`refundSelfQuota`)
+>   acceptă `db` injectabil → testate tranzacțional pe Firestore în memorie (TEST R: lifetime/daily/global/refund).
+>   Paritate TS↔JS pe constante (TEST Q2: limits/allowlist/quota) — drift = test roșu. CI rulează acum `test:e2e-lp`.
+> - **Detalii (#8):** callable `selfGenerateDetails({directionIndex})` (client-facing, quotă self, refund) →
+>   aprofundează o direcție aleasă din strategie (buget/public/mesaje/funnel/brief/calendar) cu `DETAILS_SCHEMA`;
+>   tipuri `SelfDetails`+coerce; pas „Detalii" funcțional în funnel (selector direcție + generare + export). Pașii
+>   Oportunități/Execuție rămân „în curând".
+> **Review adversarial (functions):** CLEAN — paritate runAiJson, refund corect (per-client restituit la orice eșec,
+> global rămâne backstop), selfGenerateDetails fără bypass quotă/index, fără referințe moarte. Verificat: 10/10 suites
+> (+coerce detalii) + e2e (TEST Q2 paritate, TEST R quota, Detalii prompt/schema) + build (paritate i18n ro/en) +
+> build:site (16 pagini) + boot. DEPLOYED: functions + hosting (Set 1 a livrat deja rules + canonical).
+> **Rămâne (necesită Andrei/GCP):** App Check (VITE_RECAPTCHA_V3_KEY + enforceAppCheck) + email-verified gate, buget
+> GCP + maxInstances pe funcții + alert pe erori AI, Firestore PITR/backup, rotație ANTHROPIC_API_KEY; plus conversia
+> celor 4 callable-uri AI rămase la runAiJson + viewer errorReports + split bundle firebase/admin (felii viitoare).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

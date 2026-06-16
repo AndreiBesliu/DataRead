@@ -2,6 +2,7 @@
 import {
   coerceToSelfCompanyProfile,
   coerceToSelfStrategy,
+  coerceToSelfDetails,
   coerceToSelfQuota,
   emptySelfProfile,
   selfFreeRemaining,
@@ -10,6 +11,7 @@ import {
   STRATEGY_DIRECTIONS_MAX,
   STRATEGY_DIRECTION_LIMITS,
   SELF_PROFILE_LIMITS,
+  DETAILS_LIMITS,
   type SelfCompanyProfile,
 } from '../src/types/selfMarketing';
 import ro from '../src/i18n/locales/ro';
@@ -64,6 +66,13 @@ check('coerce strategie: câmp direcție plafonat', (() => {
 check('coerce strategie: câmpuri lipsă → "" (nu aruncă)', (() => {
   const s = coerceToSelfStrategy({ directions: [{ title: 'Doar titlu' }] });
   return s.directions[0].kpis === '' && s.directions[0].channelMix === '';
+})());
+
+// ── coerce detalii ──
+check('coerce detalii: null → empty (schema 1)', coerceToSelfDetails(null).schema === 1 && coerceToSelfDetails(null).budgetSplit === '');
+check('coerce detalii: câmpuri peste plafon → clamp', (() => {
+  const d = coerceToSelfDetails({ directionTitle: 't'.repeat(500), campaignBrief: 'c'.repeat(5000) });
+  return d.directionTitle.length === DETAILS_LIMITS.directionTitle && d.campaignBrief.length === DETAILS_LIMITS.campaignBrief;
 })());
 
 // ── coerce quotă + remaining ──

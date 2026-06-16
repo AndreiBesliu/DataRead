@@ -548,6 +548,13 @@ export default function AppHome() {
           </Link>
         </Card>
 
+        <Card title={t('appHome.selfMarketingTitle')}>
+          <p style={{ margin: '0 0 10px', color: 'var(--fg-1)', fontSize: 14 }}>{t('appHome.selfMarketingBody')}</p>
+          <Link to="/app/self-marketing" className="btn btn-primary" style={{ fontSize: 14, padding: '8px 14px' }}>
+            {t('appHome.selfMarketingCta')}
+          </Link>
+        </Card>
+
         <Card title={t('appHome.subscriptionTitle')}>
           <p data-testid="subscription-status" style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: subActive ? '#1e7e34' : pending ? 'var(--accent)' : 'var(--fg-1)' }}>
             {subActive

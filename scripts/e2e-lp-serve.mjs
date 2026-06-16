@@ -476,6 +476,94 @@ console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil serve
   ok(sc?.required?.includes('overview') && sc.required.includes('directions') && sc.additionalProperties === false, 'STRATEGY_SCHEMA: overview+directions required + additionalProperties false');
   ok(items?.additionalProperties === false && Array.isArray(items?.required), 'item direcție: additionalProperties false + required listă');
   ok(['title', 'positioningAngle', 'targetSegment', 'channelMix', 'keyMessages', 'campaignIdeas', 'kpis'].every((k) => items.required.includes(k)), 'item direcție: toate cele 7 câmpuri required (paritate cu TS)');
+  // Pasul Detalii: buildDetailsPrompt + DETAILS_SCHEMA + paritate DETAILS_LIMITS.
+  const dprompt = fns.buildDetailsPrompt(profile, { title: 'Achiziție plătită locală', positioningAngle: 'rapid', targetSegment: 'IMM', channelMix: 'Meta+Google', keyMessages: 'x' });
+  ok(typeof dprompt === 'string' && dprompt.includes('Achiziție plătită locală') && dprompt.includes('Presto Construct'), 'buildDetailsPrompt conține direcția + firma');
+  ok(fns.buildDetailsPrompt(null, null).length > 0, 'buildDetailsPrompt(null,null) nu aruncă');
+  const ds = fns.DETAILS_SCHEMA;
+  ok(ds && ds.additionalProperties === false && ['budgetSplit', 'audienceDetail', 'messaging', 'funnel', 'campaignBrief', 'timeline'].every((k) => ds.required.includes(k)), 'DETAILS_SCHEMA: cele 6 câmpuri required + additionalProperties false');
+  ok(JSON.stringify(C.DETAILS_LIMITS) === JSON.stringify(fns.DETAILS_LIMITS), 'DETAILS_LIMITS identic TS↔JS');
+}
+
+// ── Paritate TS↔JS pe constantele Self Marketing (limits/allowlist/quota): orice drift = silent data loss. ──
+console.log('\nQ2) paritate constante Self Marketing TS↔JS');
+{
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  ok(eq(C.SELF_PROFILE_LIMITS, fns.SELF_PROFILE_LIMITS), 'SELF_PROFILE_LIMITS identic TS↔JS');
+  ok(eq(C.STRATEGY_DIRECTION_LIMITS, fns.STRATEGY_DIRECTION_LIMITS), 'STRATEGY_DIRECTION_LIMITS identic TS↔JS');
+  ok(eq(C.INDUSTRIES, fns.SELF_INDUSTRIES), 'INDUSTRIES (TS) === SELF_INDUSTRIES (JS allowlist)');
+  ok(C.SELF_FREE_TOTAL === fns.SELF_FREE_TOTAL && C.SELF_DAILY_CAP === fns.SELF_DAILY_CAP, 'SELF_FREE_TOTAL/SELF_DAILY_CAP identice TS↔JS');
+}
+
+// ── TEST R: quota/refund Self Marketing (tranzacții pe Firestore în memorie nested). Acoperă calea
+// client-facing AI riscantă (paid Opus) pe care testele pure NU o ating — lecția actorEmail. ──
+console.log('\nR) consumeSelfQuota / consumeGlobalSelfQuota / refundSelfQuota (tranzacțional)');
+{
+  const TODAY = new Date().toISOString().slice(0, 10);
+  const QPATH = 'clients/u1/selfMarketing/quota';
+  const GPATH = 'aiUsage/__selfGlobal';
+  // Firestore în memorie cu căi nested (clients/{uid}/selfMarketing/quota) + runTransaction.
+  function makeSelfStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    function colRef(path) { return { doc(id) { return docRef(`${path}/${id}`); } }; }
+    function docRef(path) { return { _path: path, collection(sub) { return colRef(`${path}/${sub}`); } }; }
+    const tx = {
+      async get(r) { const has = store.has(r._path); return { exists: has, data: () => store.get(r._path) }; },
+      set(r, data, opts) { store.set(r._path, opts && opts.merge ? Object.assign({}, store.get(r._path) || {}, data) : Object.assign({}, data)); },
+    };
+    const db = { collection(c) { return colRef(c); }, async runTransaction(fn) { return fn(tx); } };
+    return { db, store };
+  }
+  const grab = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+
+  // consumeSelfQuota — cont nou: incrementează total + dayCount pe ziua curentă.
+  {
+    const { db, store } = makeSelfStore();
+    await fns.consumeSelfQuota('u1', db);
+    const q = store.get(QPATH);
+    ok(q && q.total === 1 && q.dayCount === 1 && q.day === TODAY, 'consumeSelfQuota: cont nou → total/dayCount = 1, ziua curentă');
+  }
+  // Plafon lifetime: total la maxim → resource-exhausted (lifetime), fără să mai scrie.
+  {
+    const { db } = makeSelfStore({ [QPATH]: { total: fns.SELF_FREE_TOTAL, day: '2020-01-01', dayCount: 0 } });
+    const e = await grab(() => fns.consumeSelfQuota('u1', db));
+    ok(e && /toate explorările gratuite/.test(e.message || ''), 'consumeSelfQuota: lifetime atins → resource-exhausted');
+  }
+  // Plafon zilnic: dayCount la maxim pe ziua curentă → resource-exhausted (azi).
+  {
+    const { db } = makeSelfStore({ [QPATH]: { total: 0, day: TODAY, dayCount: fns.SELF_DAILY_CAP } });
+    const e = await grab(() => fns.consumeSelfQuota('u1', db));
+    ok(e && /ziua de azi/.test(e.message || ''), 'consumeSelfQuota: plafon zilnic atins → resource-exhausted (azi)');
+  }
+  // Rollover de zi: dayCount vechi pe altă zi se resetează (lifetime nu).
+  {
+    const { db, store } = makeSelfStore({ [QPATH]: { total: 1, day: '2020-01-01', dayCount: fns.SELF_DAILY_CAP } });
+    await fns.consumeSelfQuota('u1', db);
+    const q = store.get(QPATH);
+    ok(q.total === 2 && q.dayCount === 1 && q.day === TODAY, 'consumeSelfQuota: zi nouă → dayCount resetat, total crește');
+  }
+  // Plafon GLOBAL: la SELF_GLOBAL_DAILY_CAP pe ziua curentă → resource-exhausted; cont nou → count=1.
+  {
+    const { db } = makeSelfStore({ [GPATH]: { day: TODAY, count: fns.SELF_GLOBAL_DAILY_CAP } });
+    const e = await grab(() => fns.consumeGlobalSelfQuota(db));
+    ok(e && /platformei a fost atinsă/.test(e.message || ''), 'consumeGlobalSelfQuota: plafon global atins → resource-exhausted');
+    const { db: db2, store: s2 } = makeSelfStore();
+    await fns.consumeGlobalSelfQuota(db2);
+    ok(s2.get(GPATH).count === 1, 'consumeGlobalSelfQuota: ziua nouă → count = 1');
+  }
+  // refundSelfQuota: decrementează total+dayCount, niciodată sub 0; doc inexistent = no-op fără throw.
+  {
+    const { db, store } = makeSelfStore({ [QPATH]: { total: 3, dayCount: 1, day: TODAY } });
+    await fns.refundSelfQuota('u1', db);
+    const q = store.get(QPATH);
+    ok(q.total === 2 && q.dayCount === 0, 'refundSelfQuota: decrement total+dayCount');
+    const { db: db0, store: s0 } = makeSelfStore({ [QPATH]: { total: 0, dayCount: 0, day: TODAY } });
+    await fns.refundSelfQuota('u1', db0);
+    ok(s0.get(QPATH).total === 0 && s0.get(QPATH).dayCount === 0, 'refundSelfQuota: nu coboară sub 0');
+    const { db: dbN, store: sN } = makeSelfStore();
+    const eN = await grab(() => fns.refundSelfQuota('u1', dbN));
+    ok(eN === null && !sN.has(QPATH), 'refundSelfQuota: doc inexistent → no-op fără throw');
+  }
 }
 
 // ── TEST O: clientExists — gardă defense-in-depth pe oglindirile cu clientUid denormalizat

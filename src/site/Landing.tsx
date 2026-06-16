@@ -80,6 +80,11 @@ export default function Landing() {
               {t('landing.heroSecondary')}
             </Link>
           </div>
+          <div style={{ marginTop: 14 }}>
+            <Link to={p('/self-marketing')} style={{ fontSize: 15, color: 'var(--accent)', fontWeight: 700 }}>
+              ✨ {t('landing.heroSelf')}
+            </Link>
+          </div>
         </div>
       </section>
 
