@@ -22,27 +22,13 @@ const firebaseConfig = {
 };
 
 export const firebaseApp = initializeApp(firebaseConfig);
-export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
 
-// Cloud Functions (callables + extensia Stripe). TREBUIE să coincidă cu regiunea în care sunt
-// deployate functions-urile/extensia — un callable invocat pe regiunea greșită eșuează cu
-// "internal". Configurabil prin VITE_FIREBASE_FUNCTIONS_REGION; default-ul proiectului:
-// europe-central2.
-const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'europe-central2';
-export const functions = getFunctions(firebaseApp, functionsRegion);
-
-// Utilizatorul rămâne logat între lansări.
-setPersistence(auth, browserLocalPersistence).catch((e) => {
-  console.warn('Auth persistence setup failed:', e);
-});
-
-// App Check (opțional): atestă cererile prin reCAPTCHA v3. Inert până se setează
-// VITE_RECAPTCHA_V3_KEY, deci dev/build-urile neconfigurate nu sunt afectate. Când Andrei adaugă
-// cheia, se activează și enforcement-ul din consolă pentru functions/Firestore.
-// `navigator.webdriver` e true sub automatizare (Playwright: prerender + boot-smoke) — sărim init-ul
-// App Check acolo, altfel reCAPTCHA v3 încearcă să se încarce headless și aruncă „placeholder must be
-// empty", spărgând prerender-ul. Utilizatorii reali au webdriver=false → App Check pornește normal.
+// App Check (reCAPTCHA v3) — inițializat ÎNAINTE de auth/firestore/functions, ca SDK-ul să atașeze
+// token-ul App Check de la PRIMA cerere. Altfel listener-ele Firestore pornesc la boot înainte de
+// inițializarea App Check și pleacă fără token (→ 0% verified pe Firestore, deși Auth, care apelează la
+// login mai târziu, e 100%). Inert până se setează VITE_RECAPTCHA_V3_KEY. `navigator.webdriver` = true sub
+// automatizare (Playwright: prerender + boot-smoke) → sărim init-ul, altfel reCAPTCHA aruncă headless
+// „placeholder must be empty". Utilizatorii reali (webdriver=false) primesc App Check normal.
 const appCheckKey = import.meta.env.VITE_RECAPTCHA_V3_KEY as string | undefined;
 if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver) {
   try {
@@ -58,3 +44,18 @@ if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver) {
     console.warn('App Check init failed:', e);
   }
 }
+
+export const auth = getAuth(firebaseApp);
+export const db = getFirestore(firebaseApp);
+
+// Cloud Functions (callables + extensia Stripe). TREBUIE să coincidă cu regiunea în care sunt
+// deployate functions-urile/extensia — un callable invocat pe regiunea greșită eșuează cu
+// "internal". Configurabil prin VITE_FIREBASE_FUNCTIONS_REGION; default-ul proiectului:
+// europe-central2.
+const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'europe-central2';
+export const functions = getFunctions(firebaseApp, functionsRegion);
+
+// Utilizatorul rămâne logat între lansări.
+setPersistence(auth, browserLocalPersistence).catch((e) => {
+  console.warn('Auth persistence setup failed:', e);
+});
