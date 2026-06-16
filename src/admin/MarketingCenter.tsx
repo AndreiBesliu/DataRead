@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
+import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -366,6 +367,20 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
     navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => {});
   };
 
+  const pdfReport = () => {
+    if (!report) return;
+    const clientName = campaigns[0]?.clientName || '';
+    printHtmlDoc(composePrintHtml({
+      title: printTitle([t('admin.reportTitle'), clientName]),
+      meta: [clientName, `${t('admin.reportAt')} ${fmtTs(reportAt)}`].filter((m) => m && m.trim()),
+      sections: [
+        { label: t('admin.reportSummary'), body: report.summary },
+        { label: t('admin.reportHighlights'), body: report.highlights },
+        { label: t('admin.reportRecommendations'), body: report.recommendations },
+      ],
+    }));
+  };
+
   const kpis = kpisFromTotals(addTotals(campaigns.map((c) => c.data.totals)));
   const section = (label: string, body: string) =>
     body.trim() ? (
@@ -401,6 +416,9 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
           {section(t('admin.reportRecommendations'), report.recommendations)}
           <button className="btn" style={{ padding: '5px 14px', fontSize: 12, color: copied ? '#1e7e34' : undefined }} onClick={copyReport}>
             {copied ? t('admin.copied') : t('admin.reportCopyAll')}
+          </button>
+          <button className="btn" style={{ padding: '5px 14px', fontSize: 12, marginLeft: 8 }} onClick={pdfReport}>
+            {t('admin.pdfBtn')}
           </button>
         </div>
       )}

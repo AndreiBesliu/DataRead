@@ -919,6 +919,23 @@ normaliser, secretele niciodată în chat/repo.
 > (clientExists: existent→true, inexistent/gol/null→false, eroare→false fail-closed). Verificat: 9/9 suites
 > + e2e (TEST O) + boot-smoke. DEPLOYED: functions (fără hosting/reguli).
 
+**2026-06-16 - Task Completed — Export PDF (raport lunar + livrabile), admin + portal client**
+> Model: Claude Opus 4.8 (1M context)
+> Câștig rapid din analiza competitorului (task #49). Azi raportul/livrabilele se puteau doar copia în
+> clipboard, iar portalul clientului n-avea export. Decizie (AskUserQuestion): **print-to-PDF din browser**
+> (ZERO dependență nouă — regula CLAUDE.md) + conținut = raport + livrabile, în admin ȘI portal client.
+> - **util nou `src/utils/printDoc.ts`** (pur + 1 side-effect): `escapeHtml`, `composePrintHtml` (document
+>   HTML A4 brandat, fundal alb, print CSS; sare secțiunile goale; ESCAPEAZĂ tot textul), `printHtmlDoc`
+>   (iframe ascuns → `print()`, anti popup-blocker), `printTitle`. Pure = testabile headless; `document` e
+>   atins DOAR în side-effect (SSR/test-safe).
+> - **wiring (4 locuri):** buton „📄 PDF" pe raport (`MarketingCenter` ClientReportPanel) + pe livrabile
+>   (`LeadRequests`, lângă Copy all), și „📄 Descarcă PDF" pe raportul + cardurile de livrabile din portalul
+>   client (`AppHome` MarketingPortal). i18n `admin.pdfBtn` + `appHome.pdfBtn` (ro+en).
+> **Review:** MANUAL (review-urile automate se loveau de limita de sesiune). Punctul de securitate (injecție
+> în documentul de print din text liber AI/operator) e acoperit de teste: `escapeHtml` + `composePrintHtml`
+> escapează `<script>`/HTML. Verificat: 9/9 suites (+escape/compose) + e2e + build:site (app.html) + boot-smoke.
+> DEPLOYED: hosting + rules (fără functions).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

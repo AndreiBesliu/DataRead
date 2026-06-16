@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
+import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { OBJECTIVES, type Objective } from '../types/onboarding';
 import {
   DELIVERABLE_MAX,
@@ -101,6 +102,19 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
       if (text) parts.push('', `— ${t(f.labelKey)} —`, text);
     }
     return parts.join('\n');
+  };
+
+  /** Export PDF al pachetului de livrabile (print-to-PDF din browser) — aceleași câmpuri client-safe ca buildCopyAll. */
+  const pdfDeliverables = (d: MarketingRequest) => {
+    const meta = [
+      d.offer ? `${t('admin.reqFormOffer')}: ${d.offer}` : '',
+      d.budget ? `${t('admin.reqFormBudget')}: ${d.budget}` : '',
+      d.objective ? `${t('admin.reqFormObjective')}: ${t(`onboarding.objective.${d.objective}`)}` : '',
+    ].filter(Boolean);
+    const sections = deliverableFieldsFor(d.kind)
+      .filter((f) => f.key !== 'notes')
+      .map((f) => ({ label: t(f.labelKey), body: d.deliverables[f.key] }));
+    printHtmlDoc(composePrintHtml({ title: printTitle([d.title || t('admin.reqTitle')]), meta, sections }));
   };
 
   useEffect(() => {
@@ -483,6 +497,11 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
                   {deliverableFieldsFor(draft.kind).some((f) => f.key !== 'notes' && draft.deliverables[f.key].trim()) && (
                     <button className="btn" style={{ padding: '6px 16px', fontSize: 12, color: copiedKey === 'all' ? '#1e7e34' : undefined }} onClick={() => copyText('all', buildCopyAll(draft))}>
                       {copiedKey === 'all' ? t('admin.copied') : `📋 ${t('admin.copyAll')}`}
+                    </button>
+                  )}
+                  {deliverableFieldsFor(draft.kind).some((f) => f.key !== 'notes' && draft.deliverables[f.key].trim()) && (
+                    <button className="btn" style={{ padding: '6px 16px', fontSize: 12 }} onClick={() => pdfDeliverables(draft)}>
+                      {t('admin.pdfBtn')}
                     </button>
                   )}
                 </div>

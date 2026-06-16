@@ -29,6 +29,7 @@ import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
 import { coerceToLpLeadState } from '../src/types/lpLeadState';
 import { csvCell, toCsv } from '../src/utils/csv';
 import { coerceToRecommendedChannels, sortByImpact } from '../src/types/recommendation';
+import { composePrintHtml, escapeHtml } from '../src/utils/printDoc';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -278,6 +279,17 @@ check('coerceToPreviewScreens: listă goală → default (nu rămâne gol)', coe
 check('withIds: label ne-string → "", reindexează', (() => {
   const s = withIds([{ label: 42 as unknown as string, width: 400, height: 800 }]);
   return s[0].label === '' && s[0].width === 400 && s[0].id === 'scr0';
+})());
+
+// ── export PDF (print-to-PDF din browser) ──
+check('escapeHtml: neutralizează < > & "', escapeHtml('<b>"x"&y</b>') === '&lt;b&gt;&quot;x&quot;&amp;y&lt;/b&gt;');
+check('composePrintHtml: conține titlul + secțiunile non-goale, sare cele goale', (() => {
+  const html = composePrintHtml({ title: 'Raport TEST', meta: ['Client: Acme'], sections: [{ label: 'Rezumat', body: 'Mers bine' }, { label: 'Gol', body: '   ' }] });
+  return html.includes('<title>Raport TEST</title>') && html.includes('Rezumat') && html.includes('Mers bine') && html.includes('Client: Acme') && !html.includes('>Gol<');
+})());
+check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul de print)', (() => {
+  const html = composePrintHtml({ title: 'T', sections: [{ label: 'S', body: '<script>alert(1)</script>' }] });
+  return html.includes('&lt;script&gt;alert(1)&lt;/script&gt;') && !html.includes('<script>alert(1)');
 })());
 
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {

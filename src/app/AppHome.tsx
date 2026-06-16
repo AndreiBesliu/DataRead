@@ -8,6 +8,7 @@ import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } f
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
 import { toCsv } from '../utils/csv';
+import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { useEntitlementStore } from '../store/entitlementStore';
@@ -75,6 +76,27 @@ function MarketingPortal({ uid }: { uid: string }) {
   if (camps === null) return null;
   const hasData = camps.length > 0 || report !== null || deliv.length > 0;
 
+  const pdfReport = () => {
+    if (!report) return;
+    printHtmlDoc(composePrintHtml({
+      title: printTitle([t('appHome.portalReportTitle')]),
+      sections: [
+        { label: t('admin.reportSummary'), body: report.summary },
+        { label: t('admin.reportHighlights'), body: report.highlights },
+        { label: t('admin.reportRecommendations'), body: report.recommendations },
+      ],
+    }));
+  };
+  const pdfDeliv = (d: { title: string; kind: RequestKind; deliverables: Record<string, string> }) => {
+    printHtmlDoc(composePrintHtml({
+      title: printTitle([d.title || t('appHome.portalDeliverables')]),
+      sections: deliverableFieldsFor(d.kind)
+        .filter((f) => f.key !== 'notes' && d.deliverables[f.key]?.trim())
+        .map((f) => ({ label: t(f.labelKey), body: d.deliverables[f.key] })),
+    }));
+  };
+  const portalPdfBtn = { border: '1px solid var(--border)', background: 'var(--bg-0)', color: 'var(--fg-1)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' } as const;
+
   return (
     <section style={{ marginTop: 28 }}>
       <h2 style={{ fontSize: 20, marginBottom: 12 }}>{t('appHome.portalTitle')}</h2>
@@ -91,6 +113,7 @@ function MarketingPortal({ uid }: { uid: string }) {
               </div>
             ) : null
           )}
+          <button onClick={pdfReport} style={{ ...portalPdfBtn, marginTop: 4 }}>{t('appHome.pdfBtn')}</button>
         </div>
       )}
 
@@ -134,6 +157,7 @@ function MarketingPortal({ uid }: { uid: string }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <strong style={{ fontSize: 15 }}>{d.title || '—'}</strong>
                   <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t(d.kind === 'content' ? 'admin.reqKindContent' : 'admin.reqKindCampaign')}</span>
+                  <button onClick={() => pdfDeliv(d)} style={{ ...portalPdfBtn, marginLeft: 'auto', padding: '4px 10px' }}>{t('appHome.pdfBtn')}</button>
                 </div>
                 {deliverableFieldsFor(d.kind)
                   .filter((f) => f.key !== 'notes' && d.deliverables[f.key]?.trim())

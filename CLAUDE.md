@@ -161,6 +161,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `CHANNELS_SCHEMA` (anti-drift); coerce TS folosește aceleași 4 obiective + 4 niveluri de impact ca schema.
   Inspirat de competitor (vezi `docs/ANALIZA-COMPETITOR-...`); pivotul self-serve (client-gen+credite) e
   amânat post-MVP. Testat în test-landing (coerce/sort) + e2e TEST N (prompt+schema).
+- **Export PDF (ACTIV 16.06.2026):** `src/utils/printDoc.ts` — print-to-PDF din browser, FĂRĂ dependență
+  (regula minimizare deps): `composePrintHtml` (pur) compune un document A4 brandat alb cu tot textul ESCAPAT
+  (`escapeHtml` — anti-injecție din raport/livrabile, text liber AI/operator), `printHtmlDoc` tipărește
+  într-un iframe ascuns (utilizatorul alege „Salvează ca PDF"). Butoane „📄 PDF" pe raportul lunar
+  (`MarketingCenter`) + livrabile (`LeadRequests`) și în portalul clientului (`AppHome`). Testat headless
+  (escape + compose). Amânat: jsPDF (descărcare fără dialog); logo imagine în antet; PDF pe KPI.
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`
