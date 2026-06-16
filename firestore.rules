@@ -85,9 +85,13 @@ service cloud.firestore {
         )
         && request.resource.data.schema == 1
         && request.resource.data.onboardingStatus in ['none', 'submitted'];
-      // Update: clientul nu poate atinge entitlement și nu poate retrograda schema.
+      // Update: clientul poate atinge DOAR câmpurile proprii (whitelist) — NICIODATĂ entitlement sau
+      // câmpuri oglindite de functions (ex. marketingReport, citit de portal ȘI de operatori). Fără
+      // whitelist, un client își putea falsifica raportul / injecta date arbitrare în doc-ul citit de admin.
       allow update: if signedInAs(uid)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['entitlement'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['email', 'displayName', 'locale', 'onboardingStatus', 'tosAcceptedAt']
+        )
         && request.resource.data.schema == 1;
       allow delete: if false;
 
@@ -264,6 +268,9 @@ service cloud.firestore {
       allow write: if false;
 
       match /checkout_sessions/{id} {
+        // Create rămâne permis: e tiparul cerut de extensia firestore-stripe-payments (clientul creează
+        // sesiunea, extensia completează `url`); priceId-ul e validat server-side de extensie. App Check
+        // (de activat înainte de lansarea plăților) e protecția corectă aici, nu blocarea create-ului.
         allow read, create: if signedInAs(uid);
         allow update, delete: if false;
       }

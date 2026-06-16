@@ -7,5 +7,6 @@ export const CONTACT_EMAIL = 'besliandrei@gmail.com';
 
 const env = (import.meta.env ?? {}) as Record<string, string | undefined>;
 
-/** Originea publică a site-ului — canonical/hreflang/sitemap. */
-export const SITE_ORIGIN = env.VITE_SITE_ORIGIN || 'https://dataread-e1bd6.web.app';
+/** Originea publică a site-ului — canonical/hreflang/sitemap. Domeniul oficial e dataread.ro (live);
+ *  web.app rămâne doar fallback de hosting. Se poate suprascrie cu VITE_SITE_ORIGIN la build. */
+export const SITE_ORIGIN = env.VITE_SITE_ORIGIN || 'https://dataread.ro';
