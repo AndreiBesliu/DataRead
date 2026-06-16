@@ -526,6 +526,9 @@ export default function AppHome() {
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
         <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{user.email}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+          <Link to="/app/ghid" className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>
+            {t('help.title')}
+          </Link>
           <Link to="/" className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>
             {t('appHome.backToSite')}
           </Link>

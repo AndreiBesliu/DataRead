@@ -13,6 +13,7 @@ import Contact from './site/Contact';
 import Legal from './site/Legal';
 import AppHome from './app/AppHome';
 import OnboardingForm from './app/OnboardingForm';
+import HelpHome from './app/HelpHome';
 import AdminHome from './admin/AdminHome';
 
 /** Ține limba i18n sincronizată cu path-ul la navigările client-side (regula: pe rutele publice
@@ -64,6 +65,7 @@ function AppShell() {
       ))}
       <Route path="/app" element={<AppHome />} />
       <Route path="/app/onboarding" element={<OnboardingForm />} />
+      <Route path="/app/ghid" element={<HelpHome />} />
       <Route path="/admin" element={<AdminHome />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

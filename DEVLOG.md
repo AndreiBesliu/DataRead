@@ -954,6 +954,22 @@ normaliser, secretele niciodată în chat/repo.
 > confirmat corect (nav, paritate i18n, logică pură, edge-cases). Verificat: 9/9 suites (+9 buildSuggestions)
 > + e2e + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
 
+**2026-06-16 - Task Completed (schelet) — Secțiune Ghid/Documentație (titluri + subtitluri), operator + client**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei: secțiune de documentație care explică platforma + funcțiile. Decizie: SCHELET acum (titluri +
+> subtitluri, per modul), completat incremental pe parcurs (proza completă + polish spre lansare; evită
+> rescrierea ×2 ro/en a feature-urilor încă volatile). Ambele audiențe.
+> - **`src/help/helpContent.ts`** (date pure): `OPERATOR_HELP` (8 module) + `CLIENT_HELP` (5 module), doar
+>   chei i18n (titlu + subtitluri); câmp viitor `bodyKey` pentru conținut. **`src/help/HelpView.tsx`**
+>   (prezentațional, refolosit): randează titluri + subtitluri + placeholder „în curând".
+> - **/admin**: tab nou „Ghid" (HelpView + OPERATOR_HELP). **/app**: rută `/app/ghid` (`HelpHome` + CLIENT_HELP)
+>   + link „Ghid" în header. i18n `help.*` + `admin.navHelp` (ro+en, ~60 chei).
+> - **Test**: acoperirea cheilor — fiecare cheie din helpContent rezolvă în `ro` (prinde cheile lipsă care
+>   altfel s-ar randa brut); paritatea en e impusă compile-time (`en: typeof ro`).
+> Review manual (schelet prezentațional, risc mic; riscul real = chei i18n lipsă, acoperit de test).
+> Verificat: 9/9 suites (+acoperire chei) + build:site (app.html) + boot-smoke. DEPLOYED: hosting + rules.
+> RĂMÂNE DESCHIS pentru completarea incrementală a conținutului (bodyKey per secțiune).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

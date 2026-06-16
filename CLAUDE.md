@@ -173,6 +173,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   campanii fără raport luna curentă. `SuggestionsPanel` (tab nou în AdminHome) listenează `leads`/`campaigns`
   (limit 200/300), randează lista sortată pe severitate cu „Deschide" → schimbă tabul. Notă: la livrarea
   RBAC tabul Administratori lipsea din nav array (inaccesibil) — reparat odată cu acest tab.
+- **Ghid/Documentație — SCHELET (ACTIV 16.06.2026):** `src/help/helpContent.ts` (date pure: `OPERATOR_HELP`
+  8 module + `CLIENT_HELP` 5 module, doar chei i18n — titluri+subtitluri; `bodyKey` viitor pt. conținut),
+  `src/help/HelpView.tsx` (prezentațional, refolosit). Tab „Ghid" în /admin + rută `/app/ghid`
+  (`src/app/HelpHome.tsx`) + link în header /app. **Strategie:** schelet acum, conținut completat
+  INCREMENTAL per feature (ca DEVLOG), polish spre lansare. i18n `help.*` ro+en; test de acoperire a cheilor
+  (helpContent → ro). i18n = sursă unică pentru titluri.
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`

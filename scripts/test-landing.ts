@@ -31,6 +31,8 @@ import { csvCell, toCsv } from '../src/utils/csv';
 import { coerceToRecommendedChannels, sortByImpact } from '../src/types/recommendation';
 import { composePrintHtml, escapeHtml } from '../src/utils/printDoc';
 import { buildSuggestions } from '../src/admin/suggestions';
+import ro from '../src/i18n/locales/ro';
+import { OPERATOR_HELP, CLIENT_HELP } from '../src/help/helpContent';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -328,6 +330,16 @@ check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul d
   })());
   check('sugestii: sortare după severitate (high prima)', buildSuggestions({ leads: [lead({ createdAtMs: NOW - 5 * day })], campaigns: [camp({ verdict: 'test' })], nowMs: NOW })[0].severity === 'high');
 }
+
+// ── Ghid/Documentație: acoperirea cheilor i18n din helpContent (altfel s-ar randa cheia brută) ──
+check('help: toate cheile din helpContent (titlu+subtitluri) există în ro', (() => {
+  const resolve = (key: string): unknown => key.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[k] : undefined), ro);
+  const keys: string[] = [];
+  for (const s of [...OPERATOR_HELP, ...CLIENT_HELP]) { keys.push(s.titleKey); for (const it of s.items) { keys.push(it.titleKey); if (it.bodyKey) keys.push(it.bodyKey); } }
+  const missing = keys.filter((k) => typeof resolve(k) !== 'string' || !(resolve(k) as string).trim());
+  if (missing.length) console.error('   chei lipsă:', missing.join(', '));
+  return missing.length === 0;
+})());
 
 check('coerceToLpDecor: custom + elements coerce (formă necunoscută → circle, clamp x)', (() => {
   const d = coerceToLpDecor({ effect: 'custom', elements: [{ shape: 'blob', x: 999, size: 9999 }] });
