@@ -106,6 +106,7 @@ const rawDesign = { ...C.defaultCustomTheme('ocean'), headingFont: 'poppins', bo
 const lp = C.coerceToLandingPage({
   schema: 1, slug, title: 'TEST Verificare LP — constellation',
   seoDescription: 'Pagină de test pentru verificarea sistemului LP.',
+  ogImage: 'https://cdn.example.com/og.png', favicon: 'https://cdn.example.com/fav.ico',
   status: 'published', lang: 'ro', editor: 'visual', html: '',
   blocks: [
     { type: 'hero', props: { heading: 'Titlu Hero de Test', subheading: 'Subtitlu de test', ctaText: 'Acțiune', ctaHref: '#' } },
@@ -156,6 +157,9 @@ state.lpDoc = servedDoc; reset();
   ok(res._headers['Cache-Control'] === 'no-store', 'Cache-Control: no-store (fără cache pe pagina dinamică)');
   ok(!!res._headers['Content-Security-Policy'], 'CSP prezent');
   ok(b.includes('<title>TEST Verificare LP'), 'titlu SEO randat');
+  ok(b.includes('property="og:image"') && b.includes('cdn.example.com/og.png'), 'og:image injectat (social card)');
+  ok(b.includes('name="twitter:card" content="summary_large_image"'), 'twitter card large (cu og:image)');
+  ok(b.includes('rel="icon"') && b.includes('cdn.example.com/fav.ico'), 'favicon injectat');
   ok(b.includes(':root{') && b.includes('#2dd4bf'), 'CSS design pe :root + accent temă Ocean (#2dd4bf)');
   ok(b.includes('position:relative;z-index:0'), 'body stacking (canvas decor în spate fără a împacheta conținutul)');
   ok(b.includes('@import') && /Poppins/i.test(b), 'font @import (Poppins) aplicat');
@@ -172,6 +176,19 @@ state.lpDoc = servedDoc; reset();
   ok(varA && varA.id === '__direct' && varA.data.visits.__inc === 1, 'variantă __direct (vizită fără UTM)');
   writeFileSync(join(root, 'scripts', '.tmp-lp-page.html'), b); // pentru screenshot vizual
 }
+
+// ── TEST A2: SEO negativ — fără og:image → card 'summary'; favicon non-https → omis ──
+console.log('\nA2) head SEO fără og:image + favicon non-https');
+state.lpDoc = { ...servedDoc, ogImage: '', favicon: 'http://insecure/f.ico' }; reset();
+{
+  const res = mkRes();
+  await serveLp(mkReq({ path: `/p/${slug}` }), res);
+  const b = String(res._body || '');
+  ok(!b.includes('property="og:image"'), 'fără ogImage → fără meta og:image');
+  ok(b.includes('name="twitter:card" content="summary"'), 'twitter card summary (fără imagine)');
+  ok(!b.includes('rel="icon"'), 'favicon non-https → omis');
+}
+state.lpDoc = servedDoc;
 
 // ── TEST B: GET pe o pagină DRAFT → 404 (nu se servește) ─────────────────────
 console.log('\nB) GET /p/%s când e draft → 404', slug);

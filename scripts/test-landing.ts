@@ -51,6 +51,12 @@ check('coerce(null) → default sigur (draft, html gol, slug gol)', (() => {
   return lp.status === 'draft' && lp.html === '' && lp.slug === '' && lp.schema === 1 && lp.lang === 'ro' && lp.projectId === '' && Object.keys(lp.knownVariants).length === 0;
 })());
 check('coerce: projectId păstrat (organizare)', coerceToLandingPage({ projectId: 'proj123' }).projectId === 'proj123');
+check('coerce: ogImage/favicon https păstrat, non-https/js → "", clamp 500', (() => {
+  const ok = coerceToLandingPage({ ogImage: 'https://x/og.png', favicon: 'https://x/f.ico' });
+  const bad = coerceToLandingPage({ ogImage: 'http://x/og.png', favicon: 'javascript:alert(1)' });
+  const clamp = coerceToLandingPage({ ogImage: 'https://x/' + 'a'.repeat(600) });
+  return ok.ogImage === 'https://x/og.png' && ok.favicon === 'https://x/f.ico' && bad.ogImage === '' && bad.favicon === '' && clamp.ogImage.length === 500;
+})());
 check('csvCell: neutralizează injecția de formule (=,+,-,@) + escapează ghilimele', (() => {
   return csvCell('=SUM(A1)') === '"\'=SUM(A1)"' && csvCell('+1') === '"\'+1"' && csvCell('@x') === '"\'@x"'
     && csvCell('ok') === '"ok"' && csvCell('a"b') === '"a""b"' && toCsv([['=x', 'b']]) === '"\'=x","b"';

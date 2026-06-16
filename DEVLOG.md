@@ -996,6 +996,21 @@ normaliser, secretele niciodată în chat/repo.
 > (app.html) + boot-smoke. DEPLOYED: hosting + rules. Următoarele felii LP: #58 SEO/social, #59 conversie/
 > formulare, #60 A/B testing.
 
+**2026-06-16 - Task Completed — LP Studio slice 2: SEO & social sharing (og:image/Twitter/favicon)**
+> Model: Claude Opus 4.8 (1M context)
+> Slice 2 din dezvoltarea LP Studio. `composeLpPage` (serveLp) emitea deja title/description/og:title/
+> og:description/og:url + canonical; am adăugat **og:image + twitter:card(+title/description/image) + favicon**
+> → card vizual frumos la share (FB/WhatsApp/LinkedIn). Plus fix gap: `seoDescription` n-avea input în editor.
+> - **landingPage.ts**: câmpuri `ogImage`/`favicon` (≤500) + coerce `SAFE_HTTPS` (https-only → altfel '').
+> - **serveLp**: injectează meta-urile DOAR pentru URL-uri https (`LP_SAFE_IMG`) + escapate (`lpEscape`);
+>   twitter:card = summary_large_image dacă există og:image, altfel summary. Fără modificări CSP (img-src https: deja ok).
+> - **LpEditor**: rând SEO (seoDescription + ogImage + favicon) + payload. **firestore.rules**: validare
+>   optional-if-present pe ogImage/favicon (anti-bloat). i18n ro+en.
+> **Securitate (head public, URL-uri user):** dublă protecție — https-only la coerce ȘI la serve + escaping
+> în atribut; tested. Review: manual (suprafață mică, oglindă a pattern-ului og:* deja în prod). Verificat:
+> 9/9 suites (+coerce) + e2e (og:image/twitter/favicon prezent + caz negativ non-https omis) + build:site
+> (app.html) + boot-smoke. DEPLOYED: functions + hosting + rules. QA: testează cardul cu opengraph.xyz.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -52,6 +52,10 @@ export interface LandingPage {
   slug: string; // = ID-ul documentului
   title: string;
   seoDescription: string;
+  /** Imaginea de share (og:image / twitter:image) — URL https; gol = fără card cu imagine. */
+  ogImage: string;
+  /** Favicon-ul paginii — URL https; gol = fără. */
+  favicon: string;
   status: LpStatus;
   lang: 'ro' | 'en'; // doar pentru <html lang> + limba de generare AI
   /** Modul de autorare: 'code' (textarea/AI) sau 'visual' (builder pe blocuri). */
@@ -126,12 +130,23 @@ function coerceForm(v: unknown): LpFormConfig {
   };
 }
 
+export const LP_URL_MAX = 500;
+const SAFE_HTTPS = /^https:\/\/[^\s"')]+$/i;
+/** URL https sigur (og:image / favicon) sau '' — același criteriu ca SAFE_IMG_URL din themes + clamp.
+ *  Port JS în serveLp (`LP_SAFE_IMG`) validează identic la servire (runtime-dual). */
+function coerceHttpsUrl(v: unknown): string {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return SAFE_HTTPS.test(s) ? s.slice(0, LP_URL_MAX) : '';
+}
+
 export function emptyLandingPage(createdBy = ''): LandingPage {
   return {
     schema: LANDING_PAGE_SCHEMA,
     slug: '',
     title: '',
     seoDescription: '',
+    ogImage: '',
+    favicon: '',
     status: 'draft',
     lang: 'ro',
     editor: 'code',
@@ -179,6 +194,8 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     slug: sanitizeSlug(d.slug),
     title: str(d.title, LP_TITLE_MAX),
     seoDescription: str(d.seoDescription, LP_DESC_MAX),
+    ogImage: coerceHttpsUrl(d.ogImage),
+    favicon: coerceHttpsUrl(d.favicon),
     status: LP_STATUSES.includes(d.status as LpStatus) ? (d.status as LpStatus) : 'draft',
     lang: d.lang === 'en' ? 'en' : 'ro',
     editor: d.editor === 'visual' ? 'visual' : 'code',

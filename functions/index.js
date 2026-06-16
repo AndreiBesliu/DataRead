@@ -1199,6 +1199,9 @@ function composeLpPage(slug, lp, req) {
   const lang = lp.lang === 'en' ? 'en' : 'ro';
   const title = lpEscape((lp.title || '').slice(0, 140) || slug);
   const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
+  // Social sharing: og:image/favicon = URL-uri user → DOAR https (LP_SAFE_IMG) + escapate în atribut.
+  const ogImage = typeof lp.ogImage === 'string' && LP_SAFE_IMG.test(lp.ogImage) ? lpEscape(lp.ogImage.slice(0, 500)) : '';
+  const favicon = typeof lp.favicon === 'string' && LP_SAFE_IMG.test(lp.favicon) ? lpEscape(lp.favicon.slice(0, 500)) : '';
   // Host-ul vine din header (controlabil de client) → îl validăm la un hostname plauzibil și îl escapăm,
   // ca să nu injecteze atribute/markup în <link>/<meta>. Fallback la domeniul canonic dacă e suspect.
   const rawHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
@@ -1218,6 +1221,12 @@ function composeLpPage(slug, lp, req) {
     `<meta property="og:title" content="${title}">` +
     (desc ? `<meta property="og:description" content="${desc}">` : '') +
     `<meta property="og:url" content="${canonical}">` +
+    (ogImage ? `<meta property="og:image" content="${ogImage}">` : '') +
+    `<meta name="twitter:card" content="${ogImage ? 'summary_large_image' : 'summary'}">` +
+    `<meta name="twitter:title" content="${title}">` +
+    (desc ? `<meta name="twitter:description" content="${desc}">` : '') +
+    (ogImage ? `<meta name="twitter:image" content="${ogImage}">` : '') +
+    (favicon ? `<link rel="icon" href="${favicon}">` : '') +
     `<style>${css}</style></head><body>${pageDecor}${body}${lpScripts(slug, lp)}</body></html>`
   );
 }

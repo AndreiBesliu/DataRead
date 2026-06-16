@@ -175,7 +175,10 @@ service cloud.firestore {
         && request.resource.data.html is string && request.resource.data.html.size() <= 200000
         && request.resource.data.status in ['draft', 'published']
         // knownVariants (allowlist de variante de link) — opțional, dar dacă există: map plafonat (anti-bloat).
-        && (!('knownVariants' in request.resource.data) || (request.resource.data.knownVariants is map && request.resource.data.knownVariants.size() <= 200));
+        && (!('knownVariants' in request.resource.data) || (request.resource.data.knownVariants is map && request.resource.data.knownVariants.size() <= 200))
+        // SEO/social (opțional): URL-uri plafonate (anti-bloat; https validat în serveLp + coerce).
+        && (!('ogImage' in request.resource.data) || (request.resource.data.ogImage is string && request.resource.data.ogImage.size() <= 500))
+        && (!('favicon' in request.resource.data) || (request.resource.data.favicon is string && request.resource.data.favicon.size() <= 500));
       allow delete: if isAdmin();
 
       // Portal client: clientul logat citește submisiile/statisticile/variantele LP-urilor LUI

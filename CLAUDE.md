@@ -194,8 +194,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `schema:1`, coerce unic în `src/types/landingPage.ts`; design = `CustomTheme`; cod = un singur HTML
   self-contained ≤200KB. **Servire:** funcția `serveLp` (onRequest, europe-central2), legată prin
   rewrite Hosting `/p/** → serveLp` (gen-2, pinTag) ÎNAINTE de catch-all. serveLp = „nexus de trafic":
-  randează SSR (SEO din doc + design injectat ca variabile CSS prin `lpThemeCss` = port JS al
-  `customThemeCss`), `Cache-Control: no-store` (ca fiecare hit să se logheze), CSP restrictivă, și
+  randează SSR (SEO din doc: title/description + **og:image/twitter:card/favicon** din `ogImage`/`favicon`
+  ale LP-ului, URL-uri https validate `LP_SAFE_IMG` + escapate — slice 2, 16.06.2026; design injectat ca
+  variabile CSS prin `lpThemeCss` = port JS al `customThemeCss`), `Cache-Control: no-store` (ca fiecare hit
+  să se logheze), CSP restrictivă, și
   LOGHEAZĂ fiecare vizită → rollup zilnic `landingPages/{slug}/stats/{YYYY-MM-DD}` (increment) + doc
   brut `visits`. Beacon injectat (scroll/timp/CTA → `/p/_track`) + formular opțional per LP
   (`/p/_submit` → `submissions` + opțional lead în pipeline). Motor analytics pur:

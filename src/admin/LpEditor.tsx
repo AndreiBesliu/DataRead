@@ -78,6 +78,8 @@ export default function LpEditor({
       slug: draft.slug,
       title: draft.title.slice(0, 140),
       seoDescription: draft.seoDescription.slice(0, 320),
+      ogImage: draft.ogImage.slice(0, 500),
+      favicon: draft.favicon.slice(0, 500),
       status: draft.status,
       lang: draft.lang,
       editor: draft.editor,
@@ -231,6 +233,13 @@ export default function LpEditor({
         <span style={{ fontSize: 12, fontWeight: 700, color: draft.status === 'published' ? '#1e7e34' : 'var(--fg-1)' }}>
           {draft.status === 'published' ? t('admin.lpStudio.statusPublished') : t('admin.lpStudio.statusDraft')}
         </span>
+      </div>
+
+      {/* SEO & social sharing: descriere SEO + imagine de share (og:image) + favicon (toate URL https). */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <input value={draft.seoDescription} maxLength={320} onChange={(e) => setDraft((d) => ({ ...d, seoDescription: e.target.value }))} placeholder={t('admin.lpStudio.seoDescPlaceholder')} style={{ ...field, flex: 2, minWidth: 200 }} />
+        <input value={draft.ogImage} maxLength={500} onChange={(e) => setDraft((d) => ({ ...d, ogImage: e.target.value }))} placeholder={t('admin.lpStudio.ogImagePlaceholder')} style={{ ...field, flex: 1, minWidth: 160 }} />
+        <input value={draft.favicon} maxLength={500} onChange={(e) => setDraft((d) => ({ ...d, favicon: e.target.value }))} placeholder={t('admin.lpStudio.faviconPlaceholder')} style={{ ...field, flex: 1, minWidth: 140 }} />
       </div>
 
       {liveUrl && draft.status === 'published' ? (
