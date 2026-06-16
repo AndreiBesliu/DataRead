@@ -40,8 +40,11 @@ setPersistence(auth, browserLocalPersistence).catch((e) => {
 // App Check (opțional): atestă cererile prin reCAPTCHA v3. Inert până se setează
 // VITE_RECAPTCHA_V3_KEY, deci dev/build-urile neconfigurate nu sunt afectate. Când Andrei adaugă
 // cheia, se activează și enforcement-ul din consolă pentru functions/Firestore.
+// `navigator.webdriver` e true sub automatizare (Playwright: prerender + boot-smoke) — sărim init-ul
+// App Check acolo, altfel reCAPTCHA v3 încearcă să se încarce headless și aruncă „placeholder must be
+// empty", spărgând prerender-ul. Utilizatorii reali au webdriver=false → App Check pornește normal.
 const appCheckKey = import.meta.env.VITE_RECAPTCHA_V3_KEY as string | undefined;
-if (appCheckKey && typeof window !== 'undefined') {
+if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver) {
   try {
     if (import.meta.env.DEV) {
       // Lasă originul de dev să treacă App Check (tokenul de debug se înregistrează în consolă).
