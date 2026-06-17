@@ -5,6 +5,8 @@ import { persistLanguage } from '../i18n';
 import { pathLanguage, stripLangPrefix, toLocalizedPath, type LanguageCode } from '../i18n/routing';
 import { cookieConsent, setCookieConsent } from '../services/analytics';
 import { useAuthStore } from '../store/authStore';
+import { customThemeStyle } from '../theme/themes';
+import { usePublicTheme, PublicThemeStyle } from './PublicTheme';
 import Seo from './Seo';
 import type { PublicRoute } from './publicRoutes';
 
@@ -20,6 +22,11 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   const otherLang: LanguageCode = lang === 'ro' ? 'en' : 'ro';
   const p = (s: string) => toLocalizedPath(s, lang);
   const { user, isAdmin, initializing, signOutUser } = useAuthStore();
+  // Tema publică (LP Studio): variabilele de culoare + fundal se pun INLINE pe wrapper-ul .theme-banner
+  // (bat valorile din clasă), iar fonturile se injectează în <head> de <PublicThemeStyle>. Sursă sincronă
+  // = snapshot copt (== prerender, fără flash); override live din Firestore. Stilizarea structurală a
+  // bannerului (nav/butoane/hero/glow) rămâne în .theme-banner.
+  const publicTheme = usePublicTheme();
 
   const [consent, setConsent] = useState(cookieConsent());
   const decide = (v: 'granted' | 'denied') => {
@@ -28,8 +35,9 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   };
 
   return (
-    <div className="theme-banner" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="theme-banner" style={{ ...customThemeStyle(publicTheme), display: 'flex', flexDirection: 'column' }}>
       <Seo titleKey={route.titleKey} descriptionKey={route.descriptionKey} noindex={route.noindex} />
+      <PublicThemeStyle theme={publicTheme} />
 
       <header style={{ borderBottom: '1px solid var(--border)', background: 'rgba(10, 18, 40, 0.92)' }}>
         <div style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>

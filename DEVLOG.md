@@ -1106,6 +1106,32 @@ normaliser, secretele niciodată în chat/repo.
 > GCP + maxInstances pe funcții + alert pe erori AI, Firestore PITR/backup, rotație ANTHROPIC_API_KEY; plus conversia
 > celor 4 callable-uri AI rămase la runAiJson + viewer errorReports + split bundle firebase/admin (felii viitoare).
 
+**2026-06-16 - Task Completed — Workstream B1: tema publică (LP Studio) pe site + panou „Site" în /admin**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei: sistemul de design LP Studio să controleze designul paginilor publice, dintr-un panou „Site" în /admin
+> (extensibil — urmează CMS de pagini). Paginile publice sunt PRERANDATE → aplicare HIBRIDĂ aleasă (snapshot copt +
+> runtime), ca să nu existe flash/hydration drift.
+> - **Aplicare**: `src/config/publicTheme.ts` = snapshot commit-uit (init = culorile bannerului → zero schimbare
+>   vizuală). `usePublicTheme()` pornește SINCRON din snapshot (== prerender) + citește o dată tema publicată din
+>   `siteConfig/publicTheme` (getDoc, NU listener — un listener persistent bloca `networkidle` la prerender; plus
+>   guard `navigator.webdriver` → fără rețea sub Playwright). `SiteLayout` pune `customThemeStyle(theme)` INLINE pe
+>   `.theme-banner` (bate variabilele din clasă) + `<PublicThemeStyle>` injectează în <head> CSS-ul de fonturi
+>   (`customThemeCss`, idempotent + cleanup la unmount → zona /app|/admin neafectată). Stilizarea structurală a
+>   bannerului rămâne. Verificat: CSS-ul temei e COPT în HTML-ul prerandat (fără flash).
+> - **Date/reguli**: `src/types/sitePublic.ts` (`coerceToSitePublic`); `siteConfig/publicTheme` = public-read
+>   (cosmetic) + admin-write validat (whitelist + schema + theme map + updatedAt). 
+> - **Admin**: tab nou „Site" → `SiteAdminPanel` = `ThemeControls` (culori/fonturi/imagine) + preview live + „Salvează
+>   & publică" → scrie Firestore. Placeholder „Pagini (LP Studio)" pentru B2.
+> - **Coacere**: `scripts/pull-public-theme.mjs` citește tema via Firestore REST (public) și rescrie snapshot-ul;
+>   best-effort (eroare → snapshot neschimbat); rulat manual înainte de deploy ca prima vizită să fie fără flash.
+> - **Scope B1**: culori + fonturi + imagine de fundal (CSS, prerender-safe). **Decorul animat (canvas) e amânat la
+>   B2**: `compileDecor` emite `<script>` care nu rulează prin innerHTML în SPA — decorul merge nativ pe paginile
+>   servite de `serveLp` (CMS-ul de pagini din B2).
+> Verificat: 11/11 suites (+test-sitepublic) + e2e + build (paritate i18n ro/en) + build:site (16 pagini, temă coaptă,
+> zero pageerror) + boot. DEPLOYED: rules + hosting; live 200 pe / //self-marketing //admin, CSS temă servit.
+> **B2 (următor)**: CMS de pagini pe LP Studio (creare/editare/ștergere + organizare meniu/SEO/vizibilitate, servite
+> cu SSR prin serveLp + tema publică + decor).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

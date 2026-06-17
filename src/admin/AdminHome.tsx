@@ -28,6 +28,7 @@ import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
 import MarketingCenter from './MarketingCenter';
 import LandingStudio from './LandingStudio';
+import SiteAdminPanel from './SiteAdminPanel';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
 import type { AdminRole } from '../types/adminRole';
 import { useAdminTheme } from '../theme/useAdminTheme';
@@ -35,13 +36,14 @@ import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeS
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'suggestions' | 'marketing' | 'landing' | 'admins' | 'help';
+type AdminView = 'leads' | 'suggestions' | 'marketing' | 'landing' | 'site' | 'admins' | 'help';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
   suggestions: 'admin.navSuggestions',
   marketing: 'admin.navMarketing',
   landing: 'admin.navLanding',
+  site: 'admin.navSite',
   admins: 'admin.navAdmins',
   help: 'admin.navHelp',
 };
@@ -505,7 +507,7 @@ export default function AdminHome() {
 
       {/* Taburi (6 — wrap pe ecrane înguste ca să nu se reverse pe orizontală). */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'suggestions', 'marketing', 'landing', 'admins', 'help'] as const).map((v) => (
+        {(['leads', 'suggestions', 'marketing', 'landing', 'site', 'admins', 'help'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -530,6 +532,7 @@ export default function AdminHome() {
       {view === 'help' && <div style={{ marginTop: 12 }}><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{t('help.title')}</h2><HelpView sections={OPERATOR_HELP} /></div>}
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'landing' && <LandingStudio adminUid={user.uid} />}
+      {view === 'site' && <SiteAdminPanel adminUid={user.uid} />}
       {view === 'admins' && <AdminsPanel myUid={user.uid} isOwner={myRole === 'owner' || user.uid === BOOTSTRAP_ADMIN_UID} />}
 
       {view === 'leads' && (<>
