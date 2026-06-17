@@ -29,6 +29,13 @@
         }
       },
       {
+        "source": "/pagina/**",
+        "function": {
+          "functionId": "serveLp",
+          "region": "europe-central2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/app.html"
       }

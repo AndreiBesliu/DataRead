@@ -191,6 +191,23 @@ state.lpDoc = { ...servedDoc, ogImage: '', favicon: 'http://insecure/f.ico' }; r
 }
 state.lpDoc = servedDoc;
 
+// ── TEST S: pagini de site (kind:'site') servite la /pagina/{slug}; separare strictă de /p/. ──
+console.log('\nS) pagini de site /pagina/{slug} (kind:site) + separare de /p/');
+{
+  state.lpDoc = { ...servedDoc, kind: 'site' }; reset();
+  const r1 = mkRes(); await serveLp(mkReq({ path: `/pagina/${slug}` }), r1);
+  ok(r1._status === 200 && /Titlu Hero de Test/.test(String(r1._body || '')), '/pagina servește pagina de site publicată');
+  ok(/rel="canonical"[^>]*\/pagina\//.test(String(r1._body || '')), 'canonical pe /pagina/{slug}');
+  const r2 = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r2);
+  ok(r2._status === 404, 'pagina de site NU se servește pe /p/ (separare)');
+  state.lpDoc = { ...servedDoc, kind: 'campaign' }; reset();
+  const r3 = mkRes(); await serveLp(mkReq({ path: `/pagina/${slug}` }), r3);
+  ok(r3._status === 404, 'campanie pe /pagina/ → 404');
+  const r4 = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r4);
+  ok(r4._status === 200, 'campanie pe /p/ → 200 (neschimbat)');
+}
+state.lpDoc = servedDoc;
+
 // ── TEST B: GET pe o pagină DRAFT → 404 (nu se servește) ─────────────────────
 console.log('\nB) GET /p/%s când e draft → 404', slug);
 state.lpDoc = { ...servedDoc, status: 'draft' }; reset();

@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
-import { coerceToLandingPage, htmlByteSize, LP_HTML_MAX, recompileLpAssets, type LandingPage } from '../types/landingPage';
+import { coerceToLandingPage, htmlByteSize, LP_HTML_MAX, recompileLpAssets, type LandingPage, type LpKind } from '../types/landingPage';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, type LpKpis, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpProject, type LpProject } from '../types/lpProject';
 import LpEditor from './LpEditor';
@@ -30,8 +30,10 @@ function tsToMs(v: unknown): number {
   return t && typeof t.toMillis === 'function' ? t.toMillis() : 0;
 }
 
-export default function LandingStudio({ adminUid }: { adminUid: string }) {
+export default function LandingStudio({ adminUid, kind = 'campaign' }: { adminUid: string; kind?: LpKind }) {
   const { t } = useTranslation();
+  const isSite = kind === 'site';
+  const pubPrefix = isSite ? '/pagina/' : '/p/';
   const [rows, setRows] = useState<Row[]>([]);
   const [editing, setEditing] = useState<{ docId: string | null; initial: LandingPage } | null>(null);
   const [picking, setPicking] = useState(false);
@@ -83,31 +85,35 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   const clientLabel = useMemo(() => Object.fromEntries(clients.map((c) => [c.id, c.label])), [clients]);
   // proiect efectiv: un projectId care nu mai există (proiect șters) e tratat ca „fără proiect".
   const effProject = (r: Row) => (r.data.projectId && projects[r.data.projectId] ? r.data.projectId : '');
-  const filteredRows = useMemo(() => rows.filter((r) => {
+  // Studio-ul e scopat pe tip (campaign /p/ vs site /pagina/) — afișare/metrici/recompile doar pe acel tip.
+  const kindRows = useMemo(() => rows.filter((r) => (r.data.kind || 'campaign') === kind), [rows, kind]);
+  const filteredRows = useMemo(() => kindRows.filter((r) => {
     const pid = effProject(r);
     if (projectFilter === 'none' && pid) return false;
     if (projectFilter !== 'all' && projectFilter !== 'none' && pid !== projectFilter) return false;
     if (clientFilter !== 'all' && (r.data.clientUid || '') !== clientFilter) return false;
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rows, projectFilter, clientFilter, projects]);
+  }), [kindRows, projectFilter, clientFilter, projects]);
 
+  // Unicitatea slug-ului e GLOBALĂ (o singură colecție, doc ID = slug) → verificăm față de TOATE paginile.
   const existingSlugs = useMemo(() => rows.map((r) => r.id), [rows]);
   // Cheie independentă de ORDINE: rows e sortat după updatedAt, deci o editare reordonează lista fără
   // a schimba SETUL de pagini — sortăm înainte de join ca efectul de metrics să nu refacă citirile la
   // fiecare salvare (altfel „recompilează toate" ar amplifica citirile la O(N²)).
-  const slugKey = [...existingSlugs].sort().join('|');
+  const viewSlugs = useMemo(() => kindRows.map((r) => r.id), [kindRows]);
+  const slugKey = [...viewSlugs].sort().join('|');
 
   // Overview de trafic per pagină (ultimele 7 zile) — citește rollup-urile zilnice (limit OVERVIEW_DAYS/pagină,
   // în paralel) și agregă prin motorul pur lpStats. Re-rulează doar când setul de pagini se schimbă (slugKey),
   // nu la fiecare tick onSnapshot, ca să nu refacem citirile la orice editare de metadate.
   useEffect(() => {
-    if (existingSlugs.length === 0) { setMetrics({}); setMetricsLoaded(true); setMetricsPartial(false); return; }
+    if (viewSlugs.length === 0) { setMetrics({}); setMetricsLoaded(true); setMetricsPartial(false); return; }
     let cancel = false;
     setMetricsLoaded(false);
     (async () => {
       const entries = await Promise.all(
-        existingSlugs.map(async (id) => {
+        viewSlugs.map(async (id) => {
           try {
             const snap = await getDocs(query(collection(db, 'landingPages', id, 'stats'), orderBy('date', 'desc'), limit(OVERVIEW_DAYS)));
             const days = snap.docs.map((d) => coerceToLpStatsDay(d.data())).filter((x): x is LpStatsDay => !!x);
@@ -184,11 +190,11 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   // Tranzacție per pagină: re-citim documentul PROASPĂT, recompilăm din el și scriem — ca o editare
   // concurentă (alt operator/alt tab) să nu fie suprascrisă cu date vechi (lost-update).
   async function recompileAll() {
-    if (!window.confirm(t('admin.lpStudio.recompileConfirm', { count: rows.length }))) return;
+    if (!window.confirm(t('admin.lpStudio.recompileConfirm', { count: kindRows.length }))) return;
     setRecompiling(true);
     setRecompileMsg('');
     let updated = 0, unchanged = 0, skipped = 0, failed = 0;
-    for (const r of rows) {
+    for (const r of kindRows) {
       try {
         const outcome = await runTransaction(db, async (tx) => {
           const ref = doc(db, 'landingPages', r.id);
@@ -217,11 +223,11 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.lpStudio.title')}</h2>
-        <button onClick={() => setManagingProjects(true)} style={{ ...btn, marginLeft: 'auto' }}>📁 {t('admin.lpStudio.prManage')}</button>
-        <button onClick={syncClientPortal} style={btn} title={t('admin.lpStudio.syncHint')}>↺ {t('admin.lpStudio.sync')}</button>
-        {rows.length > 0 ? (
-          <button onClick={recompileAll} disabled={recompiling} style={{ ...btn, opacity: recompiling ? 0.6 : 1 }} title={t('admin.lpStudio.recompileHint')}>
+        <h2 style={{ fontSize: 18, margin: 0 }}>{isSite ? t('admin.site.pagesTitle') : t('admin.lpStudio.title')}</h2>
+        {!isSite ? <button onClick={() => setManagingProjects(true)} style={{ ...btn, marginLeft: 'auto' }}>📁 {t('admin.lpStudio.prManage')}</button> : null}
+        {!isSite ? <button onClick={syncClientPortal} style={btn} title={t('admin.lpStudio.syncHint')}>↺ {t('admin.lpStudio.sync')}</button> : null}
+        {kindRows.length > 0 ? (
+          <button onClick={recompileAll} disabled={recompiling} style={{ ...btn, marginLeft: isSite ? 'auto' : undefined, opacity: recompiling ? 0.6 : 1 }} title={t('admin.lpStudio.recompileHint')}>
             ↻ {recompiling ? t('admin.lpStudio.recompileRunning') : t('admin.lpStudio.recompileAll')}
           </button>
         ) : null}
@@ -232,7 +238,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
       {recompileMsg ? <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: -6, marginBottom: 12 }}>{recompileMsg}</p> : null}
       {syncMsg ? <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: -6, marginBottom: 12 }}>{syncMsg}</p> : null}
 
-      {rows.length > 0 ? (
+      {kindRows.length > 0 ? (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           <div style={ovCard}><div style={ovVal}>{metricsLoaded ? fmtN(overview.visits) : '—'}</div><div style={ovLabel}>{t('admin.lpStudio.ovVisits')}</div></div>
           <div style={ovCard}><div style={ovVal}>{metricsLoaded ? fmtN(overview.submissions) : '—'}</div><div style={ovLabel}>{t('admin.lpStudio.ovLeads')}</div></div>
@@ -243,11 +249,12 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
         </div>
       ) : null}
 
-      {rows.length === 0 ? (
-        <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.lpStudio.listEmpty')}</p>
+      {kindRows.length === 0 ? (
+        <p style={{ color: 'var(--fg-1)', fontSize: 14 }}>{isSite ? t('admin.site.pagesEmpty') : t('admin.lpStudio.listEmpty')}</p>
       ) : (
         <>
-          {/* Filtre: chips de proiect + dropdown client. */}
+          {/* Filtre: chips de proiect + dropdown client (doar pentru campanii — paginile de site n-au proiect/client). */}
+          {!isSite ? (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
             {([['all', t('admin.lpStudio.fltAll')], ...Object.entries(projects).map(([id, p]) => [id, p.name] as [string, string]), ['none', t('admin.lpStudio.fltNoProject')]] as [string, string][]).map(([id, name]) => {
               const active = projectFilter === id;
@@ -263,6 +270,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
               {clients.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
           </div>
+          ) : null}
 
           <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -286,7 +294,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
                 return (
                 <tr key={r.id}>
                   <td style={td}>{r.data.title || <span style={{ color: 'var(--fg-1)' }}>—</span>}</td>
-                  <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>/p/{r.id}</td>
+                  <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{pubPrefix}{r.id}</td>
                   <td style={{ ...td, fontSize: 12 }}>
                     {proj ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: proj.color, display: 'inline-block' }} />{proj.name}</span> : <span style={{ color: 'var(--fg-1)' }}>—</span>}
                     {cli ? <div style={{ color: 'var(--fg-1)', fontSize: 11, marginTop: 2 }}>👤 {cli}</div> : null}
@@ -326,7 +334,7 @@ export default function LandingStudio({ adminUid }: { adminUid: string }) {
           adminUid={adminUid}
           onPick={(initial) => {
             setPicking(false);
-            setEditing({ docId: null, initial });
+            setEditing({ docId: null, initial: { ...initial, kind } });
           }}
           onClose={() => setPicking(false)}
         />

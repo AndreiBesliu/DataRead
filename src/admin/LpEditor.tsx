@@ -75,6 +75,7 @@ export default function LpEditor({
     const assets = recompileLpAssets(draft);
     return {
       schema: 1,
+      kind: draft.kind, // 'campaign' (/p/) sau 'site' (/pagina/) — păstrat la salvare (altfel ar cădea pe campaign)
       slug: draft.slug,
       title: draft.title.slice(0, 140),
       seoDescription: draft.seoDescription.slice(0, 320),

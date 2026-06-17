@@ -27,6 +27,11 @@ export const LP_PAGE_DECORS_MAX = 5; // straturi de fundal decorativ suprapuse p
 export const LP_STATUSES = ['draft', 'published'] as const;
 export type LpStatus = (typeof LP_STATUSES)[number];
 
+/** Tipul paginii: 'campaign' = LP de campanie (servit la /p/{slug}, design propriu); 'site' = pagină de
+ *  site (CMS LP Studio, servită la /pagina/{slug}, temată cu tema publică). Default = campaign (legacy). */
+export const LP_KINDS = ['campaign', 'site'] as const;
+export type LpKind = (typeof LP_KINDS)[number];
+
 export const LP_FIELD_TYPES = ['text', 'email', 'tel', 'number', 'date', 'textarea', 'select', 'radio', 'checkbox'] as const;
 export type LpFieldType = (typeof LP_FIELD_TYPES)[number];
 
@@ -56,6 +61,8 @@ export interface LpFormConfig {
 
 export interface LandingPage {
   schema: typeof LANDING_PAGE_SCHEMA;
+  /** Campanie (/p/{slug}) sau pagină de site (/pagina/{slug}, temă publică). */
+  kind: LpKind;
   slug: string; // = ID-ul documentului
   title: string;
   seoDescription: string;
@@ -154,6 +161,7 @@ function coerceHttpsUrl(v: unknown): string {
 export function emptyLandingPage(createdBy = ''): LandingPage {
   return {
     schema: LANDING_PAGE_SCHEMA,
+    kind: 'campaign',
     slug: '',
     title: '',
     seoDescription: '',
@@ -203,6 +211,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
   const form = coerceForm(d.form);
   return {
     schema: LANDING_PAGE_SCHEMA,
+    kind: LP_KINDS.includes(d.kind as LpKind) ? (d.kind as LpKind) : 'campaign',
     slug: sanitizeSlug(d.slug),
     title: str(d.title, LP_TITLE_MAX),
     seoDescription: str(d.seoDescription, LP_DESC_MAX),

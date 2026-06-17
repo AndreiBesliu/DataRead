@@ -222,7 +222,9 @@ service cloud.firestore {
         && (!('knownVariants' in request.resource.data) || (request.resource.data.knownVariants is map && request.resource.data.knownVariants.size() <= 200))
         // SEO/social (opțional): URL-uri plafonate (anti-bloat; https validat în serveLp + coerce).
         && (!('ogImage' in request.resource.data) || (request.resource.data.ogImage is string && request.resource.data.ogImage.size() <= 500))
-        && (!('favicon' in request.resource.data) || (request.resource.data.favicon is string && request.resource.data.favicon.size() <= 500));
+        && (!('favicon' in request.resource.data) || (request.resource.data.favicon is string && request.resource.data.favicon.size() <= 500))
+        // kind: 'campaign' (LP, /p/) sau 'site' (pagină de site, /pagina/) — opțional (legacy fără kind = campaign).
+        && (!('kind' in request.resource.data) || request.resource.data.kind in ['campaign', 'site']);
       allow delete: if isAdmin();
 
       // Portal client: clientul logat citește submisiile/statisticile/variantele LP-urilor LUI

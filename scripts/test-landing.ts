@@ -53,6 +53,9 @@ check('coerce(null) → default sigur (draft, html gol, slug gol)', (() => {
   return lp.status === 'draft' && lp.html === '' && lp.slug === '' && lp.schema === 1 && lp.lang === 'ro' && lp.projectId === '' && Object.keys(lp.knownVariants).length === 0;
 })());
 check('coerce: projectId păstrat (organizare)', coerceToLandingPage({ projectId: 'proj123' }).projectId === 'proj123');
+check('coerce: kind invalid → campaign', coerceToLandingPage({ kind: 'x' }).kind === 'campaign');
+check('coerce: kind site păstrat', coerceToLandingPage({ kind: 'site' }).kind === 'site');
+check('coerce: fără kind → campaign (legacy)', coerceToLandingPage({}).kind === 'campaign');
 check('coerce: ogImage/favicon https păstrat, non-https/js → "", clamp 500', (() => {
   const ok = coerceToLandingPage({ ogImage: 'https://x/og.png', favicon: 'https://x/f.ico' });
   const bad = coerceToLandingPage({ ogImage: 'http://x/og.png', favicon: 'javascript:alert(1)' });

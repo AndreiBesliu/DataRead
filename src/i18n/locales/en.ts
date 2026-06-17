@@ -576,6 +576,7 @@ const en: typeof ro = {
       sampleCardText: 'A secondary surface (background, text, border).',
       pagesTitle: 'Site pages (LP Studio)',
       pagesSoon: 'Coming soon: create, edit, organize and delete the site pages directly with LP Studio.',
+      pagesEmpty: 'No site pages yet. Press “+ New page” to create one with LP Studio (served at /pagina/{slug}).',
     },
     sugTitle: 'Suggestions',
     sugHint: 'Recommended next steps, derived from your data — no new AI generation.',

@@ -583,6 +583,7 @@ const ro = {
       sampleCardText: 'O suprafață secundară (fundal, text, border).',
       pagesTitle: 'Pagini site (LP Studio)',
       pagesSoon: 'În curând: creează, editează, organizează și șterge paginile site-ului direct cu LP Studio.',
+      pagesEmpty: 'Nicio pagină de site încă. Apasă „+ Pagină nouă" ca să creezi una cu LP Studio (servită la /pagina/{slug}).',
     },
     sugTitle: 'Sugestii',
     sugHint: 'Următorii pași recomandați, derivați din datele tale — fără generare nouă cu AI.',

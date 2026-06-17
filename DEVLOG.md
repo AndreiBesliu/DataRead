@@ -1132,6 +1132,29 @@ normaliser, secretele niciodată în chat/repo.
 > **B2 (următor)**: CMS de pagini pe LP Studio (creare/editare/ștergere + organizare meniu/SEO/vizibilitate, servite
 > cu SSR prin serveLp + tema publică + decor).
 
+**2026-06-16 - Task Completed — Workstream B2a: pagini de site pe LP Studio (CMS)**
+> Model: Claude Opus 4.8 (1M context)
+> Andrei: să poată crea/edita/șterge pagini de site cu LP Studio, servite SSR+SEO, temate cu tema publică (B1).
+> Arhitectură: **reutilizăm `landingPages` cu `kind:'site'`** (zero colecție nouă) — refolosește serveLp/
+> composeLpPage/lpThemeCss/LpEditor/reguli/analytics. URL `/pagina/{slug}`; o limbă per pagină.
+> - **Tipuri**: `LandingPage.kind: 'campaign'|'site'` (default campaign) + `LP_KINDS` + coerce. **LpEditor payload
+>   include acum `kind`** (altfel paginile de site s-ar salva ca 'campaign' și ar da 404 pe /pagina — gard critic).
+> - **Servire** (`functions/index.js`): serveLp acceptă `/p/{slug}` (campanii) ȘI `/pagina/{slug}` (site). Separare
+>   strictă: /pagina servește DOAR `kind:'site'` publicate; /p servește restul (campanii + legacy fără kind); kind
+>   greșit → 404. Paginile de site primesc **tema publică** (`getPublicThemeDesign` citește `siteConfig/publicTheme`,
+>   cache modul ~60s) ca `design`, deci sunt consistente cu site-ul; decorul per-pagină merge nativ (SSR). canonical
+>   pe `/pagina/{slug}` (param `pathPrefix` în composeLpPage). `firebase.json`: rewrite nou `/pagina/** → serveLp`
+>   (FĂRĂ pinTag — două rewrite-uri cu pinTag pe același Run service dau „Failed to replace Run service"; vezi memoria).
+> - **Reguli**: `landingPages` validează opțional `kind in ['campaign','site']`.
+> - **Admin**: `LandingStudio` are prop `kind` (filtrează lista/metrici/recompile pe acel tip, slug-unicitate rămâne
+>   GLOBALĂ, URL /pagina pt. site, ascunde filtrele proiect/client). Panoul „Site" → secțiunea Pagini randează
+>   `<LandingStudio kind="site" />` (CRUD complet cu LP Studio). 
+> Verificat: 11/11 suites (+coerce kind) + e2e TEST S (/pagina servește site+separare, /p neschimbat) + build
+> (paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: functions + hosting + rules; live: /pagina/__nope__ →
+> serveLp 404, /admin //self-marketing 200. Notă: în LpEditor tab-ul Design rămâne vizibil pt. site dar e ignorat la
+> servire (tema publică primează) — ascunderea lui = polish ulterior.
+> **B2b (următor)**: organizare în meniu (siteConfig/siteNav + snapshot hibrid + nav data-driven) + sitemap dinamic.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

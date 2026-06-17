@@ -10,6 +10,7 @@ import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coerceToCustomTheme, customThemeStyle, type CustomTheme } from '../theme/themes';
 import ThemeControls from '../theme/ThemeControls';
+import LandingStudio from './LandingStudio';
 import { PUBLIC_THEME_DEFAULT } from '../config/publicTheme';
 import { SITE_PUBLIC_SCHEMA } from '../types/sitePublic';
 
@@ -86,10 +87,9 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
         </div>
       </div>
 
-      {/* Pagini (CMS LP Studio) — felia B2 */}
-      <div style={{ ...card, marginTop: 20, color: 'var(--fg-1)' }}>
-        <h3 style={{ fontSize: 14, margin: '0 0 4px', color: 'var(--fg-0)' }}>{t('admin.site.pagesTitle')}</h3>
-        <p style={{ fontSize: 13, margin: 0 }}>{t('admin.site.pagesSoon')}</p>
+      {/* Pagini de site (CMS pe LP Studio) — servite la /pagina/{slug}, temate cu tema publică. */}
+      <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+        <LandingStudio adminUid={adminUid} kind="site" />
       </div>
     </div>
   );

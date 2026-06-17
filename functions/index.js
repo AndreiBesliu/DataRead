@@ -1559,7 +1559,7 @@ async function logLpVisit(db, slug, req, lp) {
   }).catch(() => {});
 }
 
-function composeLpPage(slug, lp, req) {
+function composeLpPage(slug, lp, req, pathPrefix = '/p') {
   const lang = lp.lang === 'en' ? 'en' : 'ro';
   const title = lpEscape((lp.title || '').slice(0, 140) || slug);
   const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
@@ -1570,7 +1570,7 @@ function composeLpPage(slug, lp, req) {
   // ca să nu injecteze atribute/markup în <link>/<meta>. Fallback la domeniul canonic dacă e suspect.
   const rawHost = (req.headers['x-forwarded-host'] || req.headers.host || '').toString();
   const host = /^[a-zA-Z0-9.:-]+$/.test(rawHost) ? rawHost : 'dataread-e1bd6.web.app';
-  const canonical = `https://${lpEscape(host)}/p/${slug}`;
+  const canonical = `https://${lpEscape(host)}${pathPrefix}/${slug}`;
   const css = lpThemeCss(lp.design);
   const body = typeof lp.html === 'string' ? lp.html : '';
   // Decorul de fundal al paginii — compilat la salvare în client, injectat aici (motorul nu trăiește în functions).
@@ -1783,31 +1783,49 @@ async function handleSubmit(req, res) {
   }
 }
 
+// Cache la nivel de modul al temei publice (siteConfig/publicTheme) — paginile de site o aplică LA SERVIRE
+// ca să fie consistente cu site-ul, chiar dacă tema se schimbă. TTL scurt: o instanță caldă nu citește la
+// fiecare render. Întoarce CustomTheme (raw; lpThemeCss îl coerce defensiv) sau null.
+let _publicThemeCache = { at: 0, theme: null };
+async function getPublicThemeDesign(db) {
+  const now = Date.now();
+  if (now - _publicThemeCache.at < 60000) return _publicThemeCache.theme;
+  try {
+    const snap = await db.collection('siteConfig').doc('publicTheme').get();
+    _publicThemeCache = { at: now, theme: (snap.exists ? (snap.data() || {}).theme : null) || null };
+  } catch (e) {
+    _publicThemeCache = { at: now, theme: _publicThemeCache.theme };
+  }
+  return _publicThemeCache.theme;
+}
+
 exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public' }, async (req, res) => {
   try {
     const path = req.path || '';
     if (path === '/p/_track') return await handleTrack(req, res);
     if (path === '/p/_submit') return await handleSubmit(req, res);
-    const match = path.match(/^\/p\/([^/]+)\/?$/);
-    const slug = match ? decodeURIComponent(match[1]).toLowerCase() : '';
-    if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-      res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
-      return;
-    }
+    // Două căi: /p/{slug} = LP de campanie; /pagina/{slug} = pagină de site (CMS LP Studio, temă publică).
+    const m = path.match(/^\/(p|pagina)\/([^/]+)\/?$/);
+    const isSite = m ? m[1] === 'pagina' : false;
+    const slug = m ? decodeURIComponent(m[2]).toLowerCase() : '';
+    const notFound = () => res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) return notFound();
     const db = admin.firestore();
     const snap = await db.collection('landingPages').doc(slug).get();
     const lp = snap.exists ? snap.data() : null;
-    if (!lp || lp.status !== 'published') {
-      res.status(404).set('Content-Type', 'text/html; charset=utf-8').set('X-Robots-Tag', 'noindex').send(lpNotFound());
-      return;
-    }
+    if (!lp || lp.status !== 'published') return notFound();
+    // Separarea căilor: /pagina servește DOAR pagini de site; /p servește restul (campanii + legacy fără kind).
+    const lpIsSite = lp.kind === 'site';
+    if (isSite !== lpIsSite) return notFound();
+    // Paginile de site folosesc tema publică (consistență de site); campaniile, design-ul propriu.
+    const lpForRender = isSite ? { ...lp, design: (await getPublicThemeDesign(db)) || lp.design } : lp;
     await logLpVisit(db, slug, req, lp).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
     res
       .status(200)
       .set('Content-Type', 'text/html; charset=utf-8')
       .set('Cache-Control', 'no-store')
       .set('Content-Security-Policy', LP_CSP)
-      .send(composeLpPage(slug, lp, req));
+      .send(composeLpPage(slug, lpForRender, req, isSite ? '/pagina' : '/p'));
   } catch (err) {
     logger.error('serveLp failed', { err: String(err) });
     res.status(500).set('Content-Type', 'text/html; charset=utf-8').send(lpNotFound());
