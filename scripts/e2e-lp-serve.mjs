@@ -37,7 +37,8 @@ const C = createRequire(import.meta.url)(tmp);
 // ── 2) Stub firebase-admin ÎNAINTE de a încărca index.js ─────────────────────
 const admin = fnRequire('firebase-admin');
 admin.initializeApp = () => ({});            // no-op: fără credențiale reale
-const state = { lpDoc: null, calls: {} };
+// state.siteConfig: documentele cosmetice citite de serveLp (publicTheme/publicChrome) — stub-uite per test.
+const state = { lpDoc: null, calls: {}, siteConfig: {} };
 const rec = (k, v) => { (state.calls[k] = state.calls[k] || []).push(v); };
 // Doc-ref fals cu identitate (_recKey/_id) ca batch-ul să poată înregistra pe colecția corectă.
 function makeDoc(recKey, id, isLp) {
@@ -45,6 +46,7 @@ function makeDoc(recKey, id, isLp) {
     _recKey: recKey, _id: id,
     async get() {
       if (isLp) return { exists: state.lpDoc !== null, data: () => state.lpDoc };
+      if (recKey === 'siteConfig') { const d = state.siteConfig[id] || null; return { exists: d !== null, data: () => d }; }
       return { exists: false, data: () => null };
     },
     collection(sub) { return makeCol(`${recKey}/${sub}`); },
@@ -207,6 +209,69 @@ console.log('\nS) pagini de site /pagina/{slug} (kind:site) + separare de /p/');
   ok(r4._status === 200, 'campanie pe /p/ → 200 (neschimbat)');
 }
 state.lpDoc = servedDoc;
+
+// ── TEST T: chrome global (header/footer + meniu) injectat DOAR pe paginile de site (/pagina), bilingv după
+// lp.lang, escapat + href intern; NEATINS pe campanii (/p/). Cache-ul de modul resetat între cazuri. ──
+console.log('\nT) chrome global header/footer (kind:site) — bilingv + securitate + separare de /p/');
+{
+  // Paritate TS↔JS a chrome-ului default (snapshotul React == fallback-ul din functions).
+  ok(JSON.stringify(C.PUBLIC_CHROME_DEFAULT) === JSON.stringify(fns.DEFAULT_SITE_CHROME), 'PUBLIC_CHROME_DEFAULT (TS) === DEFAULT_SITE_CHROME (JS)');
+
+  // 1) Fără doc publicChrome → default copt aplicat pe pagina de site.
+  fns.__resetPublicCaches(); state.siteConfig = {}; state.lpDoc = { ...servedDoc, kind: 'site', lang: 'ro' }; reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: `/pagina/${slug}` }), r);
+    const b = String(r._body || '');
+    ok(/<header[^>]*border-bottom/.test(b) && b.includes('>DataRead</a>'), 'fără doc → header default cu brand DataRead');
+    ok(/<footer[^>]*border-top/.test(b) && b.includes('>DATAREAD</span>'), 'fără doc → footer default cu brand majuscul');
+  }
+
+  // 2) Doc publicChrome stub (etichete distincte ro/en + un href extern de respins) → cache resetat.
+  fns.__resetPublicCaches();
+  state.siteConfig.publicChrome = { schema: 1, chrome: {
+    brandName: 'Brand Test', taglineRo: 'Slogan RO', taglineEn: 'Tagline EN',
+    nav: [
+      { labelRo: 'Acasă', labelEn: 'Home', href: '/' },
+      { labelRo: 'Pachete', labelEn: 'Packages', href: '/pachete' },
+      { labelRo: 'Rău', labelEn: 'Bad', href: 'https://evil.com/phish' },
+    ],
+    ctaLabelRo: 'Începe', ctaLabelEn: 'Start', ctaHref: '/start',
+    footerTextRo: 'Footer RO', footerTextEn: 'Footer EN',
+    footerLinks: [{ labelRo: 'Termeni', labelEn: 'Terms', href: '/legal/termeni' }],
+  } };
+
+  // 2a) RO.
+  state.lpDoc = { ...servedDoc, kind: 'site', lang: 'ro' }; reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: `/pagina/${slug}` }), r);
+    const b = String(r._body || '');
+    ok(b.includes('>Brand Test</a>'), 'RO: brand din config în header');
+    ok(b.includes('>Slogan RO</span>') && !b.includes('Tagline EN'), 'RO: slogan RO (nu EN)');
+    ok(b.includes('>Pachete</a>') && b.includes('href="/pachete"'), 'RO: nav RO „Pachete" → /pachete');
+    ok(b.includes('>Începe</a>'), 'RO: CTA RO „Începe"');
+    ok(b.includes('Footer RO') && b.includes('>Termeni</a>'), 'RO: footer text + link RO');
+    ok(!b.includes('evil.com'), 'href extern respins (anti open-redirect) — „evil.com" absent');
+    ok(b.includes('>Rău</a>'), 'eticheta item-ului rău păstrată, link neutralizat (paritate cu React „/#")');
+  }
+  // 2b) EN — aceeași config (cache păstrat), doar lp.lang diferă → etichete EN + path-uri /en.
+  state.lpDoc = { ...servedDoc, kind: 'site', lang: 'en' }; reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: `/pagina/${slug}` }), r);
+    const b = String(r._body || '');
+    ok(b.includes('>Packages</a>') && b.includes('href="/en/pachete"'), 'EN: nav EN „Packages" → /en/pachete (localizat)');
+    ok(b.includes('>Tagline EN</span>') && !b.includes('Slogan RO'), 'EN: slogan EN (nu RO)');
+    ok(b.includes('>Start</a>') && b.includes('href="/en/start"'), 'EN: CTA EN „Start" → /en/start');
+    ok(b.includes('Footer EN') && b.includes('>Terms</a>') && b.includes('href="/en/legal/termeni"'), 'EN: footer EN + link localizat');
+  }
+  // 3) Campanie pe /p/ cu același doc chrome prezent → ZERO chrome (brandul din config absent).
+  state.lpDoc = { ...servedDoc, kind: 'campaign', lang: 'ro' }; reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r);
+    const b = String(r._body || '');
+    ok(r._status === 200 && !b.includes('Brand Test') && !b.includes('Footer RO'), '/p/ campanie → fără chrome global (neatins)');
+  }
+}
+fns.__resetPublicCaches(); state.siteConfig = {}; state.lpDoc = servedDoc;
 
 // ── TEST B: GET pe o pagină DRAFT → 404 (nu se servește) ─────────────────────
 console.log('\nB) GET /p/%s când e draft → 404', slug);

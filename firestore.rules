@@ -173,15 +173,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Configurarea publică a site-ului (tema LP Studio + extensii viitoare). PUBLIC-READ (site-ul + scriptul
-    // de coacere o citesc; e cosmetică, nu date sensibile); scriere DOAR de admini, validată + plafonată.
+    // Configurarea publică a site-ului: tema (publicTheme) + chrome-ul global header/footer (publicChrome).
+    // PUBLIC-READ (site-ul + scriptul de coacere o citesc; e cosmetică, nu date sensibile); scriere DOAR de
+    // admini, validată + plafonată. Fiecare doc are payload-ul lui (theme is map / chrome is map).
     match /siteConfig/{docId} {
       allow read: if true;
       allow create, update: if isAdmin()
-        && docId == 'publicTheme'
-        && request.resource.data.keys().hasOnly(['schema', 'theme', 'updatedAt', 'updatedBy'])
+        && docId in ['publicTheme', 'publicChrome']
+        && request.resource.data.keys().hasOnly(['schema', 'theme', 'chrome', 'updatedAt', 'updatedBy'])
         && request.resource.data.schema == 1
-        && request.resource.data.theme is map
+        && (docId != 'publicTheme' || request.resource.data.theme is map)
+        && (docId != 'publicChrome' || request.resource.data.chrome is map)
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }

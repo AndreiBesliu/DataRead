@@ -1155,6 +1155,41 @@ normaliser, secretele niciodată în chat/repo.
 > servire (tema publică primează) — ascunderea lui = polish ulterior.
 > **B2b (următor)**: organizare în meniu (siteConfig/siteNav + snapshot hibrid + nav data-driven) + sitemap dinamic.
 
+**2026-06-19 - Task Started — Workstream B2b: header/footer global + meniu data-driven**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „pornim b2b" — header/topbar + footer proiectate O SINGURĂ DATĂ în /admin, aplicate AUTOMAT pe TOATE
+> paginile NOASTRE (paginile React + kind:'site' /pagina/), cu meniu data-driven. CRITIC: LP-urile de campanie
+> (kind:'campaign', /p/) sunt pentru CLIENȚI — ZERO chrome global, ZERO temă publică. Editor = câmpuri structurate.
+
+**2026-06-19 - Task Completed — Workstream B2b: header/footer global + meniu data-driven**
+> Model: Claude Opus 4.8 (1M context)
+> Chrome global (header/topbar + footer + meniu) proiectat o singură dată în panoul „Site" și aplicat automat pe
+> tot site-ul NOSTRU; LP-urile de campanie (/p/) rămân neatinse (ale clienților). Tipar hibrid din B1 (snapshot
+> copt + getDoc runtime + guard webdriver), etichete LITERALE per-limbă (ro+en; EN cade pe RO) — fără i18n în functions.
+> - **Date/tipuri** (`src/types/siteChrome.ts` NOU): `SiteChrome` (brand, tagline ro/en, nav[], CTA, footer text
+>   ro/en, footerLinks[]) + `coerceToSiteChrome` (default sigur, plafoane: ≤12 itemi, label 60/text 200/brand 40,
+>   `internalHref` anti open-redirect — `/x` da, `//`/`http`/`javascript:` → '#') + `chromeLabel` (en||ro). Snapshot
+>   copt `src/config/publicChrome.ts` (NOU) = chrome-ul actual → render sincron == prerender, fără flash.
+> - **React** (`src/site/PublicChrome.tsx` NOU + `SiteLayout.tsx`): `usePublicChrome()` (clonă usePublicTheme).
+>   Header/footer DATA-DRIVEN din chrome (brand/tagline/nav/CTA/footer); controalele FUNCȚIONALE rămân React
+>   (comutator EN, login/Cont/Admin/Ieși, banner cookies).
+> - **serveLp** (`functions/index.js`, DOAR kind:'site'): `getPublicChromeDesign(db)` (cache modul ~60s) +
+>   `composeSiteChrome(chrome, lang)` → `{headerHtml, footerHtml}` SIGURE (lpEscape pe etichete, `chromeInternalHref`
+>   + `localizePath` port al toLocalizedPath → prefix `/en`). `composeLpPage` primește param `chrome` (null pt.
+>   campanii → NEATINS); injectează `${pageDecor}${header}${body}${footer}${scripts}`. `DEFAULT_SITE_CHROME` =
+>   fallback când doc-ul lipsește (paritate TS↔JS testată e2e). serveLp: `chrome = isSite ? (getPublicChromeDesign||DEFAULT) : null`.
+> - **Reguli**: `siteConfig/{docId}` generalizat la `docId in ['publicTheme','publicChrome']` (theme is map /
+>   chrome is map per doc). Read public, write admin.
+> - **Admin** (`src/admin/ChromeEditor.tsx` NOU + `SiteAdminPanel.tsx`): secțiune „Header & Footer" cu câmpuri
+>   structurate (brand/tagline; listă nav cu add/remove/reordonare + label ro/en + href; CTA; footer text + linkuri)
+>   + preview header/footer pe `customThemeStyle(theme)` comutabil RO/EN + „Salvează & publică" → `siteConfig/publicChrome`.
+>   Script `scripts/pull-public-chrome.mjs` (NOU) coace snapshotul la deploy. i18n `admin.site.chrome.*` ro+en.
+> Verificat: 12/12 suites (+ `test-sitechrome.ts`: coerce/internalHref/chromeLabel/plafoane) + e2e TEST T (chrome pe
+> /pagina bilingv ro/en, href extern respins, paritate default TS↔JS, /p/ neatins) + build (paritate i18n) +
+> build:site (16 pagini, fără flash) + boot. DEPLOYED: functions(serveLp) + hosting + rules; live: dataread.ro/
+> servește header/footer din chrome (wordmark DataRead + footer). **B2c (amânat)**: sitemap dinamic /pagina; bilingv
+> complet pe paginile de site; ascundere tab Design în LpEditor pt. kind:'site'.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

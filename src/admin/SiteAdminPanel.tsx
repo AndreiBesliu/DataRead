@@ -11,14 +11,20 @@ import { db } from '../firebase';
 import { coerceToCustomTheme, customThemeStyle, type CustomTheme } from '../theme/themes';
 import ThemeControls from '../theme/ThemeControls';
 import LandingStudio from './LandingStudio';
+import ChromeEditor from './ChromeEditor';
 import { PUBLIC_THEME_DEFAULT } from '../config/publicTheme';
 import { SITE_PUBLIC_SCHEMA } from '../types/sitePublic';
+import { PUBLIC_CHROME_DEFAULT } from '../config/publicChrome';
+import { SITE_CHROME_SCHEMA, coerceToSiteChrome, type SiteChrome } from '../types/siteChrome';
 
 export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
   const { t } = useTranslation();
   const [theme, setTheme] = useState<CustomTheme>(PUBLIC_THEME_DEFAULT);
   const [loaded, setLoaded] = useState(false);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'err'>('idle');
+  const [chrome, setChrome] = useState<SiteChrome>(PUBLIC_CHROME_DEFAULT);
+  const [chromeLoaded, setChromeLoaded] = useState(false);
+  const [chromeState, setChromeState] = useState<'idle' | 'saving' | 'saved' | 'err'>('idle');
 
   useEffect(() => {
     return onSnapshot(
@@ -31,6 +37,20 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
         }
       },
       () => setLoaded(true),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, 'siteConfig', 'publicChrome'),
+      (snap) => {
+        if (!chromeLoaded) {
+          setChrome(coerceToSiteChrome(snap.exists() ? snap.data() : null).chrome);
+          setChromeLoaded(true);
+        }
+      },
+      () => setChromeLoaded(true),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -49,6 +69,23 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
     } catch (e) {
       console.warn('publish public theme failed:', e);
       setState('err');
+    }
+  };
+
+  const publishChrome = async () => {
+    setChromeState('saving');
+    try {
+      await setDoc(doc(db, 'siteConfig', 'publicChrome'), {
+        schema: SITE_CHROME_SCHEMA,
+        chrome: coerceToSiteChrome({ chrome }).chrome,
+        updatedAt: serverTimestamp(),
+        updatedBy: adminUid,
+      });
+      setChromeState('saved');
+      setTimeout(() => setChromeState('idle'), 2500);
+    } catch (e) {
+      console.warn('publish public chrome failed:', e);
+      setChromeState('err');
     }
   };
 
@@ -84,6 +121,20 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
               <p style={{ color: 'var(--fg-1)', margin: '4px 0 0', fontSize: 13 }}>{t('admin.site.sampleCardText')}</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Header & Footer global — proiectat o singură dată, aplicat pe toate paginile noastre (NU pe /p/). */}
+      <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+        <h2 style={{ fontSize: 18, margin: '0 0 4px' }}>{t('admin.site.chrome.title')}</h2>
+        <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 16px' }}>{t('admin.site.chrome.intro')}</p>
+        <ChromeEditor value={chrome} theme={theme} onChange={setChrome} />
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" disabled={chromeState === 'saving'} onClick={() => void publishChrome()} style={{ padding: '9px 18px', fontSize: 14 }}>
+            {chromeState === 'saving' ? t('admin.site.publishing') : chromeState === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
+          </button>
+          {chromeState === 'err' && <span role="alert" style={{ color: '#c0392b', fontSize: 12 }}>{t('admin.site.publishErr')}</span>}
+          <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.site.chrome.publishHint')}</span>
         </div>
       </div>
 

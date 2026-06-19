@@ -276,6 +276,30 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   Exporturile CSV trec prin `src/utils/csv.ts` (`toCsv`/`csvCell` — anti formula-injection; și în LpAnalytics).
 - Amânat (LP general): servire pe subdomeniu (izolare XSS pt. autori ne-de-încredere); cod >200KB în
   Storage; `/en/p/**`; atribuire lead la membru de echipă + istoric status; suită reguli cu emulator.
+- **Site CMS public — LP Studio controlează site-ul NOSTRU (Workstream B, ACTIV 16–19.06.2026):** panoul
+  „Site" din `/admin` administrează design-ul + chrome-ul + paginile site-ului public, **separat strict** de
+  LP-urile de campanie. **DISTINCȚIE CRITICĂ:** tema publică + chrome-ul global se aplică DOAR pe site-ul NOSTRU =
+  paginile React (`SiteLayout`) + paginile de site `kind:'site'` (`/pagina/{slug}`). **LP-urile de campanie
+  `kind:'campaign'` (`/p/{slug}`) sunt ale CLIENȚILOR — ZERO temă publică, ZERO chrome global; design + blocuri proprii.**
+  - **B1 — temă publică:** `siteConfig/publicTheme` (CustomTheme) editată în „Site" cu `ThemeControls`. Tipar
+    HIBRID anti-flash/anti-hydration-drift: snapshot copt (`src/config/publicTheme.ts`, render sincron == prerender)
+    + override runtime `getDoc` cu guard `navigator.webdriver` (NU citi Firestore sub prerender/boot — listener-ele
+    blochează `networkidle`). serveLp aplică tema ca `design` pe paginile `kind:'site'` (`getPublicThemeDesign`, cache modul ~60s).
+  - **B2a — pagini de site:** `LandingPage.kind: 'campaign'|'site'` (default campaign). `LandingStudio` are prop
+    `kind` (filtre/metrici/recompile pe tip; slug-unicitate GLOBALĂ pe colecție). serveLp separă strict: `/pagina`
+    servește DOAR `kind:'site'` publicate, `/p` restul; kind greșit → 404. `firebase.json`: rewrite `/pagina/** →
+    serveLp` FĂRĂ pinTag (două rewrite-uri cu pinTag pe același Run service → „Failed to replace Run service").
+  - **B2b — header/footer GLOBAL + meniu data-driven:** `siteConfig/publicChrome` (`SiteChrome`:
+    brand/tagline ro+en/nav[]/CTA/footer text+links[], `src/types/siteChrome.ts`, coerce unic — `internalHref`
+    anti open-redirect, plafoane ≤12 itemi). Etichete LITERALE per-limbă (EN cade pe RO) — fără i18n în functions.
+    Proiectat O SINGURĂ DATĂ în „Site" (`ChromeEditor`, câmpuri structurate + preview ro/en), aplicat AUTOMAT pe
+    paginile React (`usePublicChrome` + `SiteLayout`, hibrid) ȘI pe `/pagina/{slug}` (serveLp `composeSiteChrome`
+    injectează header/footer escapate + href localizat; `composeLpPage(...,chrome)` — chrome `null` pe `/p/` =
+    NEATINS; `DEFAULT_SITE_CHROME` fallback, paritate TS↔JS testată e2e). Reguli `siteConfig/{docId}` =
+    `docId in ['publicTheme','publicChrome']`, read public, write admin. Snapshot-uri coapte de
+    `scripts/pull-public-{theme,chrome}.mjs` (manual în sync, înainte de build:site).
+  - Amânat (B2c): sitemap dinamic `/pagina/sitemap.xml`; bilingv complet pe paginile de site (pereche ro↔en);
+    ascunderea tab-ului Design în LpEditor pt. `kind:'site'`.
 
 ## Capcane cunoscute
 

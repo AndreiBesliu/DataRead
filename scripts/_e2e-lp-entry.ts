@@ -8,3 +8,5 @@ export { sanitizeVariantPart, variantKey, buildLpUrl } from '../src/types/lpAttr
 // Pentru testul de paritate TS↔JS al constantelor Self Marketing (limits/allowlist/quota).
 export { SELF_PROFILE_LIMITS, STRATEGY_DIRECTION_LIMITS, DETAILS_LIMITS, SELF_FREE_TOTAL, SELF_DAILY_CAP } from '../src/types/selfMarketing';
 export { INDUSTRIES } from '../src/types/onboarding';
+// Pentru paritatea TS↔JS a chrome-ului default (PUBLIC_CHROME_DEFAULT == DEFAULT_SITE_CHROME din functions).
+export { PUBLIC_CHROME_DEFAULT } from '../src/config/publicChrome';

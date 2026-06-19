@@ -1559,7 +1559,7 @@ async function logLpVisit(db, slug, req, lp) {
   }).catch(() => {});
 }
 
-function composeLpPage(slug, lp, req, pathPrefix = '/p') {
+function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null) {
   const lang = lp.lang === 'en' ? 'en' : 'ro';
   const title = lpEscape((lp.title || '').slice(0, 140) || slug);
   const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
@@ -1575,6 +1575,8 @@ function composeLpPage(slug, lp, req, pathPrefix = '/p') {
   const body = typeof lp.html === 'string' ? lp.html : '';
   // Decorul de fundal al paginii — compilat la salvare în client, injectat aici (motorul nu trăiește în functions).
   const pageDecor = typeof lp.pageDecorHtml === 'string' ? lp.pageDecorHtml : '';
+  // Chrome global (header/footer) — DOAR pe paginile de site (chrome != null); null pe campanii (/p/) = NEATINS.
+  const sc = chrome ? composeSiteChrome(chrome, lang) : { headerHtml: '', footerHtml: '' };
   return (
     `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">` +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -1591,7 +1593,7 @@ function composeLpPage(slug, lp, req, pathPrefix = '/p') {
     (desc ? `<meta name="twitter:description" content="${desc}">` : '') +
     (ogImage ? `<meta name="twitter:image" content="${ogImage}">` : '') +
     (favicon ? `<link rel="icon" href="${favicon}">` : '') +
-    `<style>${css}</style></head><body>${pageDecor}${body}${lpScripts(slug, lp)}</body></html>`
+    `<style>${css}</style></head><body>${pageDecor}${sc.headerHtml}${body}${sc.footerHtml}${lpScripts(slug, lp)}</body></html>`
   );
 }
 
@@ -1799,6 +1801,129 @@ async function getPublicThemeDesign(db) {
   return _publicThemeCache.theme;
 }
 
+// ── Chrome global al site-ului (header/topbar + footer + meniu) — siteConfig/publicChrome. Aplicat DOAR pe
+// paginile de site (kind:'site', /pagina/{slug}); NICIODATĂ pe LP-urile de campanie (/p/), care rămân ale
+// clienților. Etichete LITERALE per-limbă (serveLp alege după lp.lang; EN cade pe RO) — fără i18n în functions.
+// Style-uit cu variabilele temei publice (--accent/--fg-0/--bg-1/--border, setate de lpThemeCss prin tema B2a). ──
+
+// Default „copt" în functions (port al PUBLIC_CHROME_DEFAULT din src/config/publicChrome.ts) — fallback când
+// doc-ul lipsește, ca paginile de site să aibă mereu chrome consistent cu paginile React. Paritate testată e2e.
+const DEFAULT_SITE_CHROME = {
+  schema: 1,
+  brandName: 'DataRead',
+  taglineRo: 'Date. Strategie. Creștere.',
+  taglineEn: 'Data. Strategy. Growth.',
+  nav: [
+    { labelRo: 'Pachete', labelEn: 'Packages', href: '/pachete' },
+    { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing' },
+    { labelRo: 'Contact', labelEn: 'Contact', href: '/contact' },
+  ],
+  ctaLabelRo: 'Începe acum',
+  ctaLabelEn: 'Get started',
+  ctaHref: '/start',
+  footerTextRo: '© DataRead. Toate drepturile rezervate.',
+  footerTextEn: '© DataRead. All rights reserved.',
+  footerLinks: [
+    { labelRo: 'Termeni și condiții', labelEn: 'Terms and conditions', href: '/legal/termeni' },
+    { labelRo: 'Confidențialitate', labelEn: 'Privacy', href: '/legal/confidentialitate' },
+    { labelRo: 'Cont client', labelEn: 'Client login', href: '/app' },
+  ],
+};
+exports.DEFAULT_SITE_CHROME = DEFAULT_SITE_CHROME;
+
+const CHROME_ITEMS_MAX = 12;
+// Path intern sigur (port al internalHref din src/types/siteChrome.ts): '/' sau '/x…' (nu '//' protocol-relative,
+// fără schemă/`javascript:`), ≤200; altfel '#'. Anti open-redirect/injection în href-urile de meniu.
+function chromeInternalHref(v) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s === '/' || (/^\/[^/]/.test(s) && s.length <= 200) ? s : '#';
+}
+// Port JS al toLocalizedPath (src/i18n/routing.ts): en → prefix /en (/ → /en); ro → neatins. href deja intern.
+function localizePath(href, lang) {
+  const clean = typeof href === 'string' && href.startsWith('/') ? href : '/' + String(href || '');
+  if (lang === 'en') return clean === '/' ? '/en' : '/en' + clean;
+  return clean;
+}
+exports.chromeInternalHref = chromeInternalHref;
+exports.localizePath = localizePath;
+
+// Cache de modul al chrome-ului public (ca tema): o instanță caldă nu citește la fiecare render. TTL ~60s.
+let _publicChromeCache = { at: 0, chrome: null };
+async function getPublicChromeDesign(db) {
+  const now = Date.now();
+  if (now - _publicChromeCache.at < 60000) return _publicChromeCache.chrome;
+  try {
+    const snap = await db.collection('siteConfig').doc('publicChrome').get();
+    const c = snap.exists ? (snap.data() || {}).chrome : null;
+    _publicChromeCache = { at: now, chrome: c && typeof c === 'object' ? c : null };
+  } catch (e) {
+    _publicChromeCache = { at: now, chrome: _publicChromeCache.chrome };
+  }
+  return _publicChromeCache.chrome;
+}
+// Seam de test: resetează cache-urile de configurare publică (temă + chrome) între cazuri în e2e.
+exports.__resetPublicCaches = () => { _publicThemeCache = { at: 0, theme: null }; _publicChromeCache = { at: 0, chrome: null }; };
+
+function chromeLabelJs(it, lang) {
+  const ro = typeof it.labelRo === 'string' ? it.labelRo : '';
+  const en = typeof it.labelEn === 'string' ? it.labelEn : '';
+  return (lang === 'en' ? en || ro : ro) || '';
+}
+function chromeItemsJs(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((raw) => (raw && typeof raw === 'object' ? raw : {}))
+    .map((d) => ({
+      labelRo: typeof d.labelRo === 'string' ? d.labelRo.slice(0, 60) : '',
+      labelEn: typeof d.labelEn === 'string' ? d.labelEn.slice(0, 60) : '',
+      href: chromeInternalHref(d.href),
+    }))
+    .filter((it) => it.labelRo || it.labelEn)
+    .slice(0, CHROME_ITEMS_MAX);
+}
+// Compune header + footer ca string-uri HTML SIGURE: etichetele ESCAPATE (lpEscape, anti-injecție), href-urile
+// validate intern + localizate după limbă (anti open-redirect). chrome null/corupt → default. Folosit DOAR la /pagina.
+function composeSiteChrome(rawChrome, lang) {
+  const c = rawChrome && typeof rawChrome === 'object' ? rawChrome : DEFAULT_SITE_CHROME;
+  const L = lang === 'en' ? 'en' : 'ro';
+  const href = (h) => lpEscape(localizePath(chromeInternalHref(h), L));
+  const rawBrand = (typeof c.brandName === 'string' && c.brandName.trim() ? c.brandName : DEFAULT_SITE_CHROME.brandName).slice(0, 40);
+  const brand = lpEscape(rawBrand);
+  const brandUpper = lpEscape(rawBrand.toUpperCase());
+  const tagline = lpEscape(String((L === 'en' ? c.taglineEn : c.taglineRo) || '').slice(0, 120));
+  const nav = chromeItemsJs(c.nav);
+  const ctaHref = c.ctaHref == null || c.ctaHref === '' ? '' : chromeInternalHref(c.ctaHref);
+  const ctaLabel = lpEscape(String((L === 'en' ? c.ctaLabelEn || c.ctaLabelRo : c.ctaLabelRo) || '').slice(0, 40));
+  const footerText = lpEscape(String((L === 'en' ? c.footerTextEn || c.footerTextRo : c.footerTextRo) || '').slice(0, 200));
+  const footerLinks = chromeItemsJs(c.footerLinks);
+
+  const navHtml = nav
+    .map((it) => `<a href="${href(it.href)}" style="color:var(--fg-0);text-decoration:none;font-size:14px">${lpEscape(chromeLabelJs(it, L))}</a>`)
+    .join('');
+  const ctaHtml = ctaHref && ctaLabel
+    ? `<a href="${lpEscape(localizePath(ctaHref, L))}" style="background:var(--accent);color:var(--accent-contrast);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">${ctaLabel}</a>`
+    : '';
+  const headerHtml =
+    '<header style="border-bottom:1px solid var(--border);background:var(--bg-1)">' +
+    '<div style="max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">' +
+    `<a href="${href('/')}" style="font-size:22px;font-weight:800;color:var(--fg-0);text-decoration:none">${brand}</a>` +
+    (tagline ? `<span style="font-size:11px;color:var(--fg-1);text-transform:uppercase;letter-spacing:1.2px;font-weight:700">${tagline}</span>` : '') +
+    `<nav style="display:flex;gap:16px;align-items:center;margin-left:auto;flex-wrap:wrap">${navHtml}${ctaHtml}</nav>` +
+    '</div></header>';
+  const footerLinksHtml = footerLinks
+    .map((it) => `<a href="${href(it.href)}" style="color:var(--fg-1);text-decoration:none">${lpEscape(chromeLabelJs(it, L))}</a>`)
+    .join('');
+  const footerHtml =
+    '<footer style="border-top:1px solid var(--border);background:var(--bg-1);margin-top:48px">' +
+    '<div style="max-width:1100px;margin:0 auto;padding:20px 24px;display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--fg-1)">' +
+    (footerText ? `<span>${footerText}</span>` : '') +
+    footerLinksHtml +
+    `<span style="margin-left:auto;font-weight:700;font-size:12px;letter-spacing:1px;color:var(--fg-0)">${brandUpper}</span>` +
+    '</div></footer>';
+  return { headerHtml, footerHtml };
+}
+exports.composeSiteChrome = composeSiteChrome;
+
 exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public' }, async (req, res) => {
   try {
     const path = req.path || '';
@@ -1819,13 +1944,15 @@ exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public
     if (isSite !== lpIsSite) return notFound();
     // Paginile de site folosesc tema publică (consistență de site); campaniile, design-ul propriu.
     const lpForRender = isSite ? { ...lp, design: (await getPublicThemeDesign(db)) || lp.design } : lp;
+    // Chrome global (header/footer + meniu) DOAR pe paginile de site (config sau default); campaniile (/p/) → null → neatinse.
+    const chrome = isSite ? ((await getPublicChromeDesign(db)) || DEFAULT_SITE_CHROME) : null;
     await logLpVisit(db, slug, req, lp).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
     res
       .status(200)
       .set('Content-Type', 'text/html; charset=utf-8')
       .set('Cache-Control', 'no-store')
       .set('Content-Security-Policy', LP_CSP)
-      .send(composeLpPage(slug, lpForRender, req, isSite ? '/pagina' : '/p'));
+      .send(composeLpPage(slug, lpForRender, req, isSite ? '/pagina' : '/p', chrome));
   } catch (err) {
     logger.error('serveLp failed', { err: String(err) });
     res.status(500).set('Content-Type', 'text/html; charset=utf-8').send(lpNotFound());

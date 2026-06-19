@@ -7,6 +7,8 @@ import { cookieConsent, setCookieConsent } from '../services/analytics';
 import { useAuthStore } from '../store/authStore';
 import { customThemeStyle } from '../theme/themes';
 import { usePublicTheme, PublicThemeStyle } from './PublicTheme';
+import { usePublicChrome } from './PublicChrome';
+import { chromeLabel } from '../types/siteChrome';
 import Seo from './Seo';
 import type { PublicRoute } from './publicRoutes';
 
@@ -27,6 +29,9 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   // = snapshot copt (== prerender, fără flash); override live din Firestore. Stilizarea structurală a
   // bannerului (nav/butoane/hero/glow) rămâne în .theme-banner.
   const publicTheme = usePublicTheme();
+  // Chrome global (header/footer + meniu) — data-driven din siteConfig/publicChrome (hibrid: snapshot copt ==
+  // prerender + override runtime). Editat o singură dată în /admin → aplicat pe TOATE paginile noastre.
+  const chrome = usePublicChrome();
 
   const [consent, setConsent] = useState(cookieConsent());
   const decide = (v: 'granted' | 'denied') => {
@@ -42,15 +47,17 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
       <header style={{ borderBottom: '1px solid var(--border)', background: 'rgba(10, 18, 40, 0.92)' }}>
         <div style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
           <Link to={p('/')} className="wordmark" style={{ fontSize: 22, textDecoration: 'none' }}>
-            {t('app.name')}
+            {chrome.brandName}
           </Link>
-          <span style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700 }}>
-            {t('app.tagline')}
-          </span>
+          {(lang === 'en' ? chrome.taglineEn : chrome.taglineRo) ? (
+            <span style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700 }}>
+              {lang === 'en' ? chrome.taglineEn : chrome.taglineRo}
+            </span>
+          ) : null}
           <nav style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
-            <Link to={p('/pachete')} style={{ color: '#dbe4f5' }}>{t('nav.packages')}</Link>
-            <Link to={p('/self-marketing')} style={{ color: '#dbe4f5' }}>{t('nav.selfMarketing')}</Link>
-            <Link to={p('/contact')} style={{ color: '#dbe4f5' }}>{t('nav.contact')}</Link>
+            {chrome.nav.map((it, i) => (
+              <Link key={i} to={p(it.href)} style={{ color: '#dbe4f5' }}>{chromeLabel(it, lang)}</Link>
+            ))}
             <Link
               to={toLocalizedPath(slug, otherLang)}
               onClick={() => persistLanguage(otherLang)}
@@ -80,9 +87,11 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
                 </Link>
               )
             )}
-            <Link to={p('/start')} className="btn btn-primary" style={{ padding: '7px 14px', fontSize: 13 }}>
-              {t('landing.heroSecondary')}
-            </Link>
+            {chrome.ctaHref && (chrome.ctaLabelRo || chrome.ctaLabelEn) ? (
+              <Link to={p(chrome.ctaHref)} className="btn btn-primary" style={{ padding: '7px 14px', fontSize: 13 }}>
+                {lang === 'en' ? chrome.ctaLabelEn || chrome.ctaLabelRo : chrome.ctaLabelRo}
+              </Link>
+            ) : null}
           </nav>
         </div>
       </header>
@@ -91,11 +100,11 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
 
       <footer style={{ borderTop: '1px solid var(--border)', background: 'rgba(16, 28, 58, 0.6)', marginTop: 48 }}>
         <div style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '20px 24px', display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center', fontSize: 13, color: 'var(--fg-1)' }}>
-          <span>{t('footer.rights')}</span>
-          <Link to={p('/legal/termeni')} style={{ color: 'var(--fg-1)' }}>{t('footer.terms')}</Link>
-          <Link to={p('/legal/confidentialitate')} style={{ color: 'var(--fg-1)' }}>{t('footer.privacy')}</Link>
-          <Link to="/app" style={{ color: 'var(--fg-1)' }}>{t('footer.clientLogin')}</Link>
-          <span style={{ marginLeft: 'auto', color: '#dbe4f5', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>DATAREAD.RO</span>
+          <span>{lang === 'en' ? chrome.footerTextEn || chrome.footerTextRo : chrome.footerTextRo}</span>
+          {chrome.footerLinks.map((it, i) => (
+            <Link key={i} to={p(it.href)} style={{ color: 'var(--fg-1)' }}>{chromeLabel(it, lang)}</Link>
+          ))}
+          <span style={{ marginLeft: 'auto', color: '#dbe4f5', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>{chrome.brandName.toUpperCase()}</span>
         </div>
       </footer>
 
