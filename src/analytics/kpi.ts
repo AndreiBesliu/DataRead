@@ -138,6 +138,34 @@ export function computeKpis(metrics: DailyMetric[]): Kpis {
   return kpisFromTotals(sumMetrics(metrics));
 }
 
+/** KPI-urile unei platforme, pentru defalcarea unei imagini multi-platformă (un client care rulează pe
+ *  Meta + Google + TikTok simultan). */
+export interface PlatformKpis {
+  platform: Platform;
+  kpis: Kpis;
+  campaigns: number;
+}
+
+/** Grupează campaniile pe platformă și derivă KPI-urile per platformă (răspunsul la „centralizează o campanie
+ *  care rulează pe mai multe platforme"). Pură, agnostică de sursa metricilor (manual/CSV/API). Ordinea = PLATFORMS;
+ *  o platformă fără campanii nu apare. */
+export function kpisByPlatform(items: Array<{ platform: Platform; totals: Totals }>): PlatformKpis[] {
+  const groups = new Map<Platform, { totals: Totals[]; count: number }>();
+  for (const it of items) {
+    const p = PLATFORMS.includes(it.platform) ? it.platform : 'other';
+    const g = groups.get(p) ?? { totals: [], count: 0 };
+    g.totals.push(it.totals);
+    g.count++;
+    groups.set(p, g);
+  }
+  const out: PlatformKpis[] = [];
+  for (const p of PLATFORMS) {
+    const g = groups.get(p);
+    if (g) out.push({ platform: p, kpis: kpisFromTotals(addTotals(g.totals)), campaigns: g.count });
+  }
+  return out;
+}
+
 // ── AI Optimization Engine (spec 5.5): recomandarea AI pe baza performanței campaniei ──
 export const VERDICTS = ['scale', 'maintain', 'pause', 'test'] as const;
 export type Verdict = (typeof VERDICTS)[number];

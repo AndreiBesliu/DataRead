@@ -912,6 +912,8 @@ const en: typeof ro = {
     mcTitle: 'Marketing Center',
     mcSubtitle: 'Cross-platform campaign monitoring — ROAS, CPL, CTR and daily performance.',
     mcAggregate: 'Total across filtered campaigns',
+    byPlatformTitle: 'Breakdown by platform',
+    campaignsCol: 'Campaigns',
     mcAllPlatforms: 'All platforms',
     mcAllStatuses: 'All statuses',
     mcClient: 'Client',

@@ -30,6 +30,7 @@ import {
   coerceToInsight,
   coerceToReport,
   emptyTotals,
+  kpisByPlatform,
   kpisFromTotals,
   sumMetrics,
   type AiInsight,
@@ -111,6 +112,48 @@ function KpiCards({ kpis }: { kpis: Kpis }) {
           <div style={{ fontSize: hero ? 20 : 16, fontWeight: 800, color: hero ? 'var(--accent, #2563eb)' : 'var(--fg-0)' }}>{v}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Defalcare KPI pe platformă (Meta/Google/TikTok side-by-side) — imaginea centralizată a unui client/portofoliu
+ *  care rulează pe mai multe platforme. Agnostică de sursa datelor (manual/CSV/API). Ascunsă dacă e o singură
+ *  platformă (agregatul de deasupra o arată deja). */
+function PlatformBreakdown({ items }: { items: CampaignDef[] }) {
+  const { t } = useTranslation();
+  const rows = kpisByPlatform(items);
+  if (rows.length <= 1) return null;
+  const td: CSSProperties = { padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, textAlign: 'right' };
+  const tdL: CSSProperties = { ...td, textAlign: 'left' };
+  return (
+    <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', marginTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, padding: '8px 10px', color: 'var(--fg-1)' }}>{t('admin.byPlatformTitle')}</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: 'var(--bg-0)' }}>
+            <th style={tdL}>{t('admin.campPlatform')}</th>
+            <th style={td}>{t('admin.campaignsCol')}</th>
+            <th style={td}>{t('admin.kpiSpend')}</th>
+            <th style={td}>{t('admin.kpiRevenue')}</th>
+            <th style={td}>{t('admin.kpiRoas')}</th>
+            <th style={td}>{t('admin.kpiLeads')}</th>
+            <th style={td}>{t('admin.kpiCpl')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.platform}>
+              <td style={tdL}><span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: PLATFORM_COLOR[r.platform], borderRadius: 4, padding: '1px 7px' }}>{PLATFORM_SHORT[r.platform]}</span></td>
+              <td style={td}>{r.campaigns}</td>
+              <td style={td}>{money(r.kpis.spend)}</td>
+              <td style={td}>{money(r.kpis.revenue)}</td>
+              <td style={{ ...td, fontWeight: 700, color: r.kpis.roas !== null && r.kpis.roas >= 1 ? '#1e7e34' : 'var(--fg-1)' }}>{roasFmt(r.kpis.roas)}</td>
+              <td style={td}>{r.kpis.leads}</td>
+              <td style={td}>{moneyOrDash(r.kpis.cpl)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -439,6 +482,7 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
       <KpiCards kpis={kpis} />
+      <PlatformBreakdown items={campaigns.map((c) => c.data)} />
       <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>
         {campaigns.map((c) => {
           const k = kpisFromTotals(c.data.totals);
@@ -622,6 +666,7 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
       <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 700, color: 'var(--fg-1)' }}>{t('admin.mcAggregate')} ({visible.length})</div>
       <div style={{ marginBottom: 20 }}>
         <KpiCards kpis={aggregate} />
+        <PlatformBreakdown items={visible.map((c) => c.data)} />
       </div>
 
       {/* Filtre + creare. */}

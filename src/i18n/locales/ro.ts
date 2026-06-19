@@ -919,6 +919,8 @@ const ro = {
     mcTitle: 'Marketing Center',
     mcSubtitle: 'Monitorizarea campaniilor pe toate platformele — ROAS, CPL, CTR și performanță zilnică.',
     mcAggregate: 'Total pe campaniile filtrate',
+    byPlatformTitle: 'Defalcare pe platformă',
+    campaignsCol: 'Campanii',
     mcAllPlatforms: 'Toate platformele',
     mcAllStatuses: 'Toate statusurile',
     mcClient: 'Client',

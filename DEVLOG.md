@@ -1246,6 +1246,17 @@ normaliser, secretele niciodată în chat/repo.
 > + build + build:site (16 pagini) + boot. DEPLOYED: functions (toate dormante → fără secrete). docs/CONNECTORS-ADS-API.md
 > actualizat (pași activare per platformă). **PENDING Andrei (la fel):** verificările per platformă + secrete + flip flag.
 
+**2026-06-19 - Task Completed — Defalcare KPI pe platformă (vizualizare multi-platformă)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continuă cu ce poți singur" — am livrat plata vizibilă a centralizării multi-platformă, folosind datele
+> pe care operatorii le au DEJA (manual + CSV), fără dependență de conectori.
+> - `kpisByPlatform(items)` PUR în `src/analytics/kpi.ts` (grupează campaniile pe platformă → KPI per platformă,
+>   ordinea PLATFORMS, agnostic de sursă) + teste în `scripts/test-analytics.ts`.
+> - `PlatformBreakdown` în Marketing Center: tabel Meta/Google/TikTok side-by-side (campanii/spend/revenue/ROAS/
+>   leads/CPL), în view-ul pe client (imaginea cross-platformă a unui client) ȘI sub agregatul global. Ascuns când
+>   e o singură platformă (agregatul deja o arată).
+> Verificat: 13/13 suites (+ byPlatform) + build (paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -9,6 +9,7 @@ import {
   coerceToReport,
   coerceToTotals,
   emptyTotals,
+  kpisByPlatform,
   type DailyMetric,
 } from '../src/analytics/kpi';
 
@@ -130,6 +131,23 @@ check('raport: tipuri greșite → stringuri goale (dar păstrat dacă măcar un
   const r = coerceToReport({ summary: 42, highlights: 'x', recommendations: null });
   return r?.summary === '' && r.highlights === 'x';
 })());
+
+// Defalcare pe platformă (vizualizare multi-platformă: un client pe Meta+Google+TikTok).
+{
+  const items = [
+    { platform: 'meta' as const, totals: { spend: 100, impressions: 1000, clicks: 50, leads: 5, revenue: 300 } },
+    { platform: 'meta' as const, totals: { spend: 50, impressions: 500, clicks: 20, leads: 2, revenue: 150 } },
+    { platform: 'google' as const, totals: { spend: 80, impressions: 800, clicks: 40, leads: 4, revenue: 160 } },
+  ];
+  const byP = kpisByPlatform(items);
+  check('byPlatform: 2 platforme prezente (meta+google), tiktok absent', byP.length === 2);
+  check('byPlatform: ordinea PLATFORMS (meta înaintea google)', byP[0].platform === 'meta' && byP[1].platform === 'google');
+  const meta = byP.find((x) => x.platform === 'meta');
+  check('byPlatform: meta agregă 2 campanii (spend 150, revenue 450)', !!meta && meta.campaigns === 2 && meta.kpis.spend === 150 && meta.kpis.revenue === 450);
+  check('byPlatform: meta ROAS = 450/150 = 3', meta?.kpis.roas === 3);
+  check('byPlatform: gol → []', kpisByPlatform([]).length === 0);
+  check('byPlatform: platformă necunoscută → grupată la „other"', kpisByPlatform([{ platform: 'linkedin' as never, totals: emptyTotals() }])[0].platform === 'other');
+}
 
 if (failures) {
   console.error(`${failures} checks failed`);
