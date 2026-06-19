@@ -53,5 +53,55 @@ mapează insights-urile platformei pe schema noastră de metrici.
 - Modelul de date multi-platformă + rules (admin-only)
 - Motorul de KPI testat (ROAS/CPL/CTR/CPC/CPM/conversie)
 - Panoul Marketing Center: agregat, filtre (platformă/status/căutare), drill-down per campanie,
-  grafic, CSV, introducere/editare manuală a zilelor
+  grafic, CSV (export + **import**), introducere/editare manuală a zilelor
 - Câmpul `source` și upsert-ul pe dată — pregătite pentru scriere automată
+
+---
+
+## STARE IMPLEMENTARE (actualizat 2026-06-19)
+
+### Felia 0 — LIVRATĂ (fără blocante externe)
+- **`clientUid` denormalizat pe campanie** (`CampaignDef.clientUid`, `coerceToCampaign`) — leagă campania de
+  contul clientului pentru regulile multi-tenant ȘI pentru jobul de ingestie. Scris la create (din lead) +
+  ținut în sincron de triggerul **`onLeadWrite`** (când `leads/{id}.clientUid` se schimbă → propagă pe campaniile lead-ului).
+- **Import CSV** în Marketing Center (`src/utils/metricsCsv.ts` — parser pur tolerant: alias-uri antet ro/en,
+  delimitator `;`/`,`, numere ro/en, upsert pe dată, dată invalidă sărită). Operatorul exportă din Ads Manager → încarcă.
+- **Plafon valoric** pe metrici (`MAX_METRIC_VALUE` în `coerceToDailyMetric`) — anti intrare absurdă / date corupte.
+- **Schema credențiale** `clients/{uid}/platformCredentials/{platform}` (`src/types/platformCredentials.ts`) +
+  reguli: **read admin-only, write false** (token-ul nu ajunge niciodată la client; scris doar de Admin SDK).
+
+### Felia 1 (Meta) — COD SCRIS, DORMANT (`CONNECTORS_ENABLED = false` în `functions/index.js`)
+Cu flag-ul pe `false`, OAuth-ul + jobul programat **NU sunt exportate** → deploy-ul NU cere secretele Meta
+(principiul #4: integrare opțională). Partea PURĂ e mereu activă + testată (`scripts/test-connectors.ts` +
+e2e TEST U): `functions/connectors/meta.js` (`mapMetaInsight`/`mapMetaInsightsResponse`/`buildMetaInsightsUrl`),
+`functions/lib/tokenCrypto.js` (AES-256-GCM), `runMetaPull` (nucleu de ingestie injectabil), `insightsWindow`.
+
+Funcții dormante (gated): `initiateMetaOAuth` (callable admin), `metaOAuthCallback` (onRequest, redirect),
+`disconnectPlatform` (callable admin), `pullMetaInsights` (`onSchedule` zilnic 05:00 Europe/Bucharest, fereastră
+glisantă 7 zile, upsert `source:'meta'`). Token criptat AES-256-GCM (cheia master `TOKEN_ENC_KEY` în Secret Manager).
+
+### PAȘI DE ACTIVARE (Andrei) — în ordine
+1. **Meta Business Verification** (Business Manager) — pornește DEVREME, durează săptămâni.
+2. **Meta app** (developers.facebook.com) + **App Review** pentru `ads_read` (Advanced Access) — 1–3 săptămâni,
+   cere privacy policy + screencast + descrierea use-case-ului. Redirect OAuth: `https://dataread.ro/api/meta/callback`.
+3. Setează secretele (Secret Manager):
+   `firebase functions:secrets:set META_APP_ID` / `META_APP_SECRET` / `TOKEN_ENC_KEY`
+   (`TOKEN_ENC_KEY` = 32 octeți; ex. `openssl rand -hex 32`. ⚠️ pierderea cheii = reconectarea tuturor clienților.)
+4. Adaugă în `firebase.json` un rewrite `"/api/meta/callback" → function metaOAuthCallback`.
+5. `CONNECTORS_ENABLED = true` în `functions/index.js` → `npm run deploy:functions`.
+6. (UI de conectare în /admin — „Conectează contul Meta al clientului" — se adaugă la activare; callable-urile
+   există dar sunt dormante acum, deci UI-ul ar eșua până la pasul 5.)
+
+### Note / rafinări pentru activare (din review-ul adversarial)
+- **Model token Meta:** Meta nu dă refresh tokens clasice; long-lived user token ~60 zile. Pentru zero-reconectare
+  evaluează **System User token** (nu expiră) — `runMetaPull` folosește orice token decriptat din credențială.
+- **Selectarea contului:** callback-ul ia ACUM primul ad account (`/me/adaccounts`). Rafinare: lasă operatorul să
+  aleagă contul + **confirmă numele contului** înainte de salvare (anti cross-tenant leak).
+- **`totals` la scalare:** `runMetaPull` recalculează `totals` O(n) după upsert; la volume mari → trigger
+  incremental `onDocumentWritten('campaigns/{id}/metrics/{date}')` cu delta before/after.
+- **Conflict manual↔API pe aceeași zi:** upsert `source:'meta'` rescrie ziua. CSV-ul rămâne `source:'manual'`.
+  De decis politica fină (avertizare operator / păstrare istoric) la activare.
+- **Backfill istoric:** `pullMetaInsights` trage 7 zile; la prima conectare adaugă un job one-shot paginat pentru
+  ultimele luni.
+- **Timezone/monedă:** stocate per credențială (`accountTimezone`/`accountCurrency`); cheia zilei = data locală a
+  contului. Multi-currency (curs istoric) = la primul client non-EUR.

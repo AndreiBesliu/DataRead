@@ -217,6 +217,35 @@ exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/
   }
 });
 
+// ── Sincronizare clientUid lead → campanii. Campania denormalizează clientUid-ul lead-ului (pentru
+// regulile multi-tenant + jobul de ingestie care mapează campania → credențiala clientului). Când
+// adminul conectează/reconectează/deconectează lead-ul la un cont (leads/{id}.clientUid se schimbă),
+// propagăm pe TOATE campaniile lead-ului. Doar la schimbare reală de clientUid (altfel no-op). ──
+exports.onLeadWrite = onDocumentWritten({ document: 'leads/{leadId}', region: REGION }, async (event) => {
+  const leadId = event.params.leadId;
+  try {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    const beforeUid = before && typeof before.clientUid === 'string' ? before.clientUid : '';
+    const afterUid = after && typeof after.clientUid === 'string' ? after.clientUid : '';
+    if (beforeUid === afterUid) return; // nicio schimbare de legătură → nimic de propagat
+    const db = admin.firestore();
+    const snap = await db.collection('campaigns').where('leadId', '==', leadId).get();
+    if (snap.empty) return;
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+    // Firestore: max 500 operații/batch → împărțim defensiv (campaniile per lead sunt puține, dar safe).
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 450) {
+      const batch = db.batch();
+      for (const d of docs.slice(i, i + 450)) batch.update(d.ref, { clientUid: afterUid, updatedAt: ts });
+      await batch.commit();
+    }
+    logger.info('onLeadWrite: clientUid propagat pe campanii', { leadId, afterUid, count: docs.length });
+  } catch (err) {
+    logger.error('onLeadWrite sync failed', { leadId, err: String(err) });
+  }
+});
+
 // ───────────────────────── [3] AI — Verticala 1 Marketing AI ─────────────────────────
 // Callable-ul aiGenerateCampaign: citește lead-ul + cererea SERVER-SIDE, cere modelului Claude
 // un pachet de livrabile (texte reclame / scripturi video / structură campanie Meta) cu ieșire
@@ -2105,3 +2134,204 @@ exports.manageAdmin = onCall({ region: REGION }, async (request) => {
     email: auth && auth.token && auth.token.email,
   }, request.data || {});
 });
+
+// ───────────────────────── [Conectori Ads — ingestie automată multi-platformă] ─────────────────────────
+// Centralizarea datelor de campanie pe mai multe platforme E DEJA gata (campaigns/{id}.platform +
+// metrics/{YYYY-MM-DD} cu source). Aici e ingestia AUTOMATĂ: primul conector = Meta. DORMANT (principiul #4 —
+// integrare opțională) până când Andrei finalizează Meta Business Verification + App Review (ads_read) și pune
+// secretele. Cu CONNECTORS_ENABLED=false, OAuth-ul + jobul programat NU sunt exportate → deploy-ul NU cere
+// secretele Meta/TOKEN_ENC_KEY. Activare: secrete în Secret Manager → CONNECTORS_ENABLED=true → deploy:functions.
+// Vezi docs/CONNECTORS-ADS-API.md. Partea PURĂ (mapare/crypto/fereastră/runMetaPull) e mereu exportată (teste).
+const metaConnector = require('./connectors/meta');
+const { encryptToken, decryptToken } = require('./lib/tokenCrypto');
+
+exports.mapMetaInsight = metaConnector.mapMetaInsight;
+exports.mapMetaInsightsResponse = metaConnector.mapMetaInsightsResponse;
+exports.buildMetaInsightsUrl = metaConnector.buildMetaInsightsUrl;
+exports.encryptToken = encryptToken;
+exports.decryptToken = decryptToken;
+
+const CONNECTORS_ENABLED = false; // ⚠️ flip la true DOAR după Meta verification + secrete (vezi docs/CONNECTORS-ADS-API.md)
+
+/** Fereastra glisantă de ingestie [since, until] (atribuirea Meta/Google se umple retroactiv → nu tragem doar
+ *  „ieri"). today = 'YYYY-MM-DD' (al contului); daysBack include ziua curentă. Pură (testabilă). */
+function insightsWindow(today, daysBack) {
+  const t = typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : new Date().toISOString().slice(0, 10);
+  const d = new Date(t + 'T00:00:00Z');
+  const back = Number.isFinite(daysBack) && daysBack > 0 ? daysBack - 1 : 0;
+  d.setUTCDate(d.getUTCDate() - back);
+  return { since: d.toISOString().slice(0, 10), until: t };
+}
+exports.insightsWindow = insightsWindow;
+
+function sumMetricsRaw(rows) {
+  const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+  for (const r of rows || []) { if (!r) continue; t.spend += n(r.spend); t.impressions += n(r.impressions); t.clicks += n(r.clicks); t.leads += n(r.leads); t.revenue += n(r.revenue); }
+  return t;
+}
+exports.sumMetricsRaw = sumMetricsRaw;
+
+/** Nucleul testabil al ingestiei Meta: db + fetch + cheia de criptare INJECTATE. Pentru fiecare campanie
+ *  Meta (platform=='meta', externalId + clientUid setate), decriptează token-ul clientului, trage Insights pe
+ *  fereastra glisantă, face UPSERT pe metrics/{zi} (source:'meta', idempotent) + recalculează totals. Eșec de
+ *  autorizare (400/401/403) → marchează credențiala needs_reconnect (NU blochează restul). Nu aruncă global. */
+async function runMetaPull(db, opts) {
+  const o = opts || {};
+  const fetchImpl = o.fetchImpl;
+  const encKey = o.encKey;
+  const windowDays = Number.isFinite(o.windowDays) && o.windowDays > 0 ? o.windowDays : 7;
+  const { since, until } = insightsWindow(o.today, windowDays);
+  const ts = admin.firestore.FieldValue.serverTimestamp();
+  const out = { processed: 0, written: 0, skipped: 0, reconnect: 0, errors: 0 };
+  const snap = await db.collection('campaigns').where('platform', '==', 'meta').get();
+  const tokenCache = new Map(); // clientUid → token clar | null (un singur decrypt/citire per client)
+  for (const docSnap of snap.docs) {
+    const c = docSnap.data() || {};
+    const externalId = typeof c.externalId === 'string' ? c.externalId : '';
+    const clientUid = typeof c.clientUid === 'string' ? c.clientUid : '';
+    if (!externalId || !clientUid) { out.skipped++; continue; }
+    const credRef = db.collection('clients').doc(clientUid).collection('platformCredentials').doc('meta');
+    try {
+      let token = tokenCache.get(clientUid);
+      if (token === undefined) {
+        const credSnap = await credRef.get();
+        const cred = credSnap.exists ? credSnap.data() || {} : null;
+        if (!cred || cred.status !== 'active' || !cred.tokenEnc) token = null;
+        else { try { token = decryptToken(cred.tokenEnc, encKey); } catch (e) { token = null; } }
+        tokenCache.set(clientUid, token);
+      }
+      if (!token) { out.skipped++; continue; }
+      const res = await fetchImpl(metaConnector.buildMetaInsightsUrl(externalId, since, until, token));
+      if (!res.ok) {
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          await credRef.set({ status: 'needs_reconnect', updatedAt: ts }, { merge: true });
+          out.reconnect++;
+        } else { out.errors++; }
+        continue;
+      }
+      const json = await res.json();
+      const metrics = metaConnector.mapMetaInsightsResponse(json);
+      if (metrics.length) {
+        const batch = db.batch();
+        for (const m of metrics) {
+          batch.set(docSnap.ref.collection('metrics').doc(m.date), {
+            schema: 1, date: m.date, spend: m.spend, impressions: m.impressions,
+            clicks: m.clicks, leads: m.leads, revenue: m.revenue, source: 'meta', updatedAt: ts,
+          }, { merge: true });
+        }
+        await batch.commit();
+        const all = await docSnap.ref.collection('metrics').get();
+        await docSnap.ref.update({ totals: sumMetricsRaw(all.docs.map((d) => d.data())), updatedAt: ts });
+      }
+      out.processed++;
+      out.written += metrics.length;
+    } catch (e) {
+      out.errors++;
+      logger.error('runMetaPull campaign failed', { id: docSnap.id, e: String(e) });
+    }
+  }
+  return out;
+}
+exports.runMetaPull = runMetaPull;
+
+if (CONNECTORS_ENABLED) {
+  const { onSchedule } = require('firebase-functions/v2/scheduler');
+  const crypto = require('crypto');
+  const META_APP_ID = defineSecret('META_APP_ID');
+  const META_APP_SECRET = defineSecret('META_APP_SECRET');
+  const TOKEN_ENC_KEY = defineSecret('TOKEN_ENC_KEY');
+  const META_API = `https://graph.facebook.com/${metaConnector.META_GRAPH_VERSION}`;
+  const META_REDIRECT_URI = 'https://dataread.ro/api/meta/callback'; // rewrite Hosting → metaOAuthCallback
+  const STATE_TTL_MS = 10 * 60 * 1000;
+
+  // 1) Operatorul pornește conectarea contului Meta al unui client. Întoarce URL-ul de consimțământ; `state`
+  //    (anti-CSRF) e persistat server-side cu TTL, legat de clientUid + adminul care a inițiat.
+  exports.initiateMetaOAuth = onCall({ region: REGION, secrets: [META_APP_ID], enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+    assertAdmin(request);
+    const clientUid = String((request.data || {}).clientUid || '').slice(0, 128);
+    if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid lipsește.');
+    const db = admin.firestore();
+    if (!(await clientExists(db, clientUid))) throw new HttpsError('not-found', 'Cont client inexistent.');
+    const state = crypto.randomBytes(24).toString('hex');
+    await db.collection('oauthStates').doc(state).set({
+      platform: 'meta', clientUid, createdBy: request.auth.uid,
+      expiresAt: Date.now() + STATE_TTL_MS, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    const params = new URLSearchParams({
+      client_id: META_APP_ID.value(), redirect_uri: META_REDIRECT_URI, state, scope: 'ads_read', response_type: 'code',
+    });
+    return { authUrl: `https://www.facebook.com/${metaConnector.META_GRAPH_VERSION}/dialog/oauth?${params.toString()}` };
+  });
+
+  // 2) Callback OAuth (redirect din Meta) → schimbă code → token long-lived, citește contul, criptează, scrie
+  //    credențiala. Public (browser), dar legat de `state` validat. NU expune token-ul; redirect înapoi în /admin.
+  exports.metaOAuthCallback = onRequest({ region: REGION, secrets: [META_APP_ID, META_APP_SECRET, TOKEN_ENC_KEY], invoker: 'public' }, async (req, res) => {
+    const fail = (msg) => res.status(400).send(`<!doctype html><meta charset="utf-8"><p>Conectare eșuată: ${lpEscape(msg)}. <a href="/admin">Înapoi</a></p>`);
+    try {
+      const code = String(req.query.code || '');
+      const state = String(req.query.state || '');
+      if (!code || !state) return fail('parametri lipsă');
+      const db = admin.firestore();
+      const stRef = db.collection('oauthStates').doc(state);
+      const st = await stRef.get();
+      const sd = st.exists ? st.data() : null;
+      if (!sd || sd.platform !== 'meta' || !sd.clientUid || (typeof sd.expiresAt === 'number' && sd.expiresAt < Date.now())) {
+        return fail('sesiune invalidă sau expirată');
+      }
+      await stRef.delete().catch(() => {});
+      // code → token scurt
+      const tokRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({
+        client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), redirect_uri: META_REDIRECT_URI, code,
+      }).toString());
+      if (!tokRes.ok) return fail('schimb token eșuat');
+      const shortTok = (await tokRes.json()).access_token;
+      // token scurt → token long-lived
+      const llRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({
+        grant_type: 'fb_exchange_token', client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), fb_exchange_token: shortTok,
+      }).toString());
+      const llJson = llRes.ok ? await llRes.json() : {};
+      const token = llJson.access_token || shortTok;
+      const expiresAt = typeof llJson.expires_in === 'number' ? Date.now() + llJson.expires_in * 1000 : 0;
+      // primul ad account (skeleton — rafinare: lasă operatorul să aleagă contul)
+      const acctRes = await fetch(`${META_API}/me/adaccounts?` + new URLSearchParams({
+        fields: 'account_id,name,currency,timezone_name', access_token: token,
+      }).toString());
+      const acct = (acctRes.ok ? (await acctRes.json()).data : [])[0] || {};
+      await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('meta').set({
+        schema: 1, platform: 'meta',
+        accountId: acct.account_id ? `act_${acct.account_id}` : '',
+        accountName: acct.name || '', status: 'active',
+        accountTimezone: acct.timezone_name || 'Europe/Bucharest', accountCurrency: acct.currency || 'EUR',
+        expiresAt, connectedBy: sd.createdBy || '',
+        tokenEnc: encryptToken(token, TOKEN_ENC_KEY.value()),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return res.status(200).send('<!doctype html><meta charset="utf-8"><p>Cont Meta conectat ✓. <a href="/admin">Înapoi în panou</a></p>');
+    } catch (err) {
+      logger.error('metaOAuthCallback failed', { err: String(err) });
+      return fail('eroare internă');
+    }
+  });
+
+  // 3) Deconectare (operator) → șterge credențiala (token-ul dispare). Revocarea la Meta = best-effort viitor.
+  exports.disconnectPlatform = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+    assertAdmin(request);
+    const d = request.data || {};
+    const clientUid = String(d.clientUid || '').slice(0, 128);
+    const platform = String(d.platform || '');
+    if (!clientUid || !['meta', 'google', 'tiktok'].includes(platform)) throw new HttpsError('invalid-argument', 'parametri invalizi');
+    await admin.firestore().collection('clients').doc(clientUid).collection('platformCredentials').doc(platform).delete();
+    return { ok: true };
+  });
+
+  // 4) Job zilnic: trage performanța Meta pentru toate campaniile conectate (fereastră glisantă 7 zile).
+  //    Rulează cu Service Account-ul funcției (fără request.auth). Timezone Bucharest pt. graficul ~05:00.
+  exports.pullMetaInsights = onSchedule(
+    { schedule: '0 5 * * *', timeZone: 'Europe/Bucharest', region: REGION, timeoutSeconds: 540, memory: '512MiB', secrets: [TOKEN_ENC_KEY], retryCount: 2 },
+    async () => {
+      const summary = await runMetaPull(admin.firestore(), { fetchImpl: (u) => fetch(u), encKey: TOKEN_ENC_KEY.value(), windowDays: 7 });
+      logger.info('pullMetaInsights done', summary);
+    }
+  );
+}

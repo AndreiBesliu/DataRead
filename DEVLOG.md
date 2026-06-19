@@ -1190,6 +1190,42 @@ normaliser, secretele niciodată în chat/repo.
 > servește header/footer din chrome (wordmark DataRead + footer). **B2c (amânat)**: sitemap dinamic /pagina; bilingv
 > complet pe paginile de site; ascundere tab Design în LpEditor pt. kind:'site'.
 
+**2026-06-19 - Task Started — Ingestie automată date campanii multi-platformă (Felia 0 + conector Meta)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „există vreo metodă prin care putem centraliza datele unei campanii pe mai multe platforme și să
+> înregistrăm datele automat din acele platforme?" → analiză multi-agent (cod + API-uri Meta/Google/TikTok +
+> sinteză + critic) → Andrei a ales „Felia 0 + pregătesc conectorul Meta".
+
+**2026-06-19 - Task Completed — Felia 0 (ingestie) + conector Meta dormant**
+> Model: Claude Opus 4.8 (1M context)
+> Centralizarea pe mai multe platforme era DEJA gata (campaigns/{id}.platform + metrics/{YYYY-MM-DD} cu source +
+> motor KPI agnostic). Aici: fundația de ingestie automată (Felia 0, live) + primul conector (Meta, cod scris dar
+> DORMANT până la verificările Meta ale lui Andrei).
+> **Felia 0 (live):**
+> - `clientUid` denormalizat pe campanie (`CampaignDef.clientUid`, `coerceToCampaign`) — leagă campania de cont
+>   pentru reguli multi-tenant + jobul de ingestie. Scris la create (din lead) + trigger nou **`onLeadWrite`**
+>   (propagă clientUid pe campaniile lead-ului la conectare/reconectare/deconectare). REPARĂ mismatch-ul real:
+>   regulile cereau `campaigns.clientUid` dar nu se scria niciodată.
+> - **Import CSV** în Marketing Center (`src/utils/metricsCsv.ts` — parser pur tolerant: alias-uri antet ro/en,
+>   delimitator `;`/`,`, numere ro/en, upsert pe dată, dată invalidă sărită; testat). Operatorul exportă din Ads
+>   Manager → încarcă. Plafon valoric `MAX_METRIC_VALUE` în `coerceToDailyMetric` (anti intrare absurdă).
+> - Schema credențiale `clients/{uid}/platformCredentials/{platform}` (`src/types/platformCredentials.ts`) +
+>   reguli: **read admin-only, write false** (token-ul NU ajunge la client; scris doar de Admin SDK).
+> **Conector Meta (cod scris, DORMANT — `CONNECTORS_ENABLED=false` → nu e exportat → deploy NU cere secretele Meta;
+> tipar „integrare opțională" ca AI_ENABLED):**
+> - PUR + testat: `functions/connectors/meta.js` (mapMetaInsight/mapMetaInsightsResponse/buildMetaInsightsUrl —
+>   lead din action_types lead, revenue din purchase), `functions/lib/tokenCrypto.js` (AES-256-GCM, cheie ca param),
+>   `runMetaPull` (nucleu de ingestie injectabil: db+fetch+cheie; upsert source:'meta', needs_reconnect pe 401,
+>   per-tenant izolat), `insightsWindow` (fereastră glisantă).
+> - DORMANT (gated): `initiateMetaOAuth`/`metaOAuthCallback`/`disconnectPlatform` (admin-gated, state TTL anti-CSRF,
+>   token criptat) + `pullMetaInsights` (`onSchedule` 05:00 Europe/Bucharest). Activare: secrete META_APP_ID/SECRET +
+>   TOKEN_ENC_KEY → flag true → deploy. Pași în `docs/CONNECTORS-ADS-API.md`.
+> Verificat: 13/13 suites (+ `test-connectors.ts`: CSV ro/en, credențiale, clientUid, plafoane) + e2e TEST U
+> (mapare Meta, crypto round-trip/tamper, runMetaPull cu store+fetch fals: upsert source:meta, needs_reconnect,
+> skip, filtru platform) + build + build:site (16 pagini) + boot. DEPLOYED: functions (onLeadWrite nou + restul) +
+> hosting + rules. **PENDING Andrei (calea critică, săptămâni):** Meta Business Verification + App Review (ads_read)
+> + secrete + flip flag. **Felia 2 (viitor):** Google Ads; trigger incremental totals; backfill istoric; UI conectare.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

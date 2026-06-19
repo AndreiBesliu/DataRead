@@ -140,9 +140,21 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   tiktok/other). Colecția de nivel superior `campaigns/{id}` (cu `leadId` + `clientName`
   denormalizat + `totals` rollup) + `campaigns/{id}/metrics/{YYYY-MM-DD}` (o zi de performanță,
   upsert pe dată). Motorul de KPI: `src/analytics/kpi.ts` PUR (ROAS/CPL/CTR/CPC/CPM/conversie),
-  testat în `scripts/test-analytics.ts`. v1 = introducere MANUALĂ a datelor; conectorii Meta/
-  Google Ads API scriu în același model (faza următoare — `docs/CONNECTORS-ADS-API.md`, cere
-  verificare Meta Business = săptămâni). `source` pe metrică distinge manual vs API.
+  testat în `scripts/test-analytics.ts`. Introducere MANUALĂ + **import CSV** (`src/utils/metricsCsv.ts`,
+  parser pur tolerant ro/en, upsert pe dată); conectorii API scriu în același model. `source` pe metrică
+  (`'manual'|Platform`) distinge manual vs API. Plafon valoric `MAX_METRIC_VALUE` în `coerceToDailyMetric`.
+- **Ingestie automată campanii (conectori Ads, ACTIV felia 0 / Meta DORMANT 19.06.2026):** vezi
+  `docs/CONNECTORS-ADS-API.md`. **Felia 0 (live):** `campaigns.clientUid` denormalizat (din lead, ținut în
+  sincron de triggerul **`onLeadWrite`**) — leagă campania de cont pentru reguli multi-tenant + jobul de
+  ingestie (REPARĂ mismatch: regulile cereau clientUid dar nu se scria). Credențiale la
+  `clients/{uid}/platformCredentials/{platform}` (`src/types/platformCredentials.ts`), reguli **read admin-only,
+  write false** (token criptat AES-256-GCM, nu ajunge la client). **Conector Meta = DORMANT** (`CONNECTORS_ENABLED=false`
+  în `functions/index.js` → OAuth + `onSchedule` NU sunt exportate → deploy NU cere secretele Meta; tipar
+  „integrare opțională" ca `AI_ENABLED`). Pur + testat: `functions/connectors/meta.js` (`mapMetaInsight`),
+  `functions/lib/tokenCrypto.js`, `runMetaPull` (db+fetch+cheie injectate; upsert `source:'meta'`,
+  `needs_reconnect` pe 401, per-tenant izolat). Activare (Andrei): Meta Business Verification + App Review
+  (`ads_read`, săptămâni) → secrete `META_APP_ID/META_APP_SECRET/TOKEN_ENC_KEY` → `CONNECTORS_ENABLED=true` +
+  rewrite `/api/meta/callback` → deploy. Felia 2: Google Ads; trigger incremental totals; backfill istoric; UI conectare.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

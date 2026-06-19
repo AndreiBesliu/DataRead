@@ -164,6 +164,15 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time;
         allow delete: if false;
       }
+
+      // Credențiale de platformă (Meta/Google/TikTok Ads) pentru conectorii de ingestie automată.
+      // Doc-ul conține un token de acces CRIPTAT (AES-256-GCM) → read ADMIN-ONLY (NU owner): token-ul nu
+      // ajunge NICIODATĂ la client. Scris/citit EXCLUSIV de functions (Admin SDK, ocolește rules);
+      // OAuth-ul e admin-gated (operatorul conectează contul clientului). Vezi docs/CONNECTORS-ADS-API.md.
+      match /platformCredentials/{platform} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
 
     // Contoarele de generări AI (scrise doar de functions prin Admin SDK) — adminii le pot citi

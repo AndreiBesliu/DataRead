@@ -41,6 +41,10 @@ export interface CampaignDef {
   currency: string;
   /** ID-ul campaniei pe platforma externă (gol până la conectarea API-ului). */
   externalId: string;
+  /** UID-ul clientului (denormalizat din lead) — leagă campania de contul lui pentru reguli
+   *  multi-tenant ȘI pentru jobul de ingestie (mapează campania → credențiala clientului). Gol
+   *  până când adminul conectează lead-ul la un cont client; ținut în sincron de onLeadWrite. */
+  clientUid: string;
   /** Sumele brute (rollup) — recalculate la fiecare scriere de metrică. */
   totals: Totals;
 }
@@ -81,6 +85,10 @@ export interface Kpis {
 
 const div = (a: number, b: number): number | null => (b > 0 ? a / b : null);
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+/** Plafon defensiv pe valorile metrice (anti intrare absurdă: 999999€ dintr-un typo, sau date corupte din
+ *  CSV/API). Negativ/NaN → 0 (prin num), peste plafon → plafon. Nu aruncă (coerce-everything). */
+export const MAX_METRIC_VALUE = 1e12;
+const numCap = (v: unknown): number => Math.min(num(v), MAX_METRIC_VALUE);
 
 /** Derivă KPI-urile din sumele brute. Numitor 0 → null. */
 export function kpisFromTotals(t: Totals): Kpis {
@@ -181,6 +189,7 @@ export function coerceToCampaign(data: unknown): CampaignDef | null {
     status: CAMPAIGN_STATUSES.includes(d.status as CampaignStatus) ? (d.status as CampaignStatus) : 'active',
     currency: typeof d.currency === 'string' && d.currency ? d.currency.slice(0, 8) : 'EUR',
     externalId: typeof d.externalId === 'string' ? d.externalId.slice(0, 120) : '',
+    clientUid: typeof d.clientUid === 'string' ? d.clientUid.slice(0, 128) : '',
     totals: coerceToTotals(d.totals),
   };
 }
@@ -194,11 +203,11 @@ export function coerceToDailyMetric(data: unknown): DailyMetric | null {
   return {
     schema: METRIC_SCHEMA,
     date: d.date,
-    spend: num(d.spend),
-    impressions: num(d.impressions),
-    clicks: num(d.clicks),
-    leads: num(d.leads),
-    revenue: num(d.revenue),
+    spend: numCap(d.spend),
+    impressions: numCap(d.impressions),
+    clicks: numCap(d.clicks),
+    leads: numCap(d.leads),
+    revenue: numCap(d.revenue),
     source: src === 'meta' || src === 'google' || src === 'tiktok' || src === 'other' ? src : 'manual',
   };
 }

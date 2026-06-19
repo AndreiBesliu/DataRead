@@ -662,6 +662,98 @@ console.log('\nO) clientExists (gardă oglindire pe clientUid)');
   ok((await fns.clientExists(errDb, 'x')) === false, 'eroare la get → false (fail-closed)');
 }
 
+// ── TEST U: conector Meta (ingestie automată) — mapare pură, crypto token, fereastră, runMetaPull cu store
+// în memorie + fetch fals. Acoperă calea care va scrie metrici reale (source:'meta') — dormant la deploy. ──
+console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (ingestie)');
+{
+  // Mapare Insights → DailyMetric
+  const row = { date_start: '2026-06-18', spend: '12.50', impressions: '1000', clicks: '40', inline_link_clicks: '35', actions: [{ action_type: 'lead', value: '3' }, { action_type: 'other', value: '9' }], action_values: [{ action_type: 'purchase', value: '150.00' }] };
+  const m = fns.mapMetaInsight(row);
+  ok(m.date === '2026-06-18' && m.spend === 12.5 && m.impressions === 1000 && m.clicks === 40, 'mapMetaInsight: spend/impr/clicks');
+  ok(m.leads === 3 && m.revenue === 150 && m.source === 'meta', 'mapMetaInsight: leads (action lead) + revenue (purchase) + source');
+  ok(fns.mapMetaInsight({ spend: '5' }).date === '' , 'mapMetaInsight: fără date_start → date gol (rând sărit)');
+  const resp = fns.mapMetaInsightsResponse({ data: [row, { spend: '1' }, { date_start: '2026-06-19', spend: '7' }] });
+  ok(resp.length === 2 && resp[1].date === '2026-06-19', 'mapMetaInsightsResponse: sare rândurile fără dată validă');
+  // URL Graph API
+  const url = fns.buildMetaInsightsUrl('23842', '2026-06-12', '2026-06-18', 'TOK');
+  ok(/\/23842\/insights\?/.test(url) && /time_increment=1/.test(url) && /access_token=TOK/.test(url), 'buildMetaInsightsUrl: nod + time_increment=1 + token');
+  // Fereastră glisantă
+  const w = fns.insightsWindow('2026-06-18', 7);
+  ok(w.until === '2026-06-18' && w.since === '2026-06-12', 'insightsWindow: 7 zile inclusiv ziua curentă');
+  ok(fns.insightsWindow('2026-06-18', 1).since === '2026-06-18', 'insightsWindow: 1 zi → since==until');
+  // Crypto token
+  const KEY = 'cheie-test-master-pentru-token';
+  const enc = fns.encryptToken('SECRET-TOKEN-123', KEY);
+  ok(enc.startsWith('v1.') && enc !== 'SECRET-TOKEN-123', 'encryptToken: format v1, nu plaintext');
+  ok(fns.decryptToken(enc, KEY) === 'SECRET-TOKEN-123', 'decryptToken: round-trip cu cheia corectă');
+  let tamperThrew = false; try { fns.decryptToken(enc.slice(0, -4) + 'AAAA', KEY); } catch { tamperThrew = true; }
+  ok(tamperThrew, 'decryptToken: payload modificat → aruncă (GCM auth)');
+  let wrongKeyThrew = false; try { fns.decryptToken(enc, 'alta-cheie'); } catch { wrongKeyThrew = true; }
+  ok(wrongKeyThrew, 'decryptToken: cheie greșită → aruncă');
+
+  // runMetaPull cu store în memorie + fetch fals
+  function makeAdsStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    function docRef(path) {
+      return {
+        _path: path,
+        collection(sub) { return colRef(`${path}/${sub}`); },
+        async get() { const has = store.has(path); return { exists: has, id: path.split('/').pop(), data: () => store.get(path), ref: docRef(path) }; },
+        async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
+        async update(data) { store.set(path, Object.assign({}, store.get(path) || {}, data)); },
+        async delete() { store.delete(path); },
+        get ref() { return docRef(path); },
+      };
+    }
+    function childDocs(path, field, val) {
+      const docs = [];
+      for (const [k, v] of store) {
+        if (k.startsWith(path + '/')) {
+          const rest = k.slice(path.length + 1);
+          if (!rest.includes('/') && (field === undefined || (v && v[field] === val))) docs.push({ id: rest, data: () => v, ref: docRef(k) });
+        }
+      }
+      return { docs, empty: docs.length === 0 };
+    }
+    function colRef(path) {
+      return {
+        doc(id) { return docRef(`${path}/${id}`); },
+        where(field, op, val) { return { async get() { return childDocs(path, field, val); } }; },
+        async get() { return childDocs(path); },
+      };
+    }
+    const db = {
+      collection(c) { return colRef(c); },
+      batch() { const ops = []; return { set(ref, data, opts) { ops.push([ref, data, opts]); }, async commit() { for (const [ref, data, opts] of ops) await ref.set(data, opts); } }; },
+    };
+    return { db, store };
+  }
+  const mkRes2 = (ok2, status, json) => ({ ok: ok2, status, json: async () => json });
+  const insights = { data: [{ date_start: '2026-06-18', spend: '20', impressions: '500', clicks: '25', actions: [{ action_type: 'lead', value: '4' }], action_values: [{ action_type: 'purchase', value: '300' }] }] };
+
+  // u1 conectat (fetch ok); c2 fără externalId (sărit); c3 google (nu e iterat). u2 → 401 (needs_reconnect).
+  const seed = {
+    'campaigns/c1': { platform: 'meta', externalId: '111', clientUid: 'u1', totals: { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 } },
+    'campaigns/c2': { platform: 'meta', externalId: '', clientUid: 'u1' },
+    'campaigns/c3': { platform: 'google', externalId: '999', clientUid: 'u1' },
+    'campaigns/c4': { platform: 'meta', externalId: '444', clientUid: 'u2' },
+    'campaigns/c5': { platform: 'meta', externalId: '555', clientUid: 'u3' }, // u3 fără credențială → sărit
+    'clients/u1/platformCredentials/meta': { status: 'active', tokenEnc: fns.encryptToken('TOK-U1', KEY) },
+    'clients/u2/platformCredentials/meta': { status: 'active', tokenEnc: fns.encryptToken('TOK-U2', KEY) },
+  };
+  const { db, store } = makeAdsStore(seed);
+  const fetchImpl = (u) => mkRes2(/access_token=TOK-U1/.test(u), /access_token=TOK-U1/.test(u) ? 200 : 401, insights);
+  const summary = await fns.runMetaPull(db, { fetchImpl, encKey: KEY, today: '2026-06-18', windowDays: 7 });
+  ok(summary.processed === 1, 'runMetaPull: o campanie procesată (c1)');
+  ok(summary.skipped === 2, 'runMetaPull: 2 sărite (c2 fără externalId + c5 fără credențială)');
+  ok(summary.reconnect === 1, 'runMetaPull: c4/u2 → 401 → needs_reconnect');
+  const wrote = store.get('campaigns/c1/metrics/2026-06-18');
+  ok(wrote && wrote.source === 'meta' && wrote.spend === 20 && wrote.leads === 4 && wrote.revenue === 300, 'runMetaPull: metrică scrisă (source:meta, valori corecte)');
+  ok(store.get('campaigns/c1').totals && store.get('campaigns/c1').totals.spend === 20, 'runMetaPull: totals recalculate pe campanie');
+  ok(store.get('clients/u2/platformCredentials/meta').status === 'needs_reconnect', 'runMetaPull: credențiala u2 marcată needs_reconnect');
+  ok(!store.get('campaigns/c3/metrics/2026-06-18'), 'runMetaPull: campania google neatinsă (filtru platform)');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

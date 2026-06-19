@@ -13,10 +13,12 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
+import { parseMetricsCsv } from '../utils/metricsCsv';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -124,6 +126,7 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState<string | null>(null);
+  const [importState, setImportState] = useState<{ busy: boolean; msg: string | null; err: string | null }>({ busy: false, msg: null, err: null });
 
   const analyze = async () => {
     setAiBusy(true);
@@ -208,6 +211,36 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
   const editDay = (m: DailyMetric) =>
     setForm({ date: m.date, spend: String(m.spend), impressions: String(m.impressions), clicks: String(m.clicks), leads: String(m.leads), revenue: String(m.revenue) });
 
+  // Import CSV: bulk-upsert metrici zilnice (export Ads Manager sau format propriu). Parser tolerant
+  // (alias-uri antet ro/en, numere ro/en, upsert pe dată). source:'manual' — e introducere de operator,
+  // doar în masă; conectorii API vor scrie cu source:'meta'/etc. și NU intră în coliziune logică aici.
+  const importCsv = async (file: File) => {
+    setImportState({ busy: true, msg: null, err: null });
+    try {
+      const text = await file.text();
+      const { rows, errors } = parseMetricsCsv(text);
+      if (rows.length === 0) { setImportState({ busy: false, msg: null, err: errors[0] || t('admin.csvNoRows') }); return; }
+      for (let i = 0; i < rows.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const r of rows.slice(i, i + 450)) {
+          const m = coerceToDailyMetric({ ...r, source: 'manual' });
+          if (!m) continue;
+          batch.set(doc(db, 'campaigns', campaignId, 'metrics', m.date), {
+            schema: METRIC_SCHEMA, date: m.date, spend: m.spend, impressions: m.impressions,
+            clicks: m.clicks, leads: m.leads, revenue: m.revenue, source: 'manual', updatedAt: serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      await recomputeTotals();
+      await load();
+      setImportState({ busy: false, msg: t('admin.csvImported', { count: rows.length }), err: errors.length ? t('admin.csvSkipped', { count: errors.length }) : null });
+    } catch (e) {
+      console.warn('csv import failed:', e);
+      setImportState({ busy: false, msg: null, err: t('admin.csvError') });
+    }
+  };
+
   const exportCsv = () => {
     const rows = (metrics ?? []).map((m) => [m.date, m.spend, m.impressions, m.clicks, m.leads, m.revenue].join(';'));
     const csv = '﻿' + ['data;spend;impressions;clicks;leads;revenue', ...rows].join('\r\n');
@@ -266,9 +299,22 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
           <label style={{ fontSize: 11, fontWeight: 600 }}>{t('admin.kpiLeads')}<input style={inp} inputMode="numeric" value={form.leads} onChange={(e) => setForm((f) => ({ ...f, leads: e.target.value }))} /></label>
           <label style={{ fontSize: 11, fontWeight: 600 }}>{t('admin.kpiRevenue')} €<input style={inp} inputMode="decimal" value={form.revenue} onChange={(e) => setForm((f) => ({ ...f, revenue: e.target.value }))} /></label>
         </div>
-        <button className="btn btn-primary" style={{ marginTop: 8, padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void saveDay()}>
-          {saveState === 'saving' ? t('admin.metricSaving') : saveState === 'saved' ? t('admin.metricSaved') : t('admin.metricSave')}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+          <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void saveDay()}>
+            {saveState === 'saving' ? t('admin.metricSaving') : saveState === 'saved' ? t('admin.metricSaved') : t('admin.metricSave')}
+          </button>
+          {/* Import CSV (bulk-upsert pe zi) — export din Ads Manager sau format propriu. */}
+          <label className="btn" style={{ padding: '6px 14px', fontSize: 12, cursor: importState.busy ? 'default' : 'pointer', opacity: importState.busy ? 0.6 : 1 }}>
+            {importState.busy ? t('admin.csvImporting') : `⬆ ${t('admin.csvImport')}`}
+            <input
+              type="file" accept=".csv,text/csv" style={{ display: 'none' }} disabled={importState.busy}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void importCsv(f); e.target.value = ''; }}
+            />
+          </label>
+          <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.csvImportHint')}</span>
+        </div>
+        {importState.msg && <div style={{ fontSize: 12, color: '#1e7e34', marginTop: 6 }}>{importState.msg}{importState.err ? ` · ${importState.err}` : ''}</div>}
+        {!importState.msg && importState.err && <div role="alert" style={{ fontSize: 12, color: '#c0392b', marginTop: 6 }}>{importState.err}</div>}
       </div>
 
       {metrics !== null && metrics.length === 0 && <p style={{ color: 'var(--fg-1)', fontSize: 13, margin: 0 }}>{t('admin.metricEmpty')}</p>}
@@ -467,6 +513,15 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
     }
     const client = leads.find((l) => l.id === newC.leadId);
     try {
+      // clientUid denormalizat din lead (dacă e deja conectat la un cont client) — leagă campania de
+      // contul lui pentru reguli multi-tenant + jobul de ingestie. Dacă lead-ul nu e încă conectat,
+      // rămâne gol și se completează automat când adminul îl conectează (trigger onLeadWrite).
+      let clientUid = '';
+      try {
+        const leadSnap = await getDoc(doc(db, 'leads', newC.leadId));
+        const lu = leadSnap.exists() ? (leadSnap.data() as Record<string, unknown>).clientUid : '';
+        clientUid = typeof lu === 'string' ? lu : '';
+      } catch { /* best-effort: rămâne gol, se sincronizează prin trigger */ }
       await addDoc(collection(db, 'campaigns'), {
         schema: CAMPAIGN_SCHEMA,
         name: newC.name.trim().slice(0, 120),
@@ -476,6 +531,7 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
         externalId: '',
         leadId: newC.leadId,
         clientName: client?.label ?? '',
+        clientUid,
         totals: emptyTotals(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
