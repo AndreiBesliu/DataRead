@@ -24,6 +24,61 @@ const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google',
 const portalMoney = (n: number) => `€${n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}`;
 const portalRoas = (n: number | null) => (n === null ? '—' : `${n.toFixed(2)}×`);
 
+interface DelivVersion { id: string; atMs: number; source: string; deliverables: Record<string, string> }
+
+/** Istoricul de versiuni al unui livrabil (read-only) — oglindit client-safe de functions sub
+ *  clients/{uid}/deliverables/{reqId}/versions. Încărcare leneșă la prima deschidere (getDocs o singură dată). */
+function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind: RequestKind }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [versions, setVersions] = useState<DelivVersion[] | null>(null);
+
+  const load = async () => {
+    try {
+      const snap = await getDocs(query(collection(db, 'clients', uid, 'deliverables', reqId, 'versions'), orderBy('snapshotAt', 'desc'), limit(20)));
+      setVersions(snap.docs.map((d) => {
+        const x = d.data();
+        const del: Record<string, string> = {};
+        if (x.deliverables && typeof x.deliverables === 'object') {
+          for (const [k, v] of Object.entries(x.deliverables as Record<string, unknown>)) if (typeof v === 'string') del[k] = v;
+        }
+        const at = x.snapshotAt as { toMillis?: () => number } | undefined;
+        return { id: d.id, atMs: at && typeof at.toMillis === 'function' ? at.toMillis() : 0, source: x.source === 'ai' ? 'ai' : 'manual', deliverables: del };
+      }));
+    } catch {
+      setVersions([]);
+    }
+  };
+  const toggle = () => { const n = !open; setOpen(n); if (n && versions === null) void load(); };
+
+  const linkBtn = { background: 'transparent', border: 'none', color: 'var(--fg-1)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 } as const;
+
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+      <button type="button" onClick={toggle} style={linkBtn}>{open ? '▾' : '▸'} {t('appHome.versionsTitle')}</button>
+      {open && versions === null && <div style={{ fontSize: 12, color: 'var(--fg-1)', marginTop: 4 }}>…</div>}
+      {open && versions !== null && versions.length === 0 && <div style={{ fontSize: 12, color: 'var(--fg-1)', marginTop: 4 }}>{t('appHome.versionsEmpty')}</div>}
+      {open && versions && versions.map((v, i) => (
+        <div key={v.id} style={{ marginTop: 8, padding: '8px 10px', background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-1)', marginBottom: 4 }}>
+            {t('appHome.versionLabel', { n: versions.length - i })}
+            {v.atMs ? ` · ${new Date(v.atMs).toLocaleString('ro-RO')}` : ''}
+            {` · ${v.source === 'ai' ? 'AI' : t('appHome.versionManual')}`}
+          </div>
+          {deliverableFieldsFor(kind)
+            .filter((f) => f.key !== 'notes' && v.deliverables[f.key]?.trim())
+            .map((f) => (
+              <div key={f.key} style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--fg-1)' }}>{t(f.labelKey)}</div>
+                <div style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{v.deliverables[f.key]}</div>
+              </div>
+            ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Portalul de marketing al clientului: campaniile LUI (scoped pe clientUid prin rules) cu KPI +
  *  raportul lunar (oglindit în clients/{uid} de functions). Read-only — operatorii gestionează tot. */
 function MarketingPortal({ uid }: { uid: string }) {
@@ -167,6 +222,7 @@ function MarketingPortal({ uid }: { uid: string }) {
                       <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{d.deliverables[f.key]}</div>
                     </div>
                   ))}
+                <VersionHistory uid={uid} reqId={d.id} kind={d.kind} />
               </div>
             ))}
           </div>

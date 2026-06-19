@@ -80,7 +80,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (`clients/{uid}.marketingReport`, oglindit de `aiClientReport`) și **livrabile**
   (`clients/{uid}/deliverables/{reqId}`, oglindite de trigger-ul `onRequestWrite` DOAR cu câmpurile
   din `CLIENT_SAFE_DELIVERABLES` — notele interne ale agenției NU se scurg). Clientul citește doar
-  ale lui; oglinzile le scrie exclusiv Admin SDK (rules: write false).
+  ale lui; oglinzile le scrie exclusiv Admin SDK (rules: write false). **Istoric versiuni read-only
+  (ACTIV 19.06.2026):** versiunile (`leads/{id}/requests/{reqId}/versions`, snapshot la regenerare)
+  conțin starea anterioară COMPLETĂ (cu note interne) → NU se citesc direct; trigger `onRequestVersionCreated`
+  le oglindește client-safe (filtru comun `clientSafeDeliverables`) sub `clients/{uid}/deliverables/{reqId}/versions`.
+  `deleteVersionsMirror` curăță subcolecția la reatribuire/deconectare (subcolecțiile nu cad la ștergerea doc-ului).
+  UI: expander „Istoric versiuni" per livrabil în `/app` (`VersionHistory`, read-only).
 - **Acces backend prin cereri aprobate:** o logare pe `/admin` fără claim înregistrează automat
   `adminRequests/{uid}` (pending); un admin existent aprobă din `/admin` (creează `admins/{uid}` →
   trigger → claim). Bootstrap: UID-ul lui Andrei (`IMBKFBkONkOB7VVZCmqgS90JdBi2`, constantă în

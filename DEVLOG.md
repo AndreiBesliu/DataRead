@@ -1265,6 +1265,23 @@ normaliser, secretele niciodată în chat/repo.
 > `composePrintHtml`/`printHtmlDoc` existente. Verificat: 13/13 suites + build + build:site (16 pagini) + boot.
 > DEPLOYED: hosting + rules.
 
+**2026-06-19 - Task Completed — Istoric versiuni livrabile în portalul client (read-only) [#51]**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continuă cu punctul 2" → task din backlog independent de Andrei. Backendul de versiuni
+> (`leads/{id}/requests/{reqId}/versions`) exista deja (snapshot la regenerare); clientul nu-l vedea.
+> - **Oglindă client-safe** (același tipar ca livrabilele): trigger nou `onRequestVersionCreated`
+>   (onDocumentCreated) oglindește DOAR câmpurile CLIENT_SAFE_DELIVERABLES din fiecare versiune sub
+>   `clients/{uid}/deliverables/{reqId}/versions/{vid}` — versiunile brute conțin starea anterioară COMPLETĂ
+>   (inclusiv note interne), deci NU se citesc direct. clientUid vine din cererea-părinte.
+> - **Anti-drift:** filtrul client-safe extras în `clientSafeDeliverables` (folosit ȘI de onRequestWrite ȘI de
+>   noul trigger). **Privacy pe reatribuire:** `deleteVersionsMirror` șterge subcolecția de versiuni când
+>   onRequestWrite șterge oglinda de livrabil (subcolecțiile nu cad automat la ștergerea doc-ului).
+> - **Reguli:** `clients/{uid}/deliverables/{reqId}/versions/{vid}` read owner+admin, write false (Admin SDK).
+> - **UI:** expander „Istoric versiuni" per livrabil în portalul `/app` (`VersionHistory`, încărcare leneșă
+>   getDocs ordonat după snapshotAt desc, read-only). i18n `appHome.versions*` ro+en.
+> Verificat: 13/13 suites + e2e TEST V (clientSafeDeliverables: păstrează safe, elimină note interne/goale/gunoi)
+> + build + build:site (16 pagini) + boot. DEPLOYED: functions (onRequestVersionCreated nou) + hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

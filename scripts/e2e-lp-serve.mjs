@@ -784,6 +784,17 @@ console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (
   }
 }
 
+// ── TEST V: clientSafeDeliverables — filtrul comun al oglinzilor (livrabile + istoric versiuni). Notele
+// interne + câmpurile necunoscute/goale NU trebuie să ajungă în subarborele clientului. ──
+console.log('\nV) clientSafeDeliverables (filtru oglindă livrabile + versiuni)');
+{
+  const safe = fns.clientSafeDeliverables({ adTexts: 'reclame', notes: 'NOTĂ INTERNĂ', internalScore: 9, ideas: '   ', campaignStructure: 'structura' });
+  ok(safe.adTexts === 'reclame' && safe.campaignStructure === 'structura', 'păstrează câmpurile client-safe');
+  ok(!('notes' in safe) && !('internalScore' in safe), 'elimină notele interne + câmpurile necunoscute');
+  ok(!('ideas' in safe), 'elimină câmpurile goale (whitespace)');
+  ok(Object.keys(fns.clientSafeDeliverables(null)).length === 0 && Object.keys(fns.clientSafeDeliverables('x')).length === 0, 'null/gunoi → {} (fără throw)');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

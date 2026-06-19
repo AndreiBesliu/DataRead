@@ -99,6 +99,11 @@ service cloud.firestore {
       match /deliverables/{reqId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow write: if false; // doar functions (Admin SDK)
+        // Istoricul de versiuni (read-only) — oglindit client-safe de onRequestVersionCreated.
+        match /versions/{versionId} {
+          allow read: if signedInAs(uid) || isAdmin();
+          allow write: if false; // doar functions (Admin SDK)
+        }
       }
 
       // Index de descoperire a LP-urilor clientului (oglindit de onLandingPageWrite, DOAR câmpuri

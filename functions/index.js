@@ -178,6 +178,33 @@ async function clientExists(db, uid) {
 }
 exports.clientExists = clientExists;
 
+/** Filtrează un set de livrabile la câmpurile CLIENT-SAFE (fără note interne). Pur — folosit ȘI de oglinda
+ *  de livrabile (onRequestWrite), ȘI de oglinda de versiuni (onRequestVersionCreated). Anti-drift: un singur loc. */
+function clientSafeDeliverables(del) {
+  const src = del && typeof del === 'object' ? del : {};
+  const safe = {};
+  for (const k of CLIENT_SAFE_DELIVERABLES) {
+    if (typeof src[k] === 'string' && src[k].trim()) safe[k] = src[k];
+  }
+  return safe;
+}
+exports.clientSafeDeliverables = clientSafeDeliverables;
+
+/** Șterge oglinda de istoric versiuni de sub un client (subcolecția NU se șterge automat când se șterge
+ *  doc-ul de livrabil → la deconectare/reatribuire am scurge istoricul către clientul vechi). Plafon defensiv. */
+async function deleteVersionsMirror(db, uid, reqId) {
+  try {
+    const col = db.collection('clients').doc(uid).collection('deliverables').doc(reqId).collection('versions');
+    const snap = await col.limit(400).get();
+    if (snap.empty) return;
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  } catch (err) {
+    logger.error('deleteVersionsMirror failed', { uid, reqId, err: String(err) });
+  }
+}
+
 exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/{reqId}', region: REGION }, async (event) => {
   try {
     const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
@@ -186,16 +213,14 @@ exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/
     const beforeUid = before && typeof before.clientUid === 'string' ? before.clientUid : '';
     const afterUid = after && typeof after.clientUid === 'string' ? after.clientUid : '';
 
-    const del = (after && typeof after.deliverables === 'object' && after.deliverables) || {};
-    const safe = {};
-    for (const k of CLIENT_SAFE_DELIVERABLES) {
-      if (typeof del[k] === 'string' && del[k].trim()) safe[k] = del[k];
-    }
+    const safe = clientSafeDeliverables(after && after.deliverables);
     const hasContent = Object.keys(safe).length > 0;
     const db = admin.firestore();
 
     // Șterge oglinda veche dacă: s-a deconectat, s-a schimbat clientul, s-a golit conținutul, sau cererea a fost ștearsă.
+    // Include istoricul de versiuni oglindit (subcolecția nu cade la ștergerea doc-ului → privacy pe reatribuire).
     if (beforeUid && (beforeUid !== afterUid || !hasContent || !after)) {
+      await deleteVersionsMirror(db, beforeUid, reqId);
       await db.collection('clients').doc(beforeUid).collection('deliverables').doc(reqId).delete().catch(() => {});
     }
     // Scrie/actualizează oglinda client-safe (notele interne NU sunt incluse) — DOAR dacă clientul există.
@@ -216,6 +241,38 @@ exports.onRequestWrite = onDocumentWritten({ document: 'leads/{leadId}/requests/
     logger.error('onRequestWrite mirror failed', { reqId: event.params.reqId, err: String(err) });
   }
 });
+
+// ── Portal client: oglindește ISTORICUL de versiuni al livrabilelor (read-only) în subarborele clientului. ──
+// Versiunile (leads/{id}/requests/{reqId}/versions/{vid}) conțin starea ANTERIOARĂ completă (inclusiv note
+// interne) → NU se citesc direct de client. Oglindim DOAR câmpurile client-safe (același filtru ca livrabilele)
+// sub clients/{uid}/deliverables/{reqId}/versions/{vid}. Append-only (onDocumentCreated). clientUid vine din
+// cererea-părinte (nu e pe versiune). Sărim dacă nu există client, nu e legat, sau versiunea n-are conținut safe.
+exports.onRequestVersionCreated = onDocumentCreated(
+  { document: 'leads/{leadId}/requests/{reqId}/versions/{versionId}', region: REGION },
+  async (event) => {
+    const { leadId, reqId, versionId } = event.params;
+    try {
+      const v = event.data ? event.data.data() : null;
+      if (!v) return;
+      const db = admin.firestore();
+      const reqSnap = await db.collection('leads').doc(leadId).collection('requests').doc(reqId).get();
+      const clientUid = reqSnap.exists ? (reqSnap.data() || {}).clientUid : '';
+      if (typeof clientUid !== 'string' || !clientUid) return;
+      const safe = clientSafeDeliverables(v.deliverables);
+      if (Object.keys(safe).length === 0) return; // versiune fără conținut client-safe → nimic de arătat
+      if (!(await clientExists(db, clientUid))) return;
+      await db.collection('clients').doc(clientUid).collection('deliverables').doc(reqId)
+        .collection('versions').doc(versionId).set({
+          kind: v.kind === 'content' ? 'content' : 'campaign',
+          deliverables: safe,
+          source: v.source === 'ai' ? 'ai' : 'manual',
+          snapshotAt: v.snapshotAt || admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+      logger.error('onRequestVersionCreated mirror failed', { leadId, reqId, versionId, err: String(err) });
+    }
+  }
+);
 
 // ── Sincronizare clientUid lead → campanii. Campania denormalizează clientUid-ul lead-ului (pentru
 // regulile multi-tenant + jobul de ingestie care mapează campania → credențiala clientului). Când
