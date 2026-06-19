@@ -4,7 +4,7 @@
  */
 import { type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LP_FIELD_TYPES, LP_FORM_FIELDS_MAX, type LpFieldType, type LpFormConfig } from '../types/landingPage';
+import { LP_FIELD_TYPES, LP_FORM_FIELDS_MAX, LP_FORM_STEPS_MAX, type LpFieldType, type LpFormConfig } from '../types/landingPage';
 
 export default function LpFormConfigPanel({ value, onChange }: { value: LpFormConfig; onChange: (f: LpFormConfig) => void }) {
   const { t } = useTranslation();
@@ -17,7 +17,7 @@ export default function LpFormConfigPanel({ value, onChange }: { value: LpFormCo
     onChange({ ...value, fields: value.fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)) });
   const addField = () => {
     if (value.fields.length >= LP_FORM_FIELDS_MAX) return;
-    onChange({ ...value, fields: [...value.fields, { name: '', label: '', type: 'text', required: false, options: [] }] });
+    onChange({ ...value, fields: [...value.fields, { name: '', label: '', type: 'text', required: false, options: [], step: 0 }] });
   };
   const removeField = (i: number) => onChange({ ...value, fields: value.fields.filter((_, idx) => idx !== i) });
 
@@ -30,6 +30,11 @@ export default function LpFormConfigPanel({ value, onChange }: { value: LpFormCo
 
       {value.enabled ? (
         <>
+          <label style={{ ...label, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={value.multiStep} onChange={(e) => onChange({ ...value, multiStep: e.target.checked })} />
+            {t('admin.lpStudio.formMultiStep')}
+          </label>
+          {value.multiStep ? <div style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.lpStudio.formMultiStepHint')}</div> : null}
           <div style={{ fontSize: 12, color: 'var(--fg-1)', marginTop: 10 }}>{t('admin.lpStudio.formHint')}</div>
           {value.fields.map((f, i) => (
             <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginTop: 10, display: 'grid', gap: 6 }}>
@@ -53,6 +58,14 @@ export default function LpFormConfigPanel({ value, onChange }: { value: LpFormCo
                     placeholder={t('admin.lpStudio.fieldOptions')}
                     style={{ ...field, flex: 1, minWidth: 160 }}
                   />
+                ) : null}
+                {value.multiStep ? (
+                  <label style={{ fontSize: 12, color: 'var(--fg-1)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {t('admin.lpStudio.fieldStep')}
+                    <select value={f.step ?? 0} onChange={(e) => setField(i, { step: Number(e.target.value) })} style={field}>
+                      {Array.from({ length: LP_FORM_STEPS_MAX }, (_, s) => <option key={s} value={s}>{s + 1}</option>)}
+                    </select>
+                  </label>
                 ) : null}
               </div>
             </div>

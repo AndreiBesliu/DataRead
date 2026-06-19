@@ -10,6 +10,7 @@ import {
   sanitizeSubmissionValues,
   LP_HTML_MAX,
   LP_FORM_FIELDS_MAX,
+  LP_FORM_STEPS_MAX,
   LP_PAGE_DECORS_MAX,
   LP_FIELD_TYPES,
   LP_HP_FIELD,
@@ -197,7 +198,7 @@ check('bucketKey: whitelist păstrat, restul → other', (() => {
 })());
 
 // ── blocuri builder vizual (lpBlocks) ──
-const form = { enabled: true, fields: [{ name: 'email', label: 'Email', type: 'email' as const, required: true, options: [] }], submitLabel: 'Trimite', successMessage: '', redirectUrl: '', createLead: false, notifyEmail: '' };
+const form = { enabled: true, multiStep: false, fields: [{ name: 'email', label: 'Email', type: 'email' as const, required: true, options: [], step: 0 }], submitLabel: 'Trimite', successMessage: '', redirectUrl: '', createLead: false, notifyEmail: '' };
 check('coerceToLpBlock: tip necunoscut → null', coerceToLpBlock({ type: 'banana' }) === null);
 check('coerceToLpBlock: valid → păstrat cu id', (() => {
   const b = coerceToLpBlock({ type: 'hero', props: { heading: 'Salut' } }, 3);
@@ -505,6 +506,31 @@ check('compileConversion: exit popup fără ctaText → fără buton', (() => {
 check('recompileLpAssets: include conversionHtml', (() => {
   const lp = coerceToLandingPage({ conversion: { stickyCta: { enabled: true, text: 'Hai', href: '#a' } } });
   return recompileLpAssets(lp).conversionHtml.includes('Hai');
+})());
+
+// ── Formular multi-step (#59) ──
+check('coerce: form.multiStep bool', coerceToLandingPage({ form: { enabled: true, multiStep: true } }).form.multiStep === true);
+check('coerce: field.step clamp la max', coerceToLandingPage({ form: { enabled: true, fields: [{ name: 'x', label: 'X', type: 'text', step: 99 }] } }).form.fields[0].step === LP_FORM_STEPS_MAX - 1);
+check('coerce: field.step negativ → 0', coerceToLandingPage({ form: { enabled: true, fields: [{ name: 'x', label: 'X', type: 'text', step: -3 }] } }).form.fields[0].step === 0);
+{
+  const ms = coerceToLandingPage({ form: { enabled: true, multiStep: true, fields: [
+    { name: 'email', label: 'Email', type: 'email', required: true, step: 0 },
+    { name: 'nume', label: 'Nume', type: 'text', step: 1 },
+  ] } }).form;
+  const h = compileBlocks([{ id: '1', type: 'form', props: {} }], { form: ms, lang: 'ro' });
+  check('multi-step: 2 pași data-lp-step + nav (next/back/submit)', (h.match(/data-lp-step style/g) || []).length === 2 && h.includes('data-lp-next') && h.includes('data-lp-back') && h.includes('data-lp-submit'));
+  check('multi-step: script navigare (checkValidity + progress)', h.includes('checkValidity') && h.includes('data-lp-progress'));
+  check('multi-step ro: Înainte/Înapoi', h.includes('Înainte') && h.includes('Înapoi'));
+  const hEn = compileBlocks([{ id: '1', type: 'form', props: {} }], { form: ms, lang: 'en' });
+  check('multi-step en: Next/Back', hEn.includes('>Next</button>') && hEn.includes('>Back</button>'));
+}
+check('multi-step cu un singur pas → formular plat', (() => {
+  const f = coerceToLandingPage({ form: { enabled: true, multiStep: true, fields: [{ name: 'a', label: 'A', type: 'text', step: 0 }, { name: 'b', label: 'B', type: 'text', step: 0 }] } }).form;
+  return !compileBlocks([{ id: '1', type: 'form', props: {} }], { form: f }).includes('data-lp-step');
+})());
+check('multiStep off → plat chiar cu step-uri setate', (() => {
+  const f = coerceToLandingPage({ form: { enabled: true, multiStep: false, fields: [{ name: 'a', label: 'A', type: 'text', step: 0 }, { name: 'b', label: 'B', type: 'text', step: 1 }] } }).form;
+  return !compileBlocks([{ id: '1', type: 'form', props: {} }], { form: f }).includes('data-lp-step');
 })());
 
 if (failures) {

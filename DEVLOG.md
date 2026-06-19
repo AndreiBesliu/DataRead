@@ -1299,6 +1299,22 @@ normaliser, secretele niciodată în chat/repo.
 > TEST A extins (serveLp injectează sticky + exit popup) + build + build:site (16 pagini) + boot. DEPLOYED:
 > functions (serveLp) + hosting + rules. **RĂMAS în #59:** multi-step form (câmpuri pe pași + navigare next/back).
 
+**2026-06-19 - Task Completed — LP multi-step form → #59 ÎNCHIS COMPLET**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continua 59" → ultima piesă din #59 (conversie & formulare avansate): formular pe pași.
+> - **Model:** `LpFormField.step` (0-based, clamp 0..LP_FORM_STEPS_MAX-1) + `LpFormConfig.multiStep` + coerce.
+> - **Compilator** (`lpBlocks.ts`): blocul `form` grupează câmpurile pe `step` (doar pașii cu ≥1 câmp); sub 2
+>   grupuri → formular plat (fallback). Render pe pași (`data-lp-step`, display none/block) + rând nav
+>   Înapoi/Înainte/Trimite + indicator „Pasul X din N" + script inline de navigare cu **validare per pas**
+>   (`checkValidity`/`reportValidity` pe câmpurile pasului curent înainte de avans). `compileBlocks` primește
+>   acum `lang` (etichete nav ro/en); submit-ul rămâne unul singur (toate câmpurile în DOM, ascunse) → handler-ul
+>   serveLp neschimbat.
+> - **Editor** (`LpFormConfig.tsx`): toggle „Formular pe pași" + selector „Pas" per câmp (când e activ). i18n ro+en.
+> Verificat: 13/13 suites (coerce step/multiStep + compileBlocks: 2 pași/nav/script/ro+en/fallback plat) + e2e +
+> build + build:site (16 pagini) + boot. DEPLOYED: hosting. **#59 COMPLET** (câmpuri+redirect+anti-spam 3a · sticky
+> CTA+exit popup 3b · multi-step acum). Notă: navigarea pe pași nu rulează în preview-ul sandbox (scripturi
+> dezactivate) — se vede pasul 1; funcționează pe pagina servită.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

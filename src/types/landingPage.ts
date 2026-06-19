@@ -20,6 +20,7 @@ export const LP_TITLE_MAX = 140;
 export const LP_DESC_MAX = 320;
 export const LP_SLUG_MAX = 60;
 export const LP_FORM_FIELDS_MAX = 12;
+export const LP_FORM_STEPS_MAX = 6; // pași maximi într-un formular multi-step (0..5)
 export const LP_FIELD_OPTIONS_MAX = 20;
 export const LP_VALUE_MAX = 2000;
 export const LP_PAGE_DECORS_MAX = 5; // straturi de fundal decorativ suprapuse pe pagină
@@ -46,6 +47,7 @@ export interface LpFormField {
   type: LpFieldType;
   required: boolean;
   options: string[]; // doar pentru 'select'
+  step: number; // pasul (0-based) în formularul multi-step; ignorat dacă form.multiStep e fals
 }
 
 /** Nudge-uri de conversie la nivel de pagină (slice 3b). Compilate în `conversionHtml` (compileConversion)
@@ -69,6 +71,8 @@ export interface LpConversion {
 
 export interface LpFormConfig {
   enabled: boolean;
+  /** Formular pe pași (next/back, validare per pas). Câmpurile se grupează după `field.step`. */
+  multiStep: boolean;
   fields: LpFormField[];
   submitLabel: string; // <= 40
   successMessage: string; // <= 300
@@ -151,7 +155,8 @@ function coerceField(v: unknown): LpFormField | null {
     (type === 'select' || type === 'radio') && Array.isArray(d.options)
       ? d.options.filter((o): o is string => typeof o === 'string').map((o) => o.slice(0, 60)).slice(0, LP_FIELD_OPTIONS_MAX)
       : [];
-  return { name, label: str(d.label, 80), type, required: bool(d.required), options };
+  const step = typeof d.step === 'number' && Number.isFinite(d.step) ? Math.min(Math.max(Math.floor(d.step), 0), LP_FORM_STEPS_MAX - 1) : 0;
+  return { name, label: str(d.label, 80), type, required: bool(d.required), options, step };
 }
 
 function coerceForm(v: unknown): LpFormConfig {
@@ -162,6 +167,7 @@ function coerceForm(v: unknown): LpFormConfig {
     .slice(0, LP_FORM_FIELDS_MAX);
   return {
     enabled: bool(d.enabled),
+    multiStep: bool(d.multiStep),
     fields,
     submitLabel: str(d.submitLabel, 40),
     successMessage: str(d.successMessage, 300),
@@ -304,7 +310,7 @@ export function effectiveLpForm(lp: LandingPage): LpFormConfig {
  *  editor ȘI pentru „recompilează toate" (paginile vechi prind logica nouă de compilare fără re-salvare). */
 export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; conversionHtml: string; form: LpFormConfig; hasForm: boolean } {
   const form = effectiveLpForm(lp);
-  const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form }) : lp.html;
+  const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form, lang: lp.lang }) : lp.html;
   const pageDecorHtml = compilePageDecors(lp.pageDecors);
   const conversionHtml = compileConversion(lp.conversion);
   return { html, pageDecorHtml, conversionHtml, form, hasForm: form.enabled };

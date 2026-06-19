@@ -124,7 +124,7 @@ function ytVimeoEmbed(url: unknown): string {
   return '';
 }
 
-function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
+function compileBlock(block: LpBlock, ctx: { form: LpFormConfig; lang?: 'ro' | 'en' }): string {
   const p = block.props || {};
   switch (block.type) {
     case 'hero': {
@@ -169,33 +169,74 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
       // (serveLp injectează submit-ul doar când hasForm). LpEditor activează formularul când există
       // un bloc 'form', deci aici e și o gardă defensivă.
       if (!ctx.form || !ctx.form.enabled) return '';
-      const fields = (ctx.form && Array.isArray(ctx.form.fields) ? ctx.form.fields : [])
-        .map((f) => {
-          const req = f.required ? ' required' : '';
-          const common = `name="${escAttr(f.name)}" placeholder="${escAttr(f.label || f.name)}"${req} style="width:100%;box-sizing:border-box;padding:12px 14px;margin:0 0 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-0);color:var(--fg-0);font-size:15px"`;
-          if (f.type === 'textarea') return `<textarea ${common} rows="4"></textarea>`;
-          if (f.type === 'checkbox') return `<label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;color:var(--fg-1)"><input type="checkbox" name="${escAttr(f.name)}"${req}> ${esc(f.label || f.name)}</label>`;
-          if (f.type === 'select') {
-            const opts = (f.options || []).map((o) => `<option value="${escAttr(o)}">${esc(o)}</option>`).join('');
-            return `<select ${common}><option value="">${esc(f.label || f.name)}</option>${opts}</select>`;
-          }
-          if (f.type === 'radio') {
-            // Grup de radio: un singur name, câte un input per opțiune; `required` pe primul (HTML cere doar pe unul din grup).
-            const opts = (f.options || []).map((o, i) =>
-              `<label style="display:flex;gap:8px;align-items:center;margin:0 0 8px;color:var(--fg-1)"><input type="radio" name="${escAttr(f.name)}" value="${escAttr(o)}"${i === 0 ? req : ''}> ${esc(o)}</label>`).join('');
-            const legend = f.label || f.name ? `<div style="margin:0 0 8px;color:var(--fg-1);font-size:14px">${esc(f.label || f.name)}</div>` : '';
-            return `<fieldset style="border:none;padding:0;margin:0 0 12px">${legend}${opts}</fieldset>`;
-          }
-          const t = f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
-          return `<input type="${t}" ${common}>`;
-        })
-        .join('');
+      const lang = ctx.lang === 'en' ? 'en' : 'ro';
+      const allFields = Array.isArray(ctx.form.fields) ? ctx.form.fields : [];
+      const renderField = (f: LpFormConfig['fields'][number]): string => {
+        const req = f.required ? ' required' : '';
+        const common = `name="${escAttr(f.name)}" placeholder="${escAttr(f.label || f.name)}"${req} style="width:100%;box-sizing:border-box;padding:12px 14px;margin:0 0 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-0);color:var(--fg-0);font-size:15px"`;
+        if (f.type === 'textarea') return `<textarea ${common} rows="4"></textarea>`;
+        if (f.type === 'checkbox') return `<label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;color:var(--fg-1)"><input type="checkbox" name="${escAttr(f.name)}"${req}> ${esc(f.label || f.name)}</label>`;
+        if (f.type === 'select') {
+          const opts = (f.options || []).map((o) => `<option value="${escAttr(o)}">${esc(o)}</option>`).join('');
+          return `<select ${common}><option value="">${esc(f.label || f.name)}</option>${opts}</select>`;
+        }
+        if (f.type === 'radio') {
+          // Grup de radio: un singur name, câte un input per opțiune; `required` pe primul (HTML cere doar pe unul din grup).
+          const opts = (f.options || []).map((o, i) =>
+            `<label style="display:flex;gap:8px;align-items:center;margin:0 0 8px;color:var(--fg-1)"><input type="radio" name="${escAttr(f.name)}" value="${escAttr(o)}"${i === 0 ? req : ''}> ${esc(o)}</label>`).join('');
+          const legend = f.label || f.name ? `<div style="margin:0 0 8px;color:var(--fg-1);font-size:14px">${esc(f.label || f.name)}</div>` : '';
+          return `<fieldset style="border:none;padding:0;margin:0 0 12px">${legend}${opts}</fieldset>`;
+        }
+        const t = f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
+        return `<input type="${t}" ${common}>`;
+      };
       const heading = str(p.heading) ? `<h2 style="text-align:center;color:var(--fg-0);margin:0 0 18px;font-size:26px">${esc(p.heading)}</h2>` : '';
       const submit = esc((ctx.form && ctx.form.submitLabel) || 'Trimite');
+      const submitBtn = (extra: string) => `<button type="submit"${extra} style="width:100%;background:var(--accent);color:var(--accent-contrast);border:none;padding:14px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer">${submit}</button>`;
       // Honeypot anti-spam: câmp ascuns off-screen pe care un utilizator real nu-l vede/completează,
       // dar boții care completează orbește da. Server-side → fake-success fără scriere (vezi handleSubmit).
       const honeypot = `<input type="text" name="${LP_HP_FIELD}" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none">`;
-      return `<section style="max-width:520px;margin:0 auto;padding:36px 24px">${heading}<form data-lp-form>${honeypot}${fields}<button type="submit" style="width:100%;background:var(--accent);color:var(--accent-contrast);border:none;padding:14px;border-radius:10px;font-weight:700;font-size:16px;cursor:pointer">${submit}</button></form></section>`;
+
+      // Multi-step: grupăm câmpurile pe `step` (doar pașii cu cel puțin un câmp). Sub 2 grupuri → formular plat.
+      const maxStep = allFields.reduce((m, f) => Math.max(m, typeof f.step === 'number' ? f.step : 0), 0);
+      const groups: string[] = [];
+      if (ctx.form.multiStep && maxStep > 0) {
+        for (let s = 0; s <= maxStep; s++) {
+          const ff = allFields.filter((f) => (f.step || 0) === s);
+          if (ff.length) groups.push(ff.map(renderField).join(''));
+        }
+      }
+      if (groups.length >= 2) {
+        const NAV = lang === 'en'
+          ? { next: 'Next', back: 'Back', prog: 'Step {c} of {t}' }
+          : { next: 'Înainte', back: 'Înapoi', prog: 'Pasul {c} din {t}' };
+        // submitBtn() are width:100%; în multi-step butoanele stau inline în rândul de nav (flex:1), ascunse după caz.
+        const navBtn = 'flex:1;padding:13px;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer';
+        const stepsHtml = groups.map((g, i) => `<div data-lp-step style="display:${i === 0 ? 'block' : 'none'}">${g}</div>`).join('');
+        const navRow =
+          '<div style="display:flex;gap:10px;margin-top:6px">' +
+          `<button type="button" data-lp-back style="display:none;${navBtn};background:var(--bg-0);color:var(--fg-0);border:1px solid var(--border)">${NAV.back}</button>` +
+          `<button type="button" data-lp-next style="${navBtn};background:var(--accent);color:var(--accent-contrast);border:none">${NAV.next}</button>` +
+          `<button type="submit" data-lp-submit style="display:none;${navBtn};background:var(--accent);color:var(--accent-contrast);border:none">${submit}</button>` +
+          '</div>' +
+          '<div data-lp-progress style="text-align:center;margin-top:8px;font-size:13px;color:var(--fg-1)"></div>';
+        const stepScript =
+          '<script>(function(){var f=document.querySelector("form[data-lp-form]");if(!f)return;' +
+          'var steps=f.querySelectorAll("[data-lp-step]");if(steps.length<2)return;' +
+          'var b=f.querySelector("[data-lp-back]"),n=f.querySelector("[data-lp-next]"),s=f.querySelector("[data-lp-submit]"),pr=f.querySelector("[data-lp-progress]");' +
+          'var i=0,N=steps.length,PROG=' + JSON.stringify(NAV.prog).replace(/</g, '\\u003c') + ';' +
+          'function sh(){for(var k=0;k<N;k++)steps[k].style.display=k===i?"block":"none";' +
+          'if(b)b.style.display=i>0?"block":"none";if(n)n.style.display=i<N-1?"block":"none";if(s)s.style.display=i===N-1?"block":"none";' +
+          'if(pr)pr.textContent=PROG.replace("{c}",i+1).replace("{t}",N);}' +
+          'function ok(){var e=steps[i].querySelectorAll("input,select,textarea");for(var k=0;k<e.length;k++){if(e[k].willValidate&&!e[k].checkValidity()){if(e[k].reportValidity)e[k].reportValidity();return false;}}return true;}' +
+          'if(n)n.addEventListener("click",function(){if(ok()&&i<N-1){i++;sh();}});' +
+          'if(b)b.addEventListener("click",function(){if(i>0){i--;sh();}});sh();})();</script>';
+        return `<section style="max-width:520px;margin:0 auto;padding:36px 24px">${heading}<form data-lp-form>${honeypot}${stepsHtml}${navRow}</form>${stepScript}</section>`;
+      }
+
+      // Formular plat (implicit)
+      const fields = allFields.map(renderField).join('');
+      return `<section style="max-width:520px;margin:0 auto;padding:36px 24px">${heading}<form data-lp-form>${honeypot}${fields}${submitBtn('')}</form></section>`;
     }
     case 'spacer':
       return `<div style="height:${Math.min(Math.max(nbr(p.size, 48), 0), 400)}px"></div>`;
@@ -280,7 +321,7 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig }): string {
 /** Blocuri → pagina HTML self-contained (corpul). PURĂ. Orice bloc (mai puțin blocul 'decor', care
  *  își are propriul decor) poate avea un fundal decorativ în `props.bgDecor` — îl învelim cu un
  *  strat de decor în spate (z-index 0) și conținutul deasupra (z-index 1). */
-export function compileBlocks(blocks: LpBlock[], ctx: { form: LpFormConfig }): string {
+export function compileBlocks(blocks: LpBlock[], ctx: { form: LpFormConfig; lang?: 'ro' | 'en' }): string {
   return (Array.isArray(blocks) ? blocks : [])
     .map((b) => {
       const inner = compileBlock(b, ctx);
