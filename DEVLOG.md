@@ -1257,6 +1257,14 @@ normaliser, secretele niciodată în chat/repo.
 >   e o singură platformă (agregatul deja o arată).
 > Verificat: 13/13 suites (+ byPlatform) + build (paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: hosting + rules.
 
+**2026-06-19 - Task Completed — Export consolidat multi-platformă (CSV + PDF)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continuă cu ce poți singur". Defalcarea pe platformă devine deliverable: butoane CSV (valori brute,
+> utilizabile în Excel) + PDF (o linie/platformă, brandat) pe `PlatformBreakdown`, în view-ul pe client (cu numele
+> clientului în titlu/fișier) ȘI sub agregatul global. Refolosește `toCsv` (anti formula-injection) +
+> `composePrintHtml`/`printHtmlDoc` existente. Verificat: 13/13 suites + build + build:site (16 pagini) + boot.
+> DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -19,6 +19,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { parseMetricsCsv } from '../utils/metricsCsv';
+import { toCsv } from '../utils/csv';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -119,15 +120,40 @@ function KpiCards({ kpis }: { kpis: Kpis }) {
 /** Defalcare KPI pe platformă (Meta/Google/TikTok side-by-side) — imaginea centralizată a unui client/portofoliu
  *  care rulează pe mai multe platforme. Agnostică de sursa datelor (manual/CSV/API). Ascunsă dacă e o singură
  *  platformă (agregatul de deasupra o arată deja). */
-function PlatformBreakdown({ items }: { items: CampaignDef[] }) {
+function PlatformBreakdown({ items, title }: { items: CampaignDef[]; title?: string }) {
   const { t } = useTranslation();
   const rows = kpisByPlatform(items);
   if (rows.length <= 1) return null;
   const td: CSSProperties = { padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, textAlign: 'right' };
   const tdL: CSSProperties = { ...td, textAlign: 'left' };
+
+  // Export imagine consolidată multi-platformă (deliverable client). CSV = valori brute (utilizabile în Excel);
+  // PDF = o linie per platformă (text, brandat). Ambele folosesc utilitarele existente (toCsv / composePrintHtml).
+  const exportCsv = () => {
+    const header = ['platforma', 'campanii', 'spend', 'revenue', 'roas', 'leads', 'cpl'];
+    const data = rows.map((r) => [PLATFORM_SHORT[r.platform], r.campaigns, r.kpis.spend, r.kpis.revenue, r.kpis.roas ?? '', r.kpis.leads, r.kpis.cpl ?? '']);
+    const csv = '﻿' + toCsv([header, ...data]);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `platforme-${(title || 'total').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const exportPdf = () => {
+    const lines = rows
+      .map((r) => `${PLATFORM_SHORT[r.platform]} — ${r.campaigns} ${t('admin.campaignsCol').toLowerCase()} · ${t('admin.kpiSpend')} ${money(r.kpis.spend)} · ${t('admin.kpiRevenue')} ${money(r.kpis.revenue)} · ROAS ${roasFmt(r.kpis.roas)} · ${t('admin.kpiLeads')} ${r.kpis.leads} · ${t('admin.kpiCpl')} ${moneyOrDash(r.kpis.cpl)}`)
+      .join('\n');
+    printHtmlDoc(composePrintHtml({ title: printTitle([t('admin.byPlatformTitle'), title]), meta: title ? [title] : [], sections: [{ label: t('admin.byPlatformTitle'), body: lines }] }));
+  };
+
   return (
     <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', marginTop: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, padding: '8px 10px', color: 'var(--fg-1)' }}>{t('admin.byPlatformTitle')}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)' }}>{t('admin.byPlatformTitle')}</span>
+        <button className="btn" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 11 }} onClick={exportCsv}>⬇ {t('admin.metricExport')}</button>
+        <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }} onClick={exportPdf}>{t('admin.pdfBtn')}</button>
+      </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--bg-0)' }}>
@@ -482,7 +508,7 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
       <KpiCards kpis={kpis} />
-      <PlatformBreakdown items={campaigns.map((c) => c.data)} />
+      <PlatformBreakdown items={campaigns.map((c) => c.data)} title={campaigns[0]?.clientName || ''} />
       <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>
         {campaigns.map((c) => {
           const k = kpisFromTotals(c.data.totals);
