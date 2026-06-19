@@ -4,7 +4,7 @@
  * îl servește deja — deci servirea + regulile rămân neatinse. Blocurile folosesc variabilele de temă
  * (var(--accent) etc.), injectate de design. Compilarea e PURĂ (testabilă headless).
  */
-import { LP_HP_FIELD, type LpFormConfig } from './landingPage';
+import { LP_HP_FIELD, type LpFormConfig, type LpConversion } from './landingPage';
 import { coerceToLpDecor, compileDecor, defaultDecor } from './lpDecor';
 
 export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor', 'pricing', 'stats', 'logos', 'gallery', 'accordion', 'countdown', 'video'] as const;
@@ -101,7 +101,8 @@ const para = (text: string): string => esc(text).replace(/\n{2,}/g, '</p><p>').r
 const SAFE_URL = /^https:\/\/[^\s"')]+$/i;
 const safeHref = (v: unknown): string => {
   const s = str(v, 500);
-  return s === '#' || /^https?:\/\//i.test(s) || /^\/[^/]/.test(s) || /^mailto:/i.test(s) || /^tel:/i.test(s) ? s : '#';
+  // Permis: '#', ancoră pe pagină (#sectiune — sigură, fragment), http(s), cale root-relativă, mailto, tel.
+  return s === '#' || /^#[\w-]+$/.test(s) || /^https?:\/\//i.test(s) || /^\/[^/]/.test(s) || /^mailto:/i.test(s) || /^tel:/i.test(s) ? s : '#';
 };
 
 const WRAP = 'max-width:1080px;margin:0 auto;padding:0 24px';
@@ -291,4 +292,51 @@ export function compileBlocks(blocks: LpBlock[], ctx: { form: LpFormConfig }): s
       return `<div style="position:relative;overflow:hidden">${decorHtml}<div style="position:relative;z-index:1">${inner}</div></div>`;
     })
     .join('\n');
+}
+
+/** Compilează nudge-urile de conversie la nivel de pagină (sticky CTA + exit-intent popup) într-un markup
+ *  self-contained, injectat de serveLp ca `conversionHtml` (ca pageDecorHtml — motorul stă în TS). PUR + sigur:
+ *  text ESCAPAT, href validat (safeHref), scriptul NU interpolează date de utilizator (doar comută display).
+ *  Folosește variabilele de temă (var(--accent)…). Părțile dezactivate / goale → nimic. */
+export function compileConversion(conv: LpConversion): string {
+  const c = conv || ({} as LpConversion);
+  let out = '';
+
+  const sc = c.stickyCta;
+  if (sc && sc.enabled && (str(sc.text) || str(sc.href))) {
+    const label = esc(str(sc.text, 80)) || 'Acțiune';
+    out +=
+      '<div style="position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--bg-1);border-top:1px solid var(--border);box-shadow:0 -4px 20px rgba(0,0,0,.25)">' +
+      '<div style="max-width:1080px;margin:0 auto;padding:10px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+      `<a data-cta href="${escAttr(safeHref(sc.href))}" style="margin-left:auto;background:var(--accent);color:var(--accent-contrast);padding:11px 24px;border-radius:10px;font-weight:700;text-decoration:none">${label}</a>` +
+      '</div></div>' +
+      // spațiu jos ca bara fixă să nu acopere conținutul/footer-ul
+      '<div aria-hidden="true" style="height:64px"></div>';
+  }
+
+  const ep = c.exitPopup;
+  if (ep && ep.enabled && (str(ep.heading) || str(ep.text) || str(ep.ctaText))) {
+    const heading = esc(str(ep.heading, 120));
+    const text = esc(str(ep.text, 400));
+    const ctaText = esc(str(ep.ctaText, 60));
+    const cta = ctaText
+      ? `<a data-cta href="${escAttr(safeHref(ep.ctaHref))}" style="display:inline-block;margin-top:18px;background:var(--accent);color:var(--accent-contrast);padding:13px 28px;border-radius:10px;font-weight:700;text-decoration:none">${ctaText}</a>`
+      : '';
+    out +=
+      '<div id="lp-exit" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);align-items:center;justify-content:center;padding:24px">' +
+      '<div style="background:var(--bg-1);border:1px solid var(--border);border-radius:16px;max-width:440px;width:100%;padding:30px;text-align:center;position:relative">' +
+      '<button type="button" id="lp-exit-x" aria-label="Închide" style="position:absolute;top:8px;right:14px;background:transparent;border:none;color:var(--fg-1);font-size:24px;line-height:1;cursor:pointer">&times;</button>' +
+      (heading ? `<h3 style="margin:0 0 10px;font-size:24px;color:var(--fg-0)">${heading}</h3>` : '') +
+      (text ? `<p style="margin:0;color:var(--fg-1);font-size:15px;line-height:1.6">${text}</p>` : '') +
+      cta +
+      '</div></div>' +
+      // exit-intent (desktop: mouse spre bara de adrese), o singură dată/sesiune; închidere x/click-fundal
+      '<script>(function(){var p=document.getElementById("lp-exit");if(!p)return;function hide(){p.style.display="none";}' +
+      'var x=document.getElementById("lp-exit-x");if(x)x.addEventListener("click",hide);' +
+      'p.addEventListener("click",function(e){if(e.target===p)hide();});var shown=false;' +
+      'function show(){if(shown)return;try{if(sessionStorage.getItem("lp_exit"))return;sessionStorage.setItem("lp_exit","1");}catch(e){}shown=true;p.style.display="flex";}' +
+      'document.addEventListener("mouseout",function(e){if(!e.relatedTarget&&e.clientY<=0)show();});})();</script>';
+  }
+
+  return out;
 }

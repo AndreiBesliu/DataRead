@@ -12,21 +12,24 @@ import { customThemeCss } from '../theme/themes';
 import ThemeControls from '../theme/ThemeControls';
 import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
+import LpConversionPanel from './LpConversionPanel';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorLayers from './LpDecorLayers';
 import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
+import { compileConversion } from '../types/lpBlocks';
 import { compilePageDecors, htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import type { LpProject } from '../types/lpProject';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'links' | 'analytics';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'links' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
   const pageDecor = compilePageDecors(lp.pageDecors);
-  return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${pageDecor}${lp.html}</body></html>`;
+  const conversion = compileConversion(lp.conversion);
+  return `<!doctype html><html lang="${lp.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${customThemeCss(lp.design)}</style></head><body>${pageDecor}${lp.html}${conversion}</body></html>`;
 }
 
 export default function LpEditor({
@@ -89,6 +92,8 @@ export default function LpEditor({
       design: draft.design,
       pageDecors: draft.pageDecors,
       pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
+      conversion: draft.conversion,
+      conversionHtml: assets.conversionHtml, // sticky CTA + exit popup, injectat de serveLp
       hasForm: assets.hasForm,
       form: assets.form,
       projectId: draft.projectId,
@@ -103,7 +108,7 @@ export default function LpEditor({
     // Gardă de mărime: refuzăm salvarea în loc să trunchiem tăcut html-ul (truncare = pagină ruptă).
     // Validăm DOCUMENTUL SERVIT integral — serveLp compune pageDecorHtml + html în <body> — deci straturile
     // de decor multiple intră în plafon (altfel 5 straturi ar putea împinge pagina peste limită fără gardă).
-    if (htmlByteSize(payload.html) + htmlByteSize(payload.pageDecorHtml) > LP_HTML_MAX) {
+    if (htmlByteSize(payload.html) + htmlByteSize(payload.pageDecorHtml) + htmlByteSize(payload.conversionHtml) > LP_HTML_MAX) {
       setErr(t('admin.lpStudio.errTooLarge', { max: Math.round(LP_HTML_MAX / 1000) }));
       return;
     }
@@ -261,6 +266,7 @@ export default function LpEditor({
         <button onClick={() => setTab('design')} style={tabBtn(tab === 'design')}>{t('admin.lpStudio.tabDesign')}</button>
         {draft.editor === 'code' ? <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button> : null}
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
+        <button onClick={() => setTab('conversion')} style={tabBtn(tab === 'conversion')}>🎯 {t('admin.lpStudio.tabConversion')}</button>
         {!isNew ? <button onClick={() => setTab('links')} style={tabBtn(tab === 'links')}>🔗 {t('admin.lpStudio.tabLinks')}</button> : null}
         {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
@@ -318,6 +324,9 @@ export default function LpEditor({
             )}
             {tab === 'form' && (
               <LpFormConfigPanel value={draft.form} onChange={(form) => setDraft((d) => ({ ...d, form, hasForm: form.enabled }))} />
+            )}
+            {tab === 'conversion' && (
+              <LpConversionPanel value={draft.conversion} onChange={(conversion) => setDraft((d) => ({ ...d, conversion }))} />
             )}
           </div>
 

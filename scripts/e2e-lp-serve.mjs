@@ -132,7 +132,9 @@ const lp = C.coerceToLandingPage({
 const form = { ...lp.form, enabled: true };
 const html = C.compileBlocks(lp.blocks, { form });
 const pageDecorHtml = C.compilePageDecors(lp.pageDecors);
-const servedDoc = { ...lp, html, pageDecorHtml, hasForm: true, form };
+// Nudge-uri de conversie (slice 3b): sticky CTA + exit popup, compilate la salvare (ca LpEditor).
+const conversionHtml = C.compileConversion({ stickyCta: { enabled: true, text: 'Sună acum', href: '#contact' }, exitPopup: { enabled: true, heading: 'Stai!', text: 'Ofertă specială', ctaText: 'Vreau', ctaHref: '#a' } });
+const servedDoc = { ...lp, html, pageDecorHtml, conversionHtml, hasForm: true, form };
 
 // ── Helpers de request/response ─────────────────────────────────────────────
 const mkRes = () => {
@@ -169,6 +171,8 @@ state.lpDoc = servedDoc; reset();
   ok(b.includes('Titlu Hero de Test'), 'bloc hero compilat în pagină');
   ok(b.includes('data-lp-form'), 'formular randat (bloc form → auto-activat)');
   ok(b.includes('name="lp_hp_url"') && b.includes('left:-9999px'), 'honeypot anti-spam injectat (off-screen)');
+  ok(b.includes('Sună acum') && b.includes('position:fixed'), 'sticky CTA injectat (conversionHtml)');
+  ok(b.includes('id="lp-exit"') && b.includes('Stai!'), 'exit popup injectat (conversionHtml)');
   ok(b.includes('navigator.sendBeacon("/p/_track"'), 'beacon de engagement injectat');
   ok(b.includes('fetch("/p/_submit"'), 'handler formular injectat (hasForm)');
   ok((state.calls['landingPages/stats:set'] || []).length === 1, 'vizită logată (rollup stats incrementat o dată)');

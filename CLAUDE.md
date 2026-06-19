@@ -244,6 +244,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   **Redirect după submit**: `LpFormConfig.redirectUrl` (https-only `SAFE_HTTPS`/`LP_SAFE_IMG`, validat la
   coerce ȘI la serve, niciodată din body); `handleSubmit` întoarce `{ok:true,redirectUrl}`, scriptul de
   form navighează `location.href` după ~1.2s (re-check https client-side).
+  **Conversie pagină (slice 3b, 19.06.2026):** `LandingPage.conversion` (`LpConversion`: stickyCta + exitPopup) →
+  `compileConversion` (în `lpBlocks.ts`, lângă escapere) produce `conversionHtml` (ca pageDecorHtml), injectat de
+  serveLp în `<body>`. **Sticky CTA** = bară fixă jos (var(--accent), data-cta pt. tracking). **Exit-intent popup** =
+  modal `#lp-exit` ascuns + script (mouseout spre bara de adrese, o dată/sesiune via sessionStorage). Text escapat,
+  href `safeHref` (acum permite ȘI ancore `#sectiune`), scriptul fără date user. UI: tab „Conversie" (`LpConversionPanel`).
+  RĂMAS în #59: multi-step form (câmpuri pe pași).
 - **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
   `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 7 efecte (dots/
   constellation/shapes(7 forme)/grid/waves/bubbles/rings) × 4 interacțiuni (none/mouseReact/

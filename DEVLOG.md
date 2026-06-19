@@ -1282,6 +1282,23 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 13/13 suites + e2e TEST V (clientSafeDeliverables: păstrează safe, elimină note interne/goale/gunoi)
 > + build + build:site (16 pagini) + boot. DEPLOYED: functions (onRequestVersionCreated nou) + hosting + rules.
 
+**2026-06-19 - Task Completed — LP conversie slice 3b: Sticky CTA + Exit-intent popup [#59 parțial]**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „59" → din #59 (conversie & formulare avansate) am livrat cele două nudge-uri la nivel de pagină
+> (câmpuri/redirect/anti-spam erau deja în slice 3a). Multi-step form rămâne pasul următor al #59.
+> - **Model + compilator** (`src/types/landingPage.ts` + `lpBlocks.ts`): `LpConversion` (stickyCta + exitPopup)
+>   + `coerceConversion` (plafoane, href brut) + `compileConversion` PUR → markup self-contained (sticky bar fixă
+>   `position:fixed` + modal exit-intent `#lp-exit` + script). Text ESCAPAT, href validat (`safeHref`), scriptul NU
+>   interpolează date de utilizator. Compilat în `conversionHtml` (ca pageDecorHtml), injectat de serveLp în body.
+> - **safeHref extins:** acum permite ancore pe pagină (`#sectiune`) — sigure (fragment), necesare pentru CTA-uri
+>   „scroll la formular". Înainte orice `#xxx` ≠ `#` cădea pe `#` (beneficiază TOATE blocurile).
+> - **Editor:** tab nou „🎯 Conversie" (`LpConversionPanel`, câmpuri structurate) + preview live include conversionHtml
+>   + gardă de mărime include conversionHtml. **Reguli:** `conversionHtml` opțional, plafonat (anti-bloat).
+> - i18n `admin.lpStudio.conv*` ro+en.
+> Verificat: 13/13 suites (test-landing: coerce + compileConversion: escape/safeHref/anchor/popup/disabled) + e2e
+> TEST A extins (serveLp injectează sticky + exit popup) + build + build:site (16 pagini) + boot. DEPLOYED:
+> functions (serveLp) + hosting + rules. **RĂMAS în #59:** multi-step form (câmpuri pe pași + navigare next/back).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

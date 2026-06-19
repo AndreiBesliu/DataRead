@@ -7,7 +7,7 @@
  * corupt devine 'draft' — o pagină nu ajunge NICIODATĂ public din greșeală.
  */
 import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
-import { coerceBlocks, compileBlocks, type LpBlock } from './lpBlocks';
+import { coerceBlocks, compileBlocks, compileConversion, type LpBlock } from './lpBlocks';
 import { coerceToLpDecor, compileDecor, type LpDecor } from './lpDecor';
 import { coerceKnownVariants } from './lpAttribution';
 
@@ -48,6 +48,25 @@ export interface LpFormField {
   options: string[]; // doar pentru 'select'
 }
 
+/** Nudge-uri de conversie la nivel de pagină (slice 3b). Compilate în `conversionHtml` (compileConversion)
+ *  și injectate de serveLp — la fel ca pageDecorHtml. href stocat brut; validat (safeHref) la compilare. */
+export interface LpStickyCta {
+  enabled: boolean;
+  text: string; // <= 80
+  href: string; // <= LP_URL_MAX
+}
+export interface LpExitPopup {
+  enabled: boolean;
+  heading: string; // <= 120
+  text: string; // <= 400
+  ctaText: string; // <= 60
+  ctaHref: string; // <= LP_URL_MAX
+}
+export interface LpConversion {
+  stickyCta: LpStickyCta;
+  exitPopup: LpExitPopup;
+}
+
 export interface LpFormConfig {
   enabled: boolean;
   fields: LpFormField[];
@@ -84,6 +103,9 @@ export interface LandingPage {
   pageDecorHtml: string;
   hasForm: boolean; // oglindă a form.enabled (invariant)
   form: LpFormConfig;
+  /** Nudge-uri de conversie (sticky CTA + exit popup) + markup-ul compilat (injectat de serveLp). */
+  conversion: LpConversion;
+  conversionHtml: string;
   /** Allowlist de variante de link cunoscute (scris de Link Builder) — serveLp atribuie trafic DOAR
    *  acestor chei (anti-bloat); restul → __other / __direct. */
   knownVariants: Record<string, true>;
@@ -149,6 +171,30 @@ function coerceForm(v: unknown): LpFormConfig {
   };
 }
 
+export function emptyConversion(): LpConversion {
+  return {
+    stickyCta: { enabled: false, text: '', href: '' },
+    exitPopup: { enabled: false, heading: '', text: '', ctaText: '', ctaHref: '' },
+  };
+}
+
+/** Normaliser unic pentru nudge-urile de conversie. href-urile rămân brute (validate la compilare prin safeHref). */
+export function coerceConversion(v: unknown): LpConversion {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const sc = (typeof d.stickyCta === 'object' && d.stickyCta !== null ? d.stickyCta : {}) as Record<string, unknown>;
+  const ep = (typeof d.exitPopup === 'object' && d.exitPopup !== null ? d.exitPopup : {}) as Record<string, unknown>;
+  return {
+    stickyCta: { enabled: bool(sc.enabled), text: str(sc.text, 80), href: str(sc.href, LP_URL_MAX) },
+    exitPopup: {
+      enabled: bool(ep.enabled),
+      heading: str(ep.heading, 120),
+      text: str(ep.text, 400),
+      ctaText: str(ep.ctaText, 60),
+      ctaHref: str(ep.ctaHref, LP_URL_MAX),
+    },
+  };
+}
+
 export const LP_URL_MAX = 500;
 const SAFE_HTTPS = /^https:\/\/[^\s"')]+$/i;
 /** URL https sigur (og:image / favicon) sau '' — același criteriu ca SAFE_IMG_URL din themes + clamp.
@@ -177,6 +223,8 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     pageDecorHtml: '',
     hasForm: false,
     form: coerceForm({}),
+    conversion: emptyConversion(),
+    conversionHtml: '',
     knownVariants: {},
     projectId: '',
     clientUid: '',
@@ -227,6 +275,8 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     pageDecorHtml: str(d.pageDecorHtml, LP_HTML_MAX),
     hasForm: form.enabled, // invariant: hasForm === form.enabled
     form,
+    conversion: coerceConversion(d.conversion),
+    conversionHtml: str(d.conversionHtml, LP_HTML_MAX),
     knownVariants: coerceKnownVariants(d.knownVariants),
     projectId: str(d.projectId, 128),
     clientUid: str(d.clientUid, 128),
@@ -252,11 +302,12 @@ export function effectiveLpForm(lp: LandingPage): LpFormConfig {
 /** Recompilează asset-urile SERVITE din modelul curent: `html` (blocuri compilate în mod vizual; html-ul
  *  brut în mod cod) + `pageDecorHtml` (decor pagină) + formular efectiv. Sursă unică pentru salvarea din
  *  editor ȘI pentru „recompilează toate" (paginile vechi prind logica nouă de compilare fără re-salvare). */
-export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; form: LpFormConfig; hasForm: boolean } {
+export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; conversionHtml: string; form: LpFormConfig; hasForm: boolean } {
   const form = effectiveLpForm(lp);
   const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form }) : lp.html;
   const pageDecorHtml = compilePageDecors(lp.pageDecors);
-  return { html, pageDecorHtml, form, hasForm: form.enabled };
+  const conversionHtml = compileConversion(lp.conversion);
+  return { html, pageDecorHtml, conversionHtml, form, hasForm: form.enabled };
 }
 
 // ── Submissions (landingPages/{slug}/submissions/{id}) ──

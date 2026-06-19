@@ -1663,6 +1663,8 @@ function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null) {
   const pageDecor = typeof lp.pageDecorHtml === 'string' ? lp.pageDecorHtml : '';
   // Chrome global (header/footer) — DOAR pe paginile de site (chrome != null); null pe campanii (/p/) = NEATINS.
   const sc = chrome ? composeSiteChrome(chrome, lang) : { headerHtml: '', footerHtml: '' };
+  // Nudge-uri de conversie (sticky CTA + exit popup) — compilate la salvare în client, injectate aici.
+  const conversion = typeof lp.conversionHtml === 'string' ? lp.conversionHtml : '';
   return (
     `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">` +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -1679,7 +1681,7 @@ function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null) {
     (desc ? `<meta name="twitter:description" content="${desc}">` : '') +
     (ogImage ? `<meta name="twitter:image" content="${ogImage}">` : '') +
     (favicon ? `<link rel="icon" href="${favicon}">` : '') +
-    `<style>${css}</style></head><body>${pageDecor}${sc.headerHtml}${body}${sc.footerHtml}${lpScripts(slug, lp)}</body></html>`
+    `<style>${css}</style></head><body>${pageDecor}${sc.headerHtml}${body}${sc.footerHtml}${conversion}${lpScripts(slug, lp)}</body></html>`
   );
 }
 

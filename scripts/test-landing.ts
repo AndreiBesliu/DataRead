@@ -24,7 +24,8 @@ import {
   topEntries,
   type LpStatsDay,
 } from '../src/analytics/lpStats';
-import { coerceBlocks, coerceToLpBlock, compileBlocks, defaultBlockProps } from '../src/types/lpBlocks';
+import { coerceBlocks, coerceToLpBlock, compileBlocks, compileConversion, defaultBlockProps } from '../src/types/lpBlocks';
+import { coerceConversion } from '../src/types/landingPage';
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
 import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
@@ -466,6 +467,45 @@ check('LP_TEMPLATES: ≥6 șabloane, fiecare compilează în html ne-gol (mod vi
   });
 })());
 check('LP_TEMPLATES: id-uri unice', new Set(LP_TEMPLATES.map((t) => t.id)).size === LP_TEMPLATES.length);
+
+// ── Conversie (slice 3b): coerceConversion + compileConversion (sticky CTA + exit popup) ──
+check('coerceConversion: null → dezactivate', (() => {
+  const c = coerceConversion(null);
+  return c.stickyCta.enabled === false && c.exitPopup.enabled === false && c.stickyCta.text === '';
+})());
+check('coerceConversion: plafoane pe text', (() => {
+  const c = coerceConversion({ stickyCta: { enabled: true, text: 'x'.repeat(200), href: '#a' }, exitPopup: { enabled: true, heading: 'h'.repeat(200) } });
+  return c.stickyCta.text.length === 80 && c.exitPopup.heading.length === 120 && c.stickyCta.enabled === true;
+})());
+check('compileConversion: dezactivat → gol', compileConversion(coerceConversion({})) === '');
+check('compileConversion: sticky activ → bară fixă + data-cta + href', (() => {
+  const h = compileConversion(coerceConversion({ stickyCta: { enabled: true, text: 'Sună acum', href: '#contact' } }));
+  return h.includes('position:fixed') && h.includes('data-cta') && h.includes('href="#contact"') && h.includes('Sună acum');
+})());
+check('compileConversion: sticky escapează textul (anti-injecție)', (() => {
+  const h = compileConversion(coerceConversion({ stickyCta: { enabled: true, text: '<b>x</b>', href: '#a' } }));
+  return h.includes('&lt;b&gt;') && !h.includes('<b>x</b>');
+})());
+check('compileConversion: href javascript: → neutralizat la „#"', (() => {
+  const h = compileConversion(coerceConversion({ stickyCta: { enabled: true, text: 'X', href: 'javascript:alert(1)' } }));
+  return !h.includes('javascript:') && h.includes('href="#"');
+})());
+check('compileConversion: href https extern păstrat', (() => {
+  const h = compileConversion(coerceConversion({ stickyCta: { enabled: true, text: 'X', href: 'https://exemplu.ro/of' } }));
+  return h.includes('href="https://exemplu.ro/of"');
+})());
+check('compileConversion: exit popup → modal #lp-exit + script exit-intent', (() => {
+  const h = compileConversion(coerceConversion({ exitPopup: { enabled: true, heading: 'Stai!', text: 'Ofertă', ctaText: 'Vreau', ctaHref: '#a' } }));
+  return h.includes('id="lp-exit"') && h.includes('Stai!') && h.includes('mouseout') && h.includes('sessionStorage');
+})());
+check('compileConversion: exit popup fără ctaText → fără buton', (() => {
+  const h = compileConversion(coerceConversion({ exitPopup: { enabled: true, heading: 'H', text: 'T' } }));
+  return h.includes('id="lp-exit"') && !h.includes('data-cta');
+})());
+check('recompileLpAssets: include conversionHtml', (() => {
+  const lp = coerceToLandingPage({ conversion: { stickyCta: { enabled: true, text: 'Hai', href: '#a' } } });
+  return recompileLpAssets(lp).conversionHtml.includes('Hai');
+})());
 
 if (failures) {
   console.error(`${failures} checks failed`);
