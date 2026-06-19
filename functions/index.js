@@ -2137,24 +2137,35 @@ exports.manageAdmin = onCall({ region: REGION }, async (request) => {
 
 // ───────────────────────── [Conectori Ads — ingestie automată multi-platformă] ─────────────────────────
 // Centralizarea datelor de campanie pe mai multe platforme E DEJA gata (campaigns/{id}.platform +
-// metrics/{YYYY-MM-DD} cu source). Aici e ingestia AUTOMATĂ: primul conector = Meta. DORMANT (principiul #4 —
-// integrare opțională) până când Andrei finalizează Meta Business Verification + App Review (ads_read) și pune
-// secretele. Cu CONNECTORS_ENABLED=false, OAuth-ul + jobul programat NU sunt exportate → deploy-ul NU cere
-// secretele Meta/TOKEN_ENC_KEY. Activare: secrete în Secret Manager → CONNECTORS_ENABLED=true → deploy:functions.
-// Vezi docs/CONNECTORS-ADS-API.md. Partea PURĂ (mapare/crypto/fereastră/runMetaPull) e mereu exportată (teste).
+// metrics/{YYYY-MM-DD} cu source). Aici e ingestia AUTOMATĂ: Meta + Google Ads + TikTok, prin UN SINGUR motor
+// generic (runConnectorPull). DORMANT (principiul #4 — integrare opțională) până când Andrei finalizează
+// verificările + pune secretele. Flag PER PLATFORMĂ: cu *_ENABLED=false, OAuth-ul + jobul acelei platforme NU
+// sunt exportate → deploy-ul NU cere secretele ei. Activezi o platformă independent (ex. Meta întâi).
+// Vezi docs/CONNECTORS-ADS-API.md. Partea PURĂ (mapare/crypto/fereastră/runConnectorPull) e mereu exportată (teste).
 const metaConnector = require('./connectors/meta');
+const googleConnector = require('./connectors/google');
+const tiktokConnector = require('./connectors/tiktok');
 const { encryptToken, decryptToken } = require('./lib/tokenCrypto');
 
 exports.mapMetaInsight = metaConnector.mapMetaInsight;
 exports.mapMetaInsightsResponse = metaConnector.mapMetaInsightsResponse;
 exports.buildMetaInsightsUrl = metaConnector.buildMetaInsightsUrl;
+exports.mapGoogleAdsRow = googleConnector.mapGoogleAdsRow;
+exports.mapGoogleAdsResponse = googleConnector.mapGoogleAdsResponse;
+exports.buildGoogleAdsQuery = googleConnector.buildGoogleAdsQuery;
+exports.mapTikTokRow = tiktokConnector.mapTikTokRow;
+exports.mapTikTokResponse = tiktokConnector.mapTikTokResponse;
+exports.buildTikTokReportUrl = tiktokConnector.buildTikTokReportUrl;
 exports.encryptToken = encryptToken;
 exports.decryptToken = decryptToken;
 
-const CONNECTORS_ENABLED = false; // ⚠️ flip la true DOAR după Meta verification + secrete (vezi docs/CONNECTORS-ADS-API.md)
+// ⚠️ Flip la true DOAR după verificarea platformei + secretele ei în Secret Manager (vezi docs/CONNECTORS-ADS-API.md).
+const META_ENABLED = false;
+const GOOGLE_ENABLED = false;
+const TIKTOK_ENABLED = false;
 
-/** Fereastra glisantă de ingestie [since, until] (atribuirea Meta/Google se umple retroactiv → nu tragem doar
- *  „ieri"). today = 'YYYY-MM-DD' (al contului); daysBack include ziua curentă. Pură (testabilă). */
+/** Fereastra glisantă de ingestie [since, until] (atribuirea se umple retroactiv → nu tragem doar „ieri").
+ *  today = 'YYYY-MM-DD' (al contului); daysBack include ziua curentă. Pură (testabilă). */
 function insightsWindow(today, daysBack) {
   const t = typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : new Date().toISOString().slice(0, 10);
   const d = new Date(t + 'T00:00:00Z');
@@ -2172,52 +2183,52 @@ function sumMetricsRaw(rows) {
 }
 exports.sumMetricsRaw = sumMetricsRaw;
 
-/** Nucleul testabil al ingestiei Meta: db + fetch + cheia de criptare INJECTATE. Pentru fiecare campanie
- *  Meta (platform=='meta', externalId + clientUid setate), decriptează token-ul clientului, trage Insights pe
- *  fereastra glisantă, face UPSERT pe metrics/{zi} (source:'meta', idempotent) + recalculează totals. Eșec de
- *  autorizare (400/401/403) → marchează credențiala needs_reconnect (NU blochează restul). Nu aruncă global. */
-async function runMetaPull(db, opts) {
+/** Motorul GENERIC de ingestie (testabil; db + fetchRows + cheie INJECTATE), folosit de toate platformele.
+ *  Pentru fiecare campanie `platform==X` cu externalId + clientUid, decriptează credențiala clientului și cheamă
+ *  `fetchRows(externalId, since, until, { token, cred })` → `{ ok, status, metrics: DailyMetric[] }`. UPSERT pe
+ *  metrics/{zi} (source:platform, idempotent) + recalcul totals. 400/401/403 → credențiala needs_reconnect (NU
+ *  blochează restul; izolare per tenant). Nu aruncă global. */
+async function runConnectorPull(db, opts) {
   const o = opts || {};
-  const fetchImpl = o.fetchImpl;
+  const platform = o.platform;
+  const fetchRows = o.fetchRows;
   const encKey = o.encKey;
   const windowDays = Number.isFinite(o.windowDays) && o.windowDays > 0 ? o.windowDays : 7;
   const { since, until } = insightsWindow(o.today, windowDays);
   const ts = admin.firestore.FieldValue.serverTimestamp();
   const out = { processed: 0, written: 0, skipped: 0, reconnect: 0, errors: 0 };
-  const snap = await db.collection('campaigns').where('platform', '==', 'meta').get();
-  const tokenCache = new Map(); // clientUid → token clar | null (un singur decrypt/citire per client)
+  const snap = await db.collection('campaigns').where('platform', '==', platform).get();
+  const credCache = new Map(); // clientUid → { token, cred } | null (un singur decrypt/citire per client)
   for (const docSnap of snap.docs) {
     const c = docSnap.data() || {};
     const externalId = typeof c.externalId === 'string' ? c.externalId : '';
     const clientUid = typeof c.clientUid === 'string' ? c.clientUid : '';
     if (!externalId || !clientUid) { out.skipped++; continue; }
-    const credRef = db.collection('clients').doc(clientUid).collection('platformCredentials').doc('meta');
+    const credRef = db.collection('clients').doc(clientUid).collection('platformCredentials').doc(platform);
     try {
-      let token = tokenCache.get(clientUid);
-      if (token === undefined) {
+      let ctx = credCache.get(clientUid);
+      if (ctx === undefined) {
         const credSnap = await credRef.get();
         const cred = credSnap.exists ? credSnap.data() || {} : null;
-        if (!cred || cred.status !== 'active' || !cred.tokenEnc) token = null;
-        else { try { token = decryptToken(cred.tokenEnc, encKey); } catch (e) { token = null; } }
-        tokenCache.set(clientUid, token);
+        if (!cred || cred.status !== 'active' || !cred.tokenEnc) ctx = null;
+        else { try { ctx = { token: decryptToken(cred.tokenEnc, encKey), cred }; } catch (e) { ctx = null; } }
+        credCache.set(clientUid, ctx);
       }
-      if (!token) { out.skipped++; continue; }
-      const res = await fetchImpl(metaConnector.buildMetaInsightsUrl(externalId, since, until, token));
-      if (!res.ok) {
-        if (res.status === 400 || res.status === 401 || res.status === 403) {
-          await credRef.set({ status: 'needs_reconnect', updatedAt: ts }, { merge: true });
-          out.reconnect++;
-        } else { out.errors++; }
+      if (!ctx) { out.skipped++; continue; }
+      const r = await fetchRows(externalId, since, until, ctx);
+      if (!r || !r.ok) {
+        const status = r ? r.status : 0;
+        if (status === 400 || status === 401 || status === 403) { await credRef.set({ status: 'needs_reconnect', updatedAt: ts }, { merge: true }); out.reconnect++; }
+        else out.errors++;
         continue;
       }
-      const json = await res.json();
-      const metrics = metaConnector.mapMetaInsightsResponse(json);
+      const metrics = Array.isArray(r.metrics) ? r.metrics : [];
       if (metrics.length) {
         const batch = db.batch();
         for (const m of metrics) {
           batch.set(docSnap.ref.collection('metrics').doc(m.date), {
             schema: 1, date: m.date, spend: m.spend, impressions: m.impressions,
-            clicks: m.clicks, leads: m.leads, revenue: m.revenue, source: 'meta', updatedAt: ts,
+            clicks: m.clicks, leads: m.leads, revenue: m.revenue, source: platform, updatedAt: ts,
           }, { merge: true });
         }
         await batch.commit();
@@ -2228,93 +2239,54 @@ async function runMetaPull(db, opts) {
       out.written += metrics.length;
     } catch (e) {
       out.errors++;
-      logger.error('runMetaPull campaign failed', { id: docSnap.id, e: String(e) });
+      logger.error('runConnectorPull campaign failed', { platform, id: docSnap.id, e: String(e) });
     }
   }
   return out;
 }
+exports.runConnectorPull = runConnectorPull;
+
+/** Wrapper Meta (back-compat + testat în e2e): fetchImpl(url)→res devine fetchRows pentru motorul generic. */
+async function runMetaPull(db, opts) {
+  const o = opts || {};
+  const fetchImpl = o.fetchImpl || ((u) => fetch(u));
+  const fetchRows = async (externalId, since, until, ctx) => {
+    const res = await fetchImpl(metaConnector.buildMetaInsightsUrl(externalId, since, until, ctx.token));
+    if (!res.ok) return { ok: false, status: res.status, metrics: [] };
+    return { ok: true, status: 200, metrics: metaConnector.mapMetaInsightsResponse(await res.json()) };
+  };
+  return runConnectorPull(db, { platform: 'meta', fetchRows, encKey: o.encKey, today: o.today, windowDays: o.windowDays });
+}
 exports.runMetaPull = runMetaPull;
 
-if (CONNECTORS_ENABLED) {
+const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;
+if (CONNECTORS_ANY) {
   const { onSchedule } = require('firebase-functions/v2/scheduler');
   const crypto = require('crypto');
-  const META_APP_ID = defineSecret('META_APP_ID');
-  const META_APP_SECRET = defineSecret('META_APP_SECRET');
   const TOKEN_ENC_KEY = defineSecret('TOKEN_ENC_KEY');
-  const META_API = `https://graph.facebook.com/${metaConnector.META_GRAPH_VERSION}`;
-  const META_REDIRECT_URI = 'https://dataread.ro/api/meta/callback'; // rewrite Hosting → metaOAuthCallback
   const STATE_TTL_MS = 10 * 60 * 1000;
 
-  // 1) Operatorul pornește conectarea contului Meta al unui client. Întoarce URL-ul de consimțământ; `state`
-  //    (anti-CSRF) e persistat server-side cu TTL, legat de clientUid + adminul care a inițiat.
-  exports.initiateMetaOAuth = onCall({ region: REGION, secrets: [META_APP_ID], enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
-    assertAdmin(request);
-    const clientUid = String((request.data || {}).clientUid || '').slice(0, 128);
-    if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid lipsește.');
-    const db = admin.firestore();
-    if (!(await clientExists(db, clientUid))) throw new HttpsError('not-found', 'Cont client inexistent.');
+  // Helpers OAuth partajate: creează/validează state-ul anti-CSRF (persistat server-side, TTL).
+  const newState = async (db, platform, clientUid, createdBy) => {
     const state = crypto.randomBytes(24).toString('hex');
     await db.collection('oauthStates').doc(state).set({
-      platform: 'meta', clientUid, createdBy: request.auth.uid,
-      expiresAt: Date.now() + STATE_TTL_MS, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      platform, clientUid, createdBy, expiresAt: Date.now() + STATE_TTL_MS,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    const params = new URLSearchParams({
-      client_id: META_APP_ID.value(), redirect_uri: META_REDIRECT_URI, state, scope: 'ads_read', response_type: 'code',
-    });
-    return { authUrl: `https://www.facebook.com/${metaConnector.META_GRAPH_VERSION}/dialog/oauth?${params.toString()}` };
-  });
+    return state;
+  };
+  const takeState = async (db, state, platform) => {
+    const ref = db.collection('oauthStates').doc(state);
+    const snap = await ref.get();
+    const sd = snap.exists ? snap.data() : null;
+    if (!sd || sd.platform !== platform || !sd.clientUid || (typeof sd.expiresAt === 'number' && sd.expiresAt < Date.now())) return null;
+    await ref.delete().catch(() => {});
+    return sd;
+  };
+  const okPage = (msg) => `<!doctype html><meta charset="utf-8"><p>${msg} <a href="/admin">Înapoi în panou</a></p>`;
+  const failPage = (res, msg) => res.status(400).send(`<!doctype html><meta charset="utf-8"><p>Conectare eșuată: ${lpEscape(msg)}. <a href="/admin">Înapoi</a></p>`);
 
-  // 2) Callback OAuth (redirect din Meta) → schimbă code → token long-lived, citește contul, criptează, scrie
-  //    credențiala. Public (browser), dar legat de `state` validat. NU expune token-ul; redirect înapoi în /admin.
-  exports.metaOAuthCallback = onRequest({ region: REGION, secrets: [META_APP_ID, META_APP_SECRET, TOKEN_ENC_KEY], invoker: 'public' }, async (req, res) => {
-    const fail = (msg) => res.status(400).send(`<!doctype html><meta charset="utf-8"><p>Conectare eșuată: ${lpEscape(msg)}. <a href="/admin">Înapoi</a></p>`);
-    try {
-      const code = String(req.query.code || '');
-      const state = String(req.query.state || '');
-      if (!code || !state) return fail('parametri lipsă');
-      const db = admin.firestore();
-      const stRef = db.collection('oauthStates').doc(state);
-      const st = await stRef.get();
-      const sd = st.exists ? st.data() : null;
-      if (!sd || sd.platform !== 'meta' || !sd.clientUid || (typeof sd.expiresAt === 'number' && sd.expiresAt < Date.now())) {
-        return fail('sesiune invalidă sau expirată');
-      }
-      await stRef.delete().catch(() => {});
-      // code → token scurt
-      const tokRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({
-        client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), redirect_uri: META_REDIRECT_URI, code,
-      }).toString());
-      if (!tokRes.ok) return fail('schimb token eșuat');
-      const shortTok = (await tokRes.json()).access_token;
-      // token scurt → token long-lived
-      const llRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({
-        grant_type: 'fb_exchange_token', client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), fb_exchange_token: shortTok,
-      }).toString());
-      const llJson = llRes.ok ? await llRes.json() : {};
-      const token = llJson.access_token || shortTok;
-      const expiresAt = typeof llJson.expires_in === 'number' ? Date.now() + llJson.expires_in * 1000 : 0;
-      // primul ad account (skeleton — rafinare: lasă operatorul să aleagă contul)
-      const acctRes = await fetch(`${META_API}/me/adaccounts?` + new URLSearchParams({
-        fields: 'account_id,name,currency,timezone_name', access_token: token,
-      }).toString());
-      const acct = (acctRes.ok ? (await acctRes.json()).data : [])[0] || {};
-      await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('meta').set({
-        schema: 1, platform: 'meta',
-        accountId: acct.account_id ? `act_${acct.account_id}` : '',
-        accountName: acct.name || '', status: 'active',
-        accountTimezone: acct.timezone_name || 'Europe/Bucharest', accountCurrency: acct.currency || 'EUR',
-        expiresAt, connectedBy: sd.createdBy || '',
-        tokenEnc: encryptToken(token, TOKEN_ENC_KEY.value()),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      return res.status(200).send('<!doctype html><meta charset="utf-8"><p>Cont Meta conectat ✓. <a href="/admin">Înapoi în panou</a></p>');
-    } catch (err) {
-      logger.error('metaOAuthCallback failed', { err: String(err) });
-      return fail('eroare internă');
-    }
-  });
-
-  // 3) Deconectare (operator) → șterge credențiala (token-ul dispare). Revocarea la Meta = best-effort viitor.
+  // Deconectare (operator) — comună tuturor platformelor. Șterge credențiala (token-ul dispare).
   exports.disconnectPlatform = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
     assertAdmin(request);
     const d = request.data || {};
@@ -2325,13 +2297,196 @@ if (CONNECTORS_ENABLED) {
     return { ok: true };
   });
 
-  // 4) Job zilnic: trage performanța Meta pentru toate campaniile conectate (fereastră glisantă 7 zile).
-  //    Rulează cu Service Account-ul funcției (fără request.auth). Timezone Bucharest pt. graficul ~05:00.
-  exports.pullMetaInsights = onSchedule(
-    { schedule: '0 5 * * *', timeZone: 'Europe/Bucharest', region: REGION, timeoutSeconds: 540, memory: '512MiB', secrets: [TOKEN_ENC_KEY], retryCount: 2 },
-    async () => {
-      const summary = await runMetaPull(admin.firestore(), { fetchImpl: (u) => fetch(u), encKey: TOKEN_ENC_KEY.value(), windowDays: 7 });
-      logger.info('pullMetaInsights done', summary);
-    }
-  );
+  // ── Meta (Facebook/Instagram) ──
+  if (META_ENABLED) {
+    const META_APP_ID = defineSecret('META_APP_ID');
+    const META_APP_SECRET = defineSecret('META_APP_SECRET');
+    const META_API = `https://graph.facebook.com/${metaConnector.META_GRAPH_VERSION}`;
+    const META_REDIRECT_URI = 'https://dataread.ro/api/meta/callback';
+
+    exports.initiateMetaOAuth = onCall({ region: REGION, secrets: [META_APP_ID], enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+      assertAdmin(request);
+      const clientUid = String((request.data || {}).clientUid || '').slice(0, 128);
+      if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid lipsește.');
+      const db = admin.firestore();
+      if (!(await clientExists(db, clientUid))) throw new HttpsError('not-found', 'Cont client inexistent.');
+      const state = await newState(db, 'meta', clientUid, request.auth.uid);
+      const params = new URLSearchParams({ client_id: META_APP_ID.value(), redirect_uri: META_REDIRECT_URI, state, scope: 'ads_read', response_type: 'code' });
+      return { authUrl: `https://www.facebook.com/${metaConnector.META_GRAPH_VERSION}/dialog/oauth?${params.toString()}` };
+    });
+
+    exports.metaOAuthCallback = onRequest({ region: REGION, secrets: [META_APP_ID, META_APP_SECRET, TOKEN_ENC_KEY], invoker: 'public' }, async (req, res) => {
+      try {
+        const code = String(req.query.code || '');
+        const state = String(req.query.state || '');
+        if (!code || !state) return failPage(res, 'parametri lipsă');
+        const db = admin.firestore();
+        const sd = await takeState(db, state, 'meta');
+        if (!sd) return failPage(res, 'sesiune invalidă sau expirată');
+        const tokRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({ client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), redirect_uri: META_REDIRECT_URI, code }).toString());
+        if (!tokRes.ok) return failPage(res, 'schimb token eșuat');
+        const shortTok = (await tokRes.json()).access_token;
+        const llRes = await fetch(`${META_API}/oauth/access_token?` + new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: META_APP_ID.value(), client_secret: META_APP_SECRET.value(), fb_exchange_token: shortTok }).toString());
+        const llJson = llRes.ok ? await llRes.json() : {};
+        const token = llJson.access_token || shortTok;
+        const expiresAt = typeof llJson.expires_in === 'number' ? Date.now() + llJson.expires_in * 1000 : 0;
+        const acctRes = await fetch(`${META_API}/me/adaccounts?` + new URLSearchParams({ fields: 'account_id,name,currency,timezone_name', access_token: token }).toString());
+        const acct = (acctRes.ok ? (await acctRes.json()).data : [])[0] || {};
+        await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('meta').set({
+          schema: 1, platform: 'meta', accountId: acct.account_id ? `act_${acct.account_id}` : '', accountName: acct.name || '', status: 'active',
+          accountTimezone: acct.timezone_name || 'Europe/Bucharest', accountCurrency: acct.currency || 'EUR', expiresAt, connectedBy: sd.createdBy || '',
+          tokenEnc: encryptToken(token, TOKEN_ENC_KEY.value()), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return res.status(200).send(okPage('Cont Meta conectat ✓.'));
+      } catch (err) { logger.error('metaOAuthCallback failed', { err: String(err) }); return failPage(res, 'eroare internă'); }
+    });
+
+    exports.pullMetaInsights = onSchedule(
+      { schedule: '0 5 * * *', timeZone: 'Europe/Bucharest', region: REGION, timeoutSeconds: 540, memory: '512MiB', secrets: [TOKEN_ENC_KEY], retryCount: 2 },
+      async () => { logger.info('pullMetaInsights done', await runMetaPull(admin.firestore(), { fetchImpl: (u) => fetch(u), encKey: TOKEN_ENC_KEY.value(), windowDays: 7 })); }
+    );
+  }
+
+  // ── Google Ads (OAuth2 + GAQL searchStream; refresh token per client, dev token + MCC = secrete agenție) ──
+  if (GOOGLE_ENABLED) {
+    const GOOGLE_OAUTH_CLIENT_ID = defineSecret('GOOGLE_OAUTH_CLIENT_ID');
+    const GOOGLE_OAUTH_CLIENT_SECRET = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
+    const GOOGLE_DEVELOPER_TOKEN = defineSecret('GOOGLE_DEVELOPER_TOKEN');
+    const GOOGLE_LOGIN_CUSTOMER_ID = defineSecret('GOOGLE_LOGIN_CUSTOMER_ID'); // MCC fără cratime
+    const GOOGLE_REDIRECT_URI = 'https://dataread.ro/api/google/callback';
+
+    const googleAccessToken = async (refreshToken) => {
+      const r = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: GOOGLE_OAUTH_CLIENT_ID.value(), client_secret: GOOGLE_OAUTH_CLIENT_SECRET.value(), refresh_token: refreshToken, grant_type: 'refresh_token' }).toString(),
+      });
+      if (!r.ok) return null;
+      return (await r.json()).access_token || null;
+    };
+
+    exports.initiateGoogleOAuth = onCall({ region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID], enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+      assertAdmin(request);
+      const clientUid = String((request.data || {}).clientUid || '').slice(0, 128);
+      if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid lipsește.');
+      const db = admin.firestore();
+      if (!(await clientExists(db, clientUid))) throw new HttpsError('not-found', 'Cont client inexistent.');
+      const state = await newState(db, 'google', clientUid, request.auth.uid);
+      const params = new URLSearchParams({
+        client_id: GOOGLE_OAUTH_CLIENT_ID.value(), redirect_uri: GOOGLE_REDIRECT_URI, response_type: 'code',
+        scope: 'https://www.googleapis.com/auth/adwords', access_type: 'offline', prompt: 'consent', state,
+      });
+      return { authUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` };
+    });
+
+    exports.googleOAuthCallback = onRequest({ region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_DEVELOPER_TOKEN, GOOGLE_LOGIN_CUSTOMER_ID, TOKEN_ENC_KEY], invoker: 'public' }, async (req, res) => {
+      try {
+        const code = String(req.query.code || '');
+        const state = String(req.query.state || '');
+        if (!code || !state) return failPage(res, 'parametri lipsă');
+        const db = admin.firestore();
+        const sd = await takeState(db, state, 'google');
+        if (!sd) return failPage(res, 'sesiune invalidă sau expirată');
+        const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ client_id: GOOGLE_OAUTH_CLIENT_ID.value(), client_secret: GOOGLE_OAUTH_CLIENT_SECRET.value(), code, redirect_uri: GOOGLE_REDIRECT_URI, grant_type: 'authorization_code' }).toString(),
+        });
+        if (!tokRes.ok) return failPage(res, 'schimb token eșuat');
+        const tj = await tokRes.json();
+        const refreshToken = tj.refresh_token;
+        if (!refreshToken) return failPage(res, 'lipsește refresh token (reîncearcă cu prompt=consent)');
+        // primul cont accesibil (skeleton — rafinare: lasă operatorul să aleagă customer-ul)
+        let accountId = '';
+        try {
+          const lc = await fetch(`https://googleads.googleapis.com/${googleConnector.GOOGLE_ADS_VERSION}/customers:listAccessibleCustomers`, {
+            headers: { Authorization: `Bearer ${tj.access_token}`, 'developer-token': GOOGLE_DEVELOPER_TOKEN.value() },
+          });
+          if (lc.ok) { const res2 = (await lc.json()).resourceNames || []; accountId = (res2[0] || '').replace('customers/', ''); }
+        } catch (e) { /* best-effort */ }
+        await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('google').set({
+          schema: 1, platform: 'google', accountId, accountName: '', status: 'active',
+          accountTimezone: 'Europe/Bucharest', accountCurrency: 'EUR', expiresAt: 0, connectedBy: sd.createdBy || '',
+          loginCustomerId: GOOGLE_LOGIN_CUSTOMER_ID.value(),
+          tokenEnc: encryptToken(refreshToken, TOKEN_ENC_KEY.value()), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return res.status(200).send(okPage('Cont Google Ads conectat ✓.'));
+      } catch (err) { logger.error('googleOAuthCallback failed', { err: String(err) }); return failPage(res, 'eroare internă'); }
+    });
+
+    exports.pullGoogleInsights = onSchedule(
+      { schedule: '0 5 * * *', timeZone: 'Europe/Bucharest', region: REGION, timeoutSeconds: 540, memory: '512MiB', secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_DEVELOPER_TOKEN, GOOGLE_LOGIN_CUSTOMER_ID, TOKEN_ENC_KEY], retryCount: 2 },
+      async () => {
+        const fetchRows = async (externalId, since, until, ctx) => {
+          const accessToken = await googleAccessToken(ctx.token); // ctx.token = refresh token
+          if (!accessToken) return { ok: false, status: 401, metrics: [] };
+          const customerId = String((ctx.cred && ctx.cred.accountId) || '').replace(/[^0-9]/g, '');
+          const res = await fetch(googleConnector.googleSearchStreamUrl(customerId), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'developer-token': GOOGLE_DEVELOPER_TOKEN.value(), 'login-customer-id': GOOGLE_LOGIN_CUSTOMER_ID.value(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: googleConnector.buildGoogleAdsQuery(externalId, since, until) }),
+          });
+          if (!res.ok) return { ok: false, status: res.status, metrics: [] };
+          return { ok: true, status: 200, metrics: googleConnector.mapGoogleAdsResponse(await res.json()) };
+        };
+        logger.info('pullGoogleInsights done', await runConnectorPull(admin.firestore(), { platform: 'google', fetchRows, encKey: TOKEN_ENC_KEY.value(), windowDays: 7 }));
+      }
+    );
+  }
+
+  // ── TikTok Ads (OAuth + Reporting API; Access-Token header) ──
+  if (TIKTOK_ENABLED) {
+    const TIKTOK_APP_ID = defineSecret('TIKTOK_APP_ID');
+    const TIKTOK_APP_SECRET = defineSecret('TIKTOK_APP_SECRET');
+    const TIKTOK_API = `https://business-api.tiktok.com/open_api/${tiktokConnector.TIKTOK_API_VERSION}`;
+    const TIKTOK_REDIRECT_URI = 'https://dataread.ro/api/tiktok/callback';
+
+    exports.initiateTikTokOAuth = onCall({ region: REGION, secrets: [TIKTOK_APP_ID], enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+      assertAdmin(request);
+      const clientUid = String((request.data || {}).clientUid || '').slice(0, 128);
+      if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid lipsește.');
+      const db = admin.firestore();
+      if (!(await clientExists(db, clientUid))) throw new HttpsError('not-found', 'Cont client inexistent.');
+      const state = await newState(db, 'tiktok', clientUid, request.auth.uid);
+      const params = new URLSearchParams({ app_id: TIKTOK_APP_ID.value(), redirect_uri: TIKTOK_REDIRECT_URI, state });
+      return { authUrl: `https://business-api.tiktok.com/portal/auth?${params.toString()}` };
+    });
+
+    exports.tiktokOAuthCallback = onRequest({ region: REGION, secrets: [TIKTOK_APP_ID, TIKTOK_APP_SECRET, TOKEN_ENC_KEY], invoker: 'public' }, async (req, res) => {
+      try {
+        const code = String(req.query.auth_code || req.query.code || '');
+        const state = String(req.query.state || '');
+        if (!code || !state) return failPage(res, 'parametri lipsă');
+        const db = admin.firestore();
+        const sd = await takeState(db, state, 'tiktok');
+        if (!sd) return failPage(res, 'sesiune invalidă sau expirată');
+        const tokRes = await fetch(`${TIKTOK_API}/oauth2/access_token/`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: TIKTOK_APP_ID.value(), secret: TIKTOK_APP_SECRET.value(), auth_code: code }),
+        });
+        if (!tokRes.ok) return failPage(res, 'schimb token eșuat');
+        const data = (await tokRes.json()).data || {};
+        const token = data.access_token;
+        if (!token) return failPage(res, 'lipsește access token');
+        const advertiserId = (data.advertiser_ids || [])[0] || '';
+        await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('tiktok').set({
+          schema: 1, platform: 'tiktok', accountId: advertiserId, accountName: '', status: 'active',
+          accountTimezone: 'Europe/Bucharest', accountCurrency: 'EUR', expiresAt: 0, connectedBy: sd.createdBy || '',
+          tokenEnc: encryptToken(token, TOKEN_ENC_KEY.value()), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return res.status(200).send(okPage('Cont TikTok conectat ✓.'));
+      } catch (err) { logger.error('tiktokOAuthCallback failed', { err: String(err) }); return failPage(res, 'eroare internă'); }
+    });
+
+    exports.pullTikTokInsights = onSchedule(
+      { schedule: '0 5 * * *', timeZone: 'Europe/Bucharest', region: REGION, timeoutSeconds: 540, memory: '512MiB', secrets: [TOKEN_ENC_KEY], retryCount: 2 },
+      async () => {
+        const fetchRows = async (externalId, since, until, ctx) => {
+          const advertiserId = String((ctx.cred && ctx.cred.accountId) || '');
+          const res = await fetch(tiktokConnector.buildTikTokReportUrl(advertiserId, externalId, since, until), { headers: { 'Access-Token': ctx.token } });
+          if (!res.ok) return { ok: false, status: res.status, metrics: [] };
+          return { ok: true, status: 200, metrics: tiktokConnector.mapTikTokResponse(await res.json()) };
+        };
+        logger.info('pullTikTokInsights done', await runConnectorPull(admin.firestore(), { platform: 'tiktok', fetchRows, encKey: TOKEN_ENC_KEY.value(), windowDays: 7 }));
+      }
+    );
+  }
 }

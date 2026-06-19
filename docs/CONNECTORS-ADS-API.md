@@ -70,27 +70,40 @@ mapează insights-urile platformei pe schema noastră de metrici.
 - **Schema credențiale** `clients/{uid}/platformCredentials/{platform}` (`src/types/platformCredentials.ts`) +
   reguli: **read admin-only, write false** (token-ul nu ajunge niciodată la client; scris doar de Admin SDK).
 
-### Felia 1 (Meta) — COD SCRIS, DORMANT (`CONNECTORS_ENABLED = false` în `functions/index.js`)
-Cu flag-ul pe `false`, OAuth-ul + jobul programat **NU sunt exportate** → deploy-ul NU cere secretele Meta
-(principiul #4: integrare opțională). Partea PURĂ e mereu activă + testată (`scripts/test-connectors.ts` +
-e2e TEST U): `functions/connectors/meta.js` (`mapMetaInsight`/`mapMetaInsightsResponse`/`buildMetaInsightsUrl`),
-`functions/lib/tokenCrypto.js` (AES-256-GCM), `runMetaPull` (nucleu de ingestie injectabil), `insightsWindow`.
+### Felia 1+ (Meta + Google Ads + TikTok) — COD SCRIS, DORMANT (flag PER PLATFORMĂ în `functions/index.js`)
+Un SINGUR motor generic `runConnectorPull(db, { platform, fetchRows, encKey, ... })` servește toate platformele
+(upsert `source:platform` idempotent pe dată, recalcul totals, `needs_reconnect` pe 400/401/403, izolare per tenant).
+Flag-uri independente: `META_ENABLED` / `GOOGLE_ENABLED` / `TIKTOK_ENABLED` (toate `false`). Cu flag-ul pe `false`,
+OAuth-ul + jobul acelei platforme **NU sunt exportate** → deploy-ul NU cere secretele ei (principiul #4). Activezi o
+platformă independent (ex. Meta întâi, fără secretele Google/TikTok).
 
-Funcții dormante (gated): `initiateMetaOAuth` (callable admin), `metaOAuthCallback` (onRequest, redirect),
-`disconnectPlatform` (callable admin), `pullMetaInsights` (`onSchedule` zilnic 05:00 Europe/Bucharest, fereastră
-glisantă 7 zile, upsert `source:'meta'`). Token criptat AES-256-GCM (cheia master `TOKEN_ENC_KEY` în Secret Manager).
+Partea PURĂ e mereu activă + testată (`scripts/test-connectors.ts` + e2e TEST U):
+- `functions/connectors/meta.js` (`mapMetaInsight`/`mapMetaInsightsResponse`/`buildMetaInsightsUrl`)
+- `functions/connectors/google.js` (`mapGoogleAdsRow` — **cost_micros/1e6** — /`mapGoogleAdsResponse`/`buildGoogleAdsQuery`)
+- `functions/connectors/tiktok.js` (`mapTikTokRow`/`mapTikTokResponse`/`buildTikTokReportUrl`)
+- `functions/lib/tokenCrypto.js` (AES-256-GCM), `runConnectorPull` + `runMetaPull`, `insightsWindow`.
 
-### PAȘI DE ACTIVARE (Andrei) — în ordine
-1. **Meta Business Verification** (Business Manager) — pornește DEVREME, durează săptămâni.
-2. **Meta app** (developers.facebook.com) + **App Review** pentru `ads_read` (Advanced Access) — 1–3 săptămâni,
-   cere privacy policy + screencast + descrierea use-case-ului. Redirect OAuth: `https://dataread.ro/api/meta/callback`.
-3. Setează secretele (Secret Manager):
-   `firebase functions:secrets:set META_APP_ID` / `META_APP_SECRET` / `TOKEN_ENC_KEY`
-   (`TOKEN_ENC_KEY` = 32 octeți; ex. `openssl rand -hex 32`. ⚠️ pierderea cheii = reconectarea tuturor clienților.)
-4. Adaugă în `firebase.json` un rewrite `"/api/meta/callback" → function metaOAuthCallback`.
-5. `CONNECTORS_ENABLED = true` în `functions/index.js` → `npm run deploy:functions`.
-6. (UI de conectare în /admin — „Conectează contul Meta al clientului" — se adaugă la activare; callable-urile
-   există dar sunt dormante acum, deci UI-ul ar eșua până la pasul 5.)
+Funcții dormante (gated per platformă): `initiate{Meta,Google,TikTok}OAuth` (callable admin), `{meta,google,tiktok}OAuthCallback`
+(onRequest, redirect), `disconnectPlatform` (callable admin, comună), `pull{Meta,Google,TikTok}Insights` (`onSchedule`
+zilnic 05:00 Europe/Bucharest, fereastră glisantă 7 zile). Token criptat AES-256-GCM (cheia master `TOKEN_ENC_KEY`).
+
+### PAȘI DE ACTIVARE (Andrei) — per platformă, în ordinea Meta → Google → TikTok
+**Comun (o singură dată):** `firebase functions:secrets:set TOKEN_ENC_KEY` (32 octeți, ex. `openssl rand -hex 32`.
+⚠️ pierderea cheii = reconectarea tuturor clienților). Apoi rewrite-uri în `firebase.json` pentru callback-uri.
+
+**Meta:** (1) Business Verification (săptămâni, pornește DEVREME); (2) app developers.facebook.com + App Review
+`ads_read` (1–3 săpt; privacy policy + screencast); (3) secrete `META_APP_ID`/`META_APP_SECRET`; (4) rewrite
+`/api/meta/callback`→`metaOAuthCallback`; (5) `META_ENABLED=true` → `npm run deploy:functions`.
+
+**Google Ads:** (1) developer token Basic→Standard (review Google); (2) OAuth consent screen (scope `adwords`) +
+secrete `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`/`GOOGLE_DEVELOPER_TOKEN`/`GOOGLE_LOGIN_CUSTOMER_ID`
+(MCC, fără cratime); (3) rewrite `/api/google/callback`→`googleOAuthCallback`; (4) `GOOGLE_ENABLED=true` → deploy.
+
+**TikTok:** (1) app TikTok for Business + app review + data-security review; (2) secrete `TIKTOK_APP_ID`/`TIKTOK_APP_SECRET`;
+(3) rewrite `/api/tiktok/callback`→`tiktokOAuthCallback`; (4) `TIKTOK_ENABLED=true` → deploy.
+
+**După activarea oricărei platforme:** adaugă UI-ul de conectare în /admin („Conectează contul {platformă} al
+clientului") — callable-urile `initiate*OAuth` există dar sunt dormante până la flip, deci UI-ul se adaugă la activare.
 
 ### Note / rafinări pentru activare (din review-ul adversarial)
 - **Model token Meta:** Meta nu dă refresh tokens clasice; long-lived user token ~60 zile. Pentru zero-reconectare

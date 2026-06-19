@@ -143,18 +143,20 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   testat în `scripts/test-analytics.ts`. Introducere MANUALĂ + **import CSV** (`src/utils/metricsCsv.ts`,
   parser pur tolerant ro/en, upsert pe dată); conectorii API scriu în același model. `source` pe metrică
   (`'manual'|Platform`) distinge manual vs API. Plafon valoric `MAX_METRIC_VALUE` în `coerceToDailyMetric`.
-- **Ingestie automată campanii (conectori Ads, ACTIV felia 0 / Meta DORMANT 19.06.2026):** vezi
+- **Ingestie automată campanii (conectori Ads, ACTIV felia 0 / Meta+Google+TikTok DORMANT 19.06.2026):** vezi
   `docs/CONNECTORS-ADS-API.md`. **Felia 0 (live):** `campaigns.clientUid` denormalizat (din lead, ținut în
   sincron de triggerul **`onLeadWrite`**) — leagă campania de cont pentru reguli multi-tenant + jobul de
   ingestie (REPARĂ mismatch: regulile cereau clientUid dar nu se scria). Credențiale la
   `clients/{uid}/platformCredentials/{platform}` (`src/types/platformCredentials.ts`), reguli **read admin-only,
-  write false** (token criptat AES-256-GCM, nu ajunge la client). **Conector Meta = DORMANT** (`CONNECTORS_ENABLED=false`
-  în `functions/index.js` → OAuth + `onSchedule` NU sunt exportate → deploy NU cere secretele Meta; tipar
-  „integrare opțională" ca `AI_ENABLED`). Pur + testat: `functions/connectors/meta.js` (`mapMetaInsight`),
-  `functions/lib/tokenCrypto.js`, `runMetaPull` (db+fetch+cheie injectate; upsert `source:'meta'`,
-  `needs_reconnect` pe 401, per-tenant izolat). Activare (Andrei): Meta Business Verification + App Review
-  (`ads_read`, săptămâni) → secrete `META_APP_ID/META_APP_SECRET/TOKEN_ENC_KEY` → `CONNECTORS_ENABLED=true` +
-  rewrite `/api/meta/callback` → deploy. Felia 2: Google Ads; trigger incremental totals; backfill istoric; UI conectare.
+  write false** (token criptat AES-256-GCM, nu ajunge la client). **Conectori Meta + Google Ads + TikTok = DORMANT,
+  flag PER PLATFORMĂ** (`META_ENABLED`/`GOOGLE_ENABLED`/`TIKTOK_ENABLED`=false în `functions/index.js` → OAuth +
+  `onSchedule` NU sunt exportate → deploy NU cere secretele acelei platforme; tipar „integrare opțională" ca
+  `AI_ENABLED`; fiecare platformă se activează INDEPENDENT). Motor generic **`runConnectorPull`** (un nucleu pt.
+  toate: upsert `source:platform` idempotent, recalcul totals, `needs_reconnect` pe 400/401/403, izolare per tenant);
+  `runMetaPull` = wrapper. Pur + testat: `functions/connectors/{meta,google,tiktok}.js` (atenție Google **cost_micros/1e6**),
+  `functions/lib/tokenCrypto.js`. Activare per platformă (Andrei): verificare + secrete (`*_APP_ID/SECRET` etc. +
+  `TOKEN_ENC_KEY`) + rewrite `/api/{platform}/callback` + flag=true + deploy. Rămas: trigger incremental totals;
+  backfill istoric; selectare cont (nu primul); UI conectare în /admin.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

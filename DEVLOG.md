@@ -1226,6 +1226,26 @@ normaliser, secretele niciodată în chat/repo.
 > hosting + rules. **PENDING Andrei (calea critică, săptămâni):** Meta Business Verification + App Review (ads_read)
 > + secrete + flip flag. **Felia 2 (viitor):** Google Ads; trigger incremental totals; backfill istoric; UI conectare.
 
+**2026-06-19 - Task Completed — Conectori Google Ads + TikTok (dormant) + motor generic de ingestie**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „nu pot să particip la pasul următor încă, așa că fă tu ce poți singur" (Andrei nu poate face verificările
+> Meta acum). Am dus mai departe ce se poate face + verifica fără dependențe externe: am completat ingestia
+> multi-platformă cu Google Ads + TikTok și am unificat orchestrarea.
+> - **Motor generic** `runConnectorPull(db, {platform, fetchRows, encKey, ...})` în `functions/index.js` — UN
+>   singur nucleu pentru toate platformele (upsert source:platform idempotent, recalcul totals, needs_reconnect pe
+>   400/401/403, izolare per tenant). `runMetaPull` devine wrapper subțire (back-compat, e2e TEST U neschimbat).
+> - **Google Ads** (`functions/connectors/google.js`): `mapGoogleAdsRow` (CAPCANĂ: **cost_micros/1e6**),
+>   `mapGoogleAdsResponse` (searchStream = array de batch-uri), `buildGoogleAdsQuery` (GAQL, campaign.id sanitizat
+>   anti-injecție). **TikTok** (`functions/connectors/tiktok.js`): `mapTikTokRow` (stat_time_day→date, conversion→
+>   leads, payment→revenue), `mapTikTokResponse`, `buildTikTokReportUrl`.
+> - **Flag PER PLATFORMĂ** (`META_ENABLED`/`GOOGLE_ENABLED`/`TIKTOK_ENABLED`, toate false) — fiecare platformă se
+>   activează independent, fără să ceară secretele celorlalte la deploy. OAuth + scheduler per platformă (dormant):
+>   initiate*OAuth / *OAuthCallback / pull*Insights; `disconnectPlatform` comună; helpers OAuth partajați (state TTL anti-CSRF).
+> Verificat: 13/13 suites + e2e TEST U EXTINS (mapGoogleAdsRow cost_micros/1e6, snake/camelCase, searchStream;
+> buildGoogleAdsQuery anti-injecție; mapTikTokRow; runConnectorPull google→source:google + tiktok 401→needs_reconnect)
+> + build + build:site (16 pagini) + boot. DEPLOYED: functions (toate dormante → fără secrete). docs/CONNECTORS-ADS-API.md
+> actualizat (pași activare per platformă). **PENDING Andrei (la fel):** verificările per platformă + secrete + flip flag.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

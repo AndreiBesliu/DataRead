@@ -752,6 +752,36 @@ console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (
   ok(store.get('campaigns/c1').totals && store.get('campaigns/c1').totals.spend === 20, 'runMetaPull: totals recalculate pe campanie');
   ok(store.get('clients/u2/platformCredentials/meta').status === 'needs_reconnect', 'runMetaPull: credențiala u2 marcată needs_reconnect');
   ok(!store.get('campaigns/c3/metrics/2026-06-18'), 'runMetaPull: campania google neatinsă (filtru platform)');
+
+  // ── Google Ads: mapare (cost_micros/1e6!) + query + runConnectorPull generic ──
+  const gRow = { segments: { date: '2026-06-18' }, metrics: { costMicros: '12500000', impressions: '900', clicks: '30', conversions: 2, conversionsValue: 220 } };
+  const gm = fns.mapGoogleAdsRow(gRow);
+  ok(gm.spend === 12.5 && gm.impressions === 900 && gm.leads === 2 && gm.revenue === 220 && gm.source === 'google', 'mapGoogleAdsRow: cost_micros/1e6 + conversions/value');
+  ok(fns.mapGoogleAdsRow({ segments: { date: '2026-06-19' }, metrics: { cost_micros: '5000000' } }).spend === 5, 'mapGoogleAdsRow: acceptă și snake_case cost_micros');
+  ok(fns.mapGoogleAdsResponse([{ results: [gRow] }, { results: [{ segments: { date: '2026-06-19' }, metrics: { costMicros: '1000000' } }] }]).length === 2, 'mapGoogleAdsResponse: searchStream array de batch-uri');
+  ok(/campaign\.id = 4567/.test(fns.buildGoogleAdsQuery('  4567 ', '2026-06-12', '2026-06-18')) && /BETWEEN '2026-06-12' AND '2026-06-18'/.test(fns.buildGoogleAdsQuery('4567', '2026-06-12', '2026-06-18')), 'buildGoogleAdsQuery: id + interval');
+  ok(/campaign\.id = 0 /.test(fns.buildGoogleAdsQuery('x); DROP', 'a', 'b')), 'buildGoogleAdsQuery: input ne-numeric → 0 (anti-injecție)');
+  {
+    const seedG = { 'campaigns/g1': { platform: 'google', externalId: '4567', clientUid: 'u1', totals: {} }, 'clients/u1/platformCredentials/google': { status: 'active', tokenEnc: fns.encryptToken('REFRESH', KEY) } };
+    const { db: dbG, store: storeG } = makeAdsStore(seedG);
+    const frG = async () => ({ ok: true, status: 200, metrics: fns.mapGoogleAdsResponse([{ results: [gRow] }]) });
+    const sumG = await fns.runConnectorPull(dbG, { platform: 'google', fetchRows: frG, encKey: KEY, today: '2026-06-18', windowDays: 7 });
+    const wG = storeG.get('campaigns/g1/metrics/2026-06-18');
+    ok(sumG.processed === 1 && wG && wG.source === 'google' && wG.spend === 12.5, 'runConnectorPull(google): metrică scrisă cu source:google');
+  }
+
+  // ── TikTok: mapare (stat_time_day → date) + runConnectorPull (401 → needs_reconnect) ──
+  const tRow = { dimensions: { campaign_id: '99', stat_time_day: '2026-06-18 00:00:00' }, metrics: { spend: '8.5', impressions: '400', clicks: '15', conversion: '1', total_complete_payment_value: '95' } };
+  const tm = fns.mapTikTokRow(tRow);
+  ok(tm.date === '2026-06-18' && tm.spend === 8.5 && tm.leads === 1 && tm.revenue === 95 && tm.source === 'tiktok', 'mapTikTokRow: stat_time_day→date + conversion→leads + payment→revenue');
+  ok(fns.mapTikTokResponse({ data: { list: [tRow] } }).length === 1 && fns.mapTikTokResponse({}).length === 0, 'mapTikTokResponse: data.list / gol');
+  {
+    const seedT = { 'campaigns/t1': { platform: 'tiktok', externalId: '99', clientUid: 'u1', totals: {} }, 'clients/u1/platformCredentials/tiktok': { status: 'active', tokenEnc: fns.encryptToken('TT', KEY) } };
+    const { db: dbT, store: storeT } = makeAdsStore(seedT);
+    const frT = async () => ({ ok: false, status: 401, metrics: [] });
+    const sumT = await fns.runConnectorPull(dbT, { platform: 'tiktok', fetchRows: frT, encKey: KEY, today: '2026-06-18' });
+    ok(sumT.reconnect === 1 && storeT.get('clients/u1/platformCredentials/tiktok').status === 'needs_reconnect', 'runConnectorPull(tiktok): 401 → needs_reconnect');
+  }
 }
 
 rmSync(tmp, { force: true });
