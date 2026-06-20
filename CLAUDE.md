@@ -184,10 +184,17 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   izolare multi-tenant pe clientUid, **deploy-safe** (`AUTOMATION_ENABLED=false`; triggere/UI/email NU se exportă încă).
   **Felia 1 ACTIV 20.06.2026 (management reguli):** callable-uri admin-gated `saveAutomation`/`deleteAutomation`/
   `setAutomationEnabled` (fără secrete, exportate mereu; `saveAutomation` refuză acțiunile din afara `AUTOMATION_ACTIONS_V1`)
-  + builder UI `src/admin/AutomationsPanel.tsx` (tab „Automatizări" în /admin, între Marketing și Landing) — operatorul
-  construiește reguli; motorul rămâne dormant (rulează la flip-ul din F2). Felii rămase: **F2 = wire `onMetricWrite`
-  → eveniment → executeAction (notify.operator + report.generate/campaign.recommend cu cotă) + dedupe `runs/{key}` + flip
-  `AUTOMATION_ENABLED=true`**; F3 workflows lead lifecycle; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
+  + builder UI `src/admin/AutomationsPanel.tsx` (tab „Automatizări" în /admin, între Marketing și Landing).
+  **Felia 2 ACTIV 20.06.2026 (motor LIVE, notify-only — decizie Andrei):** `AUTOMATION_ENABLED=true`.
+  `dispatchAutomationEvent(db,event)` interoghează regulile pornite → `selectMatching` (pur) → creează
+  `automations/{id}/runs/{key}` cu **`.create()`** (DEDUPE at-least-once + anti-buclă) → `executeAutomationAction`
+  (implementat DOAR `notify.operator` → scrie `notifications/{id}`; restul `skipped`). Triggere LIVE gate-uite:
+  **`onMetricWrite`** (metrici → `campaign.metric_threshold`, ctx metric.spend/leads/cpl/roas/ctr + campaign.platform/
+  aiInsight.verdict; stateHash data+valori = re-pull idempotent) + **`onCampaignAutomation`** (→ `campaign.insight` DOAR
+  la schimbare de verdict aiInsight). Reguli `notifications/{id}` read admin-only/write:false; UI „Notificări recente" în
+  AutomationsPanel. **Acțiunile cu cost AI NU rulează încă** (report.generate/campaign.recommend = skipped; vin în F2b cu
+  plafon, pending decizie Andrei). Felii rămase: F2b acțiuni AI (plafon); F3 workflows lead lifecycle (lead.* + set_status/
+  task); F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

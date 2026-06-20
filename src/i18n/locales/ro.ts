@@ -1012,6 +1012,8 @@ const ro = {
       delete: 'Șterge',
       deleteConfirm: 'Ștergi această regulă?',
       runs: 'rulări',
+      notifTitle: 'Notificări recente',
+      notifEmpty: 'Nicio notificare încă.',
       err: 'A apărut o eroare. Reîncearcă.',
       trig: {
         'lead.created': 'Lead nou',

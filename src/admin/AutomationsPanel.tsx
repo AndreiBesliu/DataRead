@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import {
@@ -27,10 +27,12 @@ const ACTION_CFG: Partial<Record<AutomationActionType, 'text' | 'status' | 'titl
 const FIELD_SUGGESTIONS = ['lead.status', 'lead.source', 'metric.spend', 'metric.leads', 'metric.cpl', 'metric.roas', 'campaign.platform', 'campaign.aiInsight.verdict'];
 
 type Rule = Automation & { id: string };
+type Notif = { id: string; automationName?: string; text?: string; trigger?: string; createdAt?: number };
 
 export default function AutomationsPanel() {
   const { t } = useTranslation();
   const [rules, setRules] = useState<Rule[]>([]);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
   const [draft, setDraft] = useState<Automation | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -40,6 +42,13 @@ export default function AutomationsPanel() {
     return onSnapshot(q, (snap) => {
       setRules(snap.docs.map((d) => ({ ...coerceToAutomation({ ...d.data(), id: d.id }), id: d.id })));
     }, () => { /* fără acces / offline → listă goală */ });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(20));
+    return onSnapshot(q, (snap) => {
+      setNotifs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Notif, 'id'>) })));
+    }, () => { /* fără notificări încă */ });
   }, []);
 
   const startNew = () => { setErr(''); setDraft(coerceToAutomation({ enabled: false, module: 'marketing' })); };
@@ -172,6 +181,20 @@ export default function AutomationsPanel() {
             <button className="btn" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy} onClick={() => setDraft(null)}>{t('admin.automation.cancel')}</button>
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy || !valid} onClick={() => void save()}>{busy ? t('admin.automation.saving') : t('admin.automation.save')}</button>
           </div>
+        </div>
+      )}
+
+      {/* Notificări recente produse de motor (acțiunea notify.operator) */}
+      {!draft && notifs.length > 0 && (
+        <div style={{ ...card, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{t('admin.automation.notifTitle')}</div>
+          {notifs.map((n) => (
+            <div key={n.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+              <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{n.automationName || '—'}</span>
+              <span style={{ flex: 1 }}>{n.text}</span>
+              <span style={{ color: 'var(--fg-1)' }}>{n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</span>
+            </div>
+          ))}
         </div>
       )}
 

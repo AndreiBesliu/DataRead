@@ -902,7 +902,7 @@ console.log('\nW) A/B testing — helpers + serveLp split/sticky + abStats');
 // ── TEST X: motor de automatizare (Felia 0) — paritate JS cu nucleul pur TS (functions/index.js real). ──
 console.log('\nX) motor automatizare — coerce + operatori + condiții + trigger/scope + idempotență + anti-buclă');
 {
-  ok(fns.AUTOMATION_ENABLED === false, 'automation: flag dormant (AUTOMATION_ENABLED=false)');
+  ok(fns.AUTOMATION_ENABLED === true, 'automation: motor activat (AUTOMATION_ENABLED=true, Felia 2)');
   const a0 = fns.coerceToAutomation(null);
   ok(a0.schema === 1 && a0.enabled === false && a0.trigger.type === 'manual', 'automation: coerce(null) → schema 1 + OFF + trigger manual');
   const a1 = fns.coerceToAutomation({
@@ -932,6 +932,55 @@ console.log('\nX) motor automatizare — coerce + operatori + condiții + trigge
   const k = fns.buildIdempotencyKey('r1', { trigger: 'lead.status_changed', targetId: 'L1', stateHash: 'won' });
   ok(/^[A-Za-z0-9_.-]+$/.test(k), 'automation: cheie idempotență validă ca doc id');
   ok(fns.selectMatching([aR, aClient], hit).length === 1, 'automation: selectMatching → doar regula agency potrivită');
+}
+
+// ── TEST Y: dispatch motor (Felia 2, notify-only) — store în memorie, notificare scrisă + dedupe prin runs.create(). ──
+console.log('\nY) dispatch automatizare — onMetric → notify.operator + dedupe (runs.create)');
+{
+  function makeAutoStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    function docRef(path) {
+      return {
+        async get() { const has = store.has(path); return { exists: has, id: path.split('/').pop(), data: () => store.get(path) }; },
+        async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
+        async create(data) { if (store.has(path)) { const e = new Error('exists'); e.code = 6; throw e; } store.set(path, Object.assign({}, data)); },
+        collection(sub) { return colRef(`${path}/${sub}`); },
+      };
+    }
+    function colRef(path) {
+      return {
+        doc(id) { return docRef(`${path}/${id}`); },
+        where(field, op, val) {
+          return { async get() {
+            const docs = [];
+            for (const [k, v] of store) {
+              if (k.startsWith(path + '/')) { const rest = k.slice(path.length + 1); if (!rest.includes('/') && v && v[field] === val) docs.push({ id: rest, data: () => v }); }
+            }
+            return { docs, empty: docs.length === 0 };
+          } };
+        },
+      };
+    }
+    return { db: { collection: (c) => colRef(c) }, store };
+  }
+  const seed = {
+    'automations/r1': { enabled: true, scope: 'agency', name: 'Spend mare', trigger: { type: 'campaign.metric_threshold', config: {} }, conditions: [{ field: 'metric.spend', op: 'gt', value: 500 }, { field: 'metric.leads', op: 'eq', value: 0 }], actions: [{ type: 'notify.operator', config: { text: 'Spend mare fără lead-uri' } }], runCount: 0 },
+    'automations/r2': { enabled: false, scope: 'agency', name: 'Oprită', trigger: { type: 'campaign.metric_threshold', config: {} }, conditions: [], actions: [{ type: 'notify.operator', config: {} }], runCount: 0 },
+    'automations/r3': { enabled: true, scope: 'agency', name: 'Alt trigger', trigger: { type: 'lead.created', config: {} }, conditions: [], actions: [{ type: 'notify.operator', config: {} }], runCount: 0 },
+  };
+  const { db: adb, store: astore } = makeAutoStore(seed);
+  const event = { trigger: 'campaign.metric_threshold', targetId: 'C1', clientUid: 'u1', ctx: { 'metric.spend': 700, 'metric.leads': 0 }, stateHash: '2026-06-18:700:0:0' };
+  const r1 = await fns.dispatchAutomationEvent(adb, event, { nowMs: 111 });
+  ok(r1.matched === 1 && r1.executed === 1, 'dispatch: o regulă potrivită executată (r1; r2 oprită, r3 alt trigger sărite)');
+  const nk = () => [...astore.keys()].filter((k) => k.startsWith('notifications/'));
+  ok(nk().length === 1, 'dispatch: o notificare scrisă');
+  ok(astore.get(nk()[0]).text === 'Spend mare fără lead-uri' && astore.get(nk()[0]).source === 'automation', 'dispatch: notificarea are textul + source automation');
+  ok(astore.get('automations/r1').runCount === 1, 'dispatch: runCount incrementat');
+  const r2 = await fns.dispatchAutomationEvent(adb, event, { nowMs: 222 });
+  ok(r2.executed === 0 && r2.skipped === 1, 'dispatch: a doua rulare, aceeași stare → dedupe (skipped, runs.create eșuează)');
+  ok(nk().length === 1, 'dispatch: fără notificare dublă (anti livrare-dublă)');
+  const r3 = await fns.dispatchAutomationEvent(adb, { trigger: 'campaign.metric_threshold', targetId: 'C2', clientUid: 'u1', ctx: { 'metric.spend': 100, 'metric.leads': 0 }, stateHash: 'low' }, { nowMs: 333 });
+  ok(r3.executed === 0, 'dispatch: condiție neîndeplinită (spend<500) → nicio acțiune');
 }
 
 rmSync(tmp, { force: true });

@@ -1005,6 +1005,8 @@ const en: typeof ro = {
       delete: 'Delete',
       deleteConfirm: 'Delete this rule?',
       runs: 'runs',
+      notifTitle: 'Recent notifications',
+      notifEmpty: 'No notifications yet.',
       err: 'Something went wrong. Try again.',
       trig: {
         'lead.created': 'New lead',

@@ -2429,7 +2429,7 @@ exports.runMetaPull = runMetaPull;
 // verticale se montează pe ACELAȘI motor prin enum-uri. Aici DOAR funcțiile pure + coerce + flag; triggerele/
 // executeAction/runs vin în feliile următoare. Paritate TS↔JS testată în e2e (TEST X).
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
-const AUTOMATION_ENABLED = false; // ⚠️ Flip la true în Felia 1 (după ce triggerele + acțiunile sunt cablate).
+const AUTOMATION_ENABLED = true; // ACTIVAT 2026-06-20 (Felia 2): triggere onMetricWrite/onCampaignAutomation + executor notify.operator.
 
 const AUTOMATION_SCHEMA = 1;
 const AUTOMATION_TRIGGERS = [
@@ -2624,6 +2624,96 @@ exports.setAutomationEnabled = onCall({ region: REGION, enforceAppCheck: APP_CHE
     .set({ enabled: (request.data && request.data.enabled) === true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
   return { ok: true };
 });
+
+// ── EXECUȚIA motorului (Felia 2, notify-only) — dispatcher + executor. Testat e2e (TEST Y) cu store în memorie. ──
+// Executor pentru O acțiune. Felia 2 implementează DOAR notify.operator (zero cost extern); restul → 'skipped'
+// (acțiunile cu cost AI / țintă lead vin în feliile următoare, cu plafon).
+async function executeAutomationAction(db, action, match, event, nowMs, idx) {
+  if (action.type === 'notify.operator') {
+    const id = `${match.key}__a${idx}`.slice(0, 480);
+    await db.collection('notifications').doc(id).set({
+      schema: 1, source: 'automation', automationId: match.automation.id || '', automationName: match.automation.name || '',
+      trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '',
+      text: String((action.config && action.config.text) || match.automation.name || 'Automatizare declanșată').slice(0, 500),
+      severity: 'info', read: false, createdAt: nowMs,
+    });
+    return { type: action.type, status: 'done' };
+  }
+  return { type: action.type, status: 'skipped' };
+}
+
+// Primește un eveniment normalizat, găsește regulile pornite care se potrivesc (pur: selectMatching) și execută
+// acțiunile lor — cu DEDUPE/anti-buclă prin `runs/{key}` creat cu .create() (eșuează dacă există ⇒ at-least-once safe).
+async function dispatchAutomationEvent(db, event, opts) {
+  const nowMs = (opts && opts.nowMs) || 0;
+  const snap = await db.collection('automations').where('enabled', '==', true).get();
+  const autos = snap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
+  const matches = selectMatching(autos, event);
+  let executed = 0; let skipped = 0;
+  for (const m of matches) {
+    const runRef = db.collection('automations').doc(m.automation.id).collection('runs').doc(m.key);
+    try {
+      await runRef.create({ schema: 1, trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '', createdAt: nowMs, status: 'running' });
+    } catch (e) { skipped++; continue; } // deja rulat pt. aceeași stare (dedupe / livrare dublă) → sare
+    const done = [];
+    for (let i = 0; i < m.actions.length; i++) {
+      try { done.push(await executeAutomationAction(db, m.actions[i], m, event, nowMs, i)); }
+      catch (e) { done.push({ type: m.actions[i].type, status: 'error' }); }
+    }
+    await runRef.set({ status: 'done', actions: done, finishedAt: nowMs }, { merge: true });
+    await db.collection('automations').doc(m.automation.id).set({ runCount: (m.automation.runCount || 0) + 1, lastRunAt: nowMs }, { merge: true });
+    executed++;
+  }
+  return { matched: matches.length, executed, skipped };
+}
+exports.executeAutomationAction = executeAutomationAction;
+exports.dispatchAutomationEvent = dispatchAutomationEvent;
+
+// Triggere LIVE (gate-uite de AUTOMATION_ENABLED — cu flag false NU se exportă, deploy-safe). Fail-closed (nu aruncă).
+if (AUTOMATION_ENABLED) {
+  // Metrică de campanie scrisă (manual / conector) → eveniment „prag metrică campanie".
+  exports.onMetricWrite = onDocumentWritten({ document: 'campaigns/{campaignId}/metrics/{date}', region: REGION }, async (ev) => {
+    try {
+      const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
+      if (!after) return; // ștergere → ignoră
+      const campaignId = ev.params.campaignId;
+      const campSnap = await admin.firestore().collection('campaigns').doc(campaignId).get();
+      if (!campSnap.exists) return;
+      const camp = campSnap.data() || {};
+      const spend = Number(after.spend) || 0; const leads = Number(after.leads) || 0; const clicks = Number(after.clicks) || 0;
+      const impressions = Number(after.impressions) || 0; const revenue = Number(after.revenue) || 0;
+      const ctx = {
+        'metric.spend': spend, 'metric.leads': leads, 'metric.clicks': clicks, 'metric.impressions': impressions, 'metric.revenue': revenue,
+        'metric.cpl': leads > 0 ? spend / leads : 0,
+        'metric.roas': spend > 0 ? revenue / spend : 0,
+        'metric.ctr': impressions > 0 ? (clicks / impressions) * 100 : 0,
+        'campaign.platform': camp.platform || '',
+        'campaign.aiInsight.verdict': (camp.aiInsight && camp.aiInsight.verdict) || '',
+      };
+      const event = {
+        trigger: 'campaign.metric_threshold', targetId: campaignId, clientUid: camp.clientUid || '',
+        ctx, stateHash: `${ev.params.date}:${spend}:${leads}:${revenue}`,
+      };
+      await dispatchAutomationEvent(admin.firestore(), event, { nowMs: Date.now() });
+    } catch (e) { console.error('onMetricWrite automation failed:', e); }
+  });
+
+  // Campanie scrisă → eveniment „verdict AI", DOAR când verdictul aiInsight s-a schimbat (altfel recalculul de
+  // totals la fiecare pull ar declanșa constant). before/after pe aiInsight.verdict.
+  exports.onCampaignAutomation = onDocumentWritten({ document: 'campaigns/{campaignId}', region: REGION }, async (ev) => {
+    try {
+      const before = ev.data && ev.data.before && ev.data.before.exists ? ev.data.before.data() : null;
+      const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
+      if (!after) return;
+      const bv = (before && before.aiInsight && before.aiInsight.verdict) || '';
+      const av = (after.aiInsight && after.aiInsight.verdict) || '';
+      if (!av || av === bv) return; // doar la SCHIMBARE de verdict
+      const ctx = { 'campaign.aiInsight.verdict': av, 'campaign.platform': after.platform || '' };
+      const event = { trigger: 'campaign.insight', targetId: ev.params.campaignId, clientUid: after.clientUid || '', ctx, stateHash: av };
+      await dispatchAutomationEvent(admin.firestore(), event, { nowMs: Date.now() });
+    } catch (e) { console.error('onCampaignAutomation failed:', e); }
+  });
+}
 
 const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;
 if (CONNECTORS_ANY) {

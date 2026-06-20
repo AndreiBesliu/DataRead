@@ -1446,6 +1446,31 @@ normaliser, secretele niciodată în chat/repo.
 > **Felia 2 (următoarea):** trigger `onMetricWrite` → eveniment campaign.metric_threshold/insight → executeAction
 > (notify.operator + report.generate/campaign.recommend cu cotă) + dedupe `runs/{key}` + flip `AUTOMATION_ENABLED=true`.
 
+**2026-06-20 - Task Completed — Motor de automatizare, Felia 2 (motor LIVE, notify-only)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continuă" + decizie Andrei „Notify-only acum" (la întrebarea de scope a Feliei 2). Pornit motorul de
+> execuție pe backend, cu acțiuni FĂRĂ cost extern (notify.operator); acțiunile cu AI (raport/recomandare auto) rămân
+> pentru o felie viitoare, cu plafon, după confirmarea lui Andrei.
+> - `functions/index.js`: `AUTOMATION_ENABLED=true`. `dispatchAutomationEvent(db,event,{nowMs})` — interoghează regulile
+>   pornite (`where('enabled','==',true)`), filtrează prin nucleul pur `selectMatching` (trigger+scope+condiții+anti-buclă),
+>   apoi pentru fiecare potrivire creează `automations/{id}/runs/{key}` cu **`.create()`** (eșuează dacă există ⇒ DEDUPE
+>   at-least-once + anti-buclă) și execută acțiunile. `executeAutomationAction`: implementează DOAR `notify.operator`
+>   (scrie `notifications/{key}__aN`); restul → `skipped` (felii viitoare). runCount/lastRunAt incrementate.
+> - Triggere LIVE (gate-uite de flag): `onMetricWrite` (campaigns/{id}/metrics/{date} → eveniment
+>   `campaign.metric_threshold` cu ctx: metric.spend/leads/cpl/roas/ctr + campaign.platform/aiInsight.verdict; stateHash =
+>   data+valori ⇒ re-pull idempotent nu re-notifică) + `onCampaignAutomation` (campaigns/{id} → `campaign.insight` DOAR
+>   când verdictul aiInsight se schimbă, ca recalculul de totals să nu declanșeze constant). Ambele fail-closed (nu aruncă).
+> - `firestore.rules`: `notifications/{id}` read admin-only, write:false (scrise de motor). UI: secțiune „Notificări recente"
+>   în `AutomationsPanel` (listener pe `notifications`, limit 20). i18n `admin.automation.notifTitle/notifEmpty` ro+en.
+> Verificat: 15/15 suites + e2e TEST X (paritate, flag=true) + TEST Y (dispatch: notificare scrisă + dedupe prin
+> runs.create + condiție neîndeplinită → nimic) + build + build:site + boot — toate verzi. DEPLOYED: functions
+> (onMetricWrite + onCampaignAutomation create + dispatch) + hosting (UI notificări) + rules (notifications).
+> **Cum se folosește:** /admin → Automatizări → Regulă nouă (ex. trigger „Prag metrică campanie", condiții
+> metric.spend > 500 ȘI metric.leads = 0, acțiune „Notifică operatorul") → Activă. La următoarea scriere de metrică
+> (manual/conector Meta) care îndeplinește condițiile → apare o notificare. **Felii rămase:** F3 workflows lead lifecycle
+> (lead.* + executor set_status/task); F2b acțiuni AI cu plafon (report.generate/campaign.recommend); F4 email/SMS;
+> F5 CRM client-scope; F6 publicare campanii.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
