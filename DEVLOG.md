@@ -1763,6 +1763,25 @@ normaliser, secretele niciodată în chat/repo.
 >   independente, read-before-write) + build + build:site + boot. DEPLOYED: functions (issueInvoice) + hosting + rules.
 >   Rămas (backlog): e-Factura ANAF; storno/corecții; numerotare cu reset anual; facturi în portalul clientului.
 
+**2026-06-21 - Task Completed — Facturile clientului în portal (Verticala 2, read-only + PDF)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). Am închis bucla facturării end-to-end: după ce operatorul emite o factură
+> (numerotare atomică), clientul logat în /app o vede și o descarcă.
+> - **Portal `InvoicesPortal`** (secțiune în `AppHome`, după ClientAutomationFeed): `onSnapshot` pe
+>   `clients/{uid}/invoices` cu `where('number','!=','')` → DOAR facturile EMISE (ciornele interne ale agenției nu apar);
+>   tabel (tip/nr/dată/total/status) + buton „Descarcă" → `printInvoice` (reutilizează composer-ul pur `composeInvoiceHtml`,
+>   escapat). Sortare: data facturii desc, cu fallback pe `issuedNumberAt` (server-stamped, mereu prezent) la egalitate/dată
+>   golită — determinism indiferent de inputul operatorului.
+> - **Reguli:** read facturi strâns de la `signedInAs(uid) || isAdmin()` la `isAdmin() || (signedInAs(uid) && number != '')`
+>   — clientul nu mai poate citi ciorne (number==''); adminul citește tot (operatorul neatins).
+> - i18n `appHome.invoices.*` (ro+en); etichetele PDF reutilizează `admin.invoices.*`; ghid client `clInvoices` (2 itemi,
+>   help.* ro+en) — „client guide updates each feature".
+> - **Review adversarial focusat (2 dimensiuni → verificare per-finding):** 1 constatare confirmată (LOW) — sortarea lexicală
+>   pe issuedAt degrada la dată golită → reparat cu fallback pe issuedNumberAt. Rule↔query confirmate corecte (admin citește
+>   tot; query client `!=` satisface regula; fără index compus).
+> Verificat: 16/16 suites (incl. acoperire ghid) + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED:
+>   hosting + rules (fără functions — niciun callable nou). Backlog: e-Factura ANAF; storno; reset anual; notificare client la emitere.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

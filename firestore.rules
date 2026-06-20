@@ -146,7 +146,8 @@ service cloud.firestore {
       // `number` (create cu number=''; update păstrează numberul existent), iar `series` se BLOCHEAZĂ după numerotare.
       // Astfel secvența legală fără goluri nu poate fi falsificată din client.
       match /invoices/{id} {
-        allow read: if signedInAs(uid) || isAdmin();
+        // Clientul vede DOAR facturile EMISE (number != ''); drafturile interne ale agenției rămân admin-only.
+        allow read: if isAdmin() || (signedInAs(uid) && resource.data.number != '');
         allow create: if isAdmin()
           && request.resource.data.keys().hasOnly(['schema', 'kind', 'series', 'number', 'issuedAt', 'dueAt',
              'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt'])

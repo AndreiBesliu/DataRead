@@ -231,8 +231,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   contorului → bijecție `[A-Za-z0-9_-]` (`safeSeries` în coerce + reguli `matches` + UI strip + gardă `BAD_SERIES`); contor
   corupt → `nextInvoiceNumber` aruncă `CORRUPT_COUNTER` (NU resetează la 1 — ar duplica); reguli: clientul nu setează/schimbă
   `number` (create number=='', update păstrează), serie+status blocate după numerotare, `invoiceCounters` write:false,
-  `hasOnly` whitelist. **Contorul depinde de backup/PITR** (responsabilitate Andrei — vezi mai jos). e-Factura ANAF + storno/
-  corecții + reset anual + portal client = felii viitoare. NU e gated încă pe pachet (unealtă operator). Restul Verticalei 2
+  `hasOnly` whitelist. **Contorul depinde de backup/PITR** (responsabilitate Andrei — vezi mai jos). **Portal client (ACTIV
+  21.06.2026):** clientul logat în /app vede DOAR facturile EMISE (`InvoicesPortal` în AppHome; `where('number','!=','')`,
+  read-only + descărcare PDF prin composer-ul pur; sortare cu fallback pe `issuedNumberAt`); regula de read e strânsă la
+  `isAdmin() || (signedInAs(uid) && number != '')` (ciornele rămân admin-only). e-Factura ANAF + storno/corecții + reset
+  anual + notificare client la emitere = felii viitoare. NU e gated încă pe pachet (unealtă operator). Restul Verticalei 2
   (CRM intern, comunicare, automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește

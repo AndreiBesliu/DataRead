@@ -48,5 +48,6 @@ export const CLIENT_HELP: HelpSection[] = [
   sec('clReport', 2),
   sec('clDeliverables', 2),
   sec('clLp', 3),
+  sec('clInvoices', 2),
   sec('clAlerts', 2),
 ];

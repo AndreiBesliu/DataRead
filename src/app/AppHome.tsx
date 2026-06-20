@@ -8,6 +8,8 @@ import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } f
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
 import { toCsv } from '../utils/csv';
+import { coerceToInvoice, invoiceTotals, type Invoice, type InvoiceKind } from '../types/invoice';
+import { printInvoice, type InvoiceLabels } from '../utils/invoiceDoc';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
@@ -557,6 +559,72 @@ function ClientAutomationFeed({ uid }: { uid: string }) {
   );
 }
 
+// Facturile clientului (Verticala 2) — DOAR cele EMITE (number != ''); drafturile interne ale agenției nu se văd
+// (reguli: client citește doar numerotate). Read-only + descărcare PDF (același composer pur ca în /admin).
+function InvoicesPortal({ uid }: { uid: string }) {
+  const { t } = useTranslation();
+  const [list, setList] = useState<Array<Invoice & { id: string; _ts: number }>>([]);
+  useEffect(() => {
+    // where('number','!=','') → doar facturile emise; sortăm în client (evită index compus).
+    const off = onSnapshot(query(collection(db, 'clients', uid, 'invoices'), where('number', '!=', '')),
+      (s) => {
+        const rows = s.docs.map((d) => {
+          const data = d.data() as Record<string, unknown>;
+          const tsf = data.issuedNumberAt as { toMillis?: () => number } | undefined;
+          const _ts = tsf && typeof tsf.toMillis === 'function' ? tsf.toMillis() : 0;
+          return { ...coerceToInvoice({ ...data, id: d.id }), id: d.id, _ts };
+        });
+        // Data facturii desc; la egalitate / dată golită de operator → momentul emiterii (server-stamped, mereu prezent).
+        rows.sort((a, b) => (b.issuedAt || '').localeCompare(a.issuedAt || '') || (b._ts - a._ts));
+        setList(rows);
+      }, () => setList([]));
+    return off;
+  }, [uid]);
+  if (list.length === 0) return null;
+  const pdfLabels = (kind: InvoiceKind): InvoiceLabels => ({
+    docTitle: t(kind === 'factura' ? 'admin.invoices.factura' : 'admin.invoices.proforma').toUpperCase(),
+    seller: t('admin.invoices.seller'), buyer: t('admin.invoices.buyer'), cui: t('admin.invoices.cui'), regCom: t('admin.invoices.regCom'), iban: t('admin.invoices.iban'),
+    issued: t('admin.invoices.issued'), due: t('admin.invoices.due'), nr: t('admin.invoices.nr'),
+    colItem: t('admin.invoices.itemDesc'), colQty: t('admin.invoices.qty'), colPrice: t('admin.invoices.unitPrice'), colTotal: t('admin.invoices.lineTotal'),
+    subtotal: t('admin.invoices.subtotal'), vat: t('admin.invoices.vat'), total: t('admin.invoices.total'),
+  });
+  const th: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', fontSize: 12 };
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('appHome.invoices.title')}</h2>
+      <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead><tr style={{ background: 'var(--bg-0)' }}>
+            <th style={th}>{t('appHome.invoices.kind')}</th>
+            <th style={th}>{t('appHome.invoices.nr')}</th>
+            <th style={th}>{t('appHome.invoices.issued')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{t('appHome.invoices.total')}</th>
+            <th style={th}>{t('appHome.invoices.status')}</th>
+            <th style={th} />
+          </tr></thead>
+          <tbody>
+            {list.map((r) => {
+              const tt = invoiceTotals(r);
+              return (
+                <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.${r.kind}`)}</td>
+                  <td style={{ padding: '6px 8px' }}>{[r.series, r.number].filter(Boolean).join(' ') || '—'}</td>
+                  <td style={{ padding: '6px 8px' }}>{r.issuedAt || '—'}</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tt.total.toFixed(2)} {r.currency}</td>
+                  <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.status_${r.status}`)}</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn" style={{ padding: '3px 9px', fontSize: 12 }} onClick={() => printInvoice(r, pdfLabels(r.kind))}>📄 {t('appHome.invoices.download')}</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function AppHome() {
   const { t } = useTranslation();
   const { user, initializing, signOutUser } = useAuthStore();
@@ -712,6 +780,8 @@ export default function AppHome() {
       <LandingPagesPortal uid={user.uid} />
       {/* Automatizări client-scope — notificări + task-uri generate de motor pe contul lui. */}
       <ClientAutomationFeed uid={user.uid} />
+      {/* Facturile clientului (Verticala 2) — doar cele emise, read-only + PDF. */}
+      <InvoicesPortal uid={user.uid} />
     </main>
   );
 }
