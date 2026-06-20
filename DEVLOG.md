@@ -1471,6 +1471,27 @@ normaliser, secretele niciodată în chat/repo.
 > (lead.* + executor set_status/task); F2b acțiuni AI cu plafon (report.generate/campaign.recommend); F4 email/SMS;
 > F5 CRM client-scope; F6 publicare campanii.
 
+**2026-06-20 - Task Completed — Motor de automatizare, Felia 2b (acțiuni AI guvernate: entitlement + bypass + plafon din Admin)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: automatizările AI sunt setate de agenție; disponibile DOAR clienților cu abonament/credite AI; vreau un
+> BYPASS (checkmark) + plafonul AI să-l pot seta din Admin. Implementat guvernarea acțiunilor AI din automatizări:
+> - `functions/index.js`: extras nucleele reutilizabile `performCampaignInsight`/`performClientReport` (anti-drift) din
+>   callable-urile aiAnalyzeCampaign/aiClientReport (acum deleagă; cota per-operator se consumă prin callback DUPĂ validare,
+>   înainte de model). Executorul motorului rulează acum `campaign.recommend`/`report.generate` cu: **poartă** pură
+>   `automationAiAllowed(config,{aiEnabled,entitlementActive})` = AI activ ȘI (bypass admin SAU client cu entitlement activ);
+>   **plafon** `consumeAutomationAiQuota(db,cap)` (tranzacție pe `aiUsage/__automationGlobal`, cap configurabil); rezultatul →
+>   notificare (verdict/raport). Triggerele onMetricWrite/onCampaignAutomation primesc secrets:[ANTHROPIC_API_KEY] (când AI_ENABLED).
+> - Config `appConfig/automation` (`src/types/automationConfig.ts`: aiDailyCap default 50, aiBypassEntitlement) — coerce unic +
+>   reguli (read+write admin, validat) + UI card în AutomationsPanel (input plafon + checkbox bypass + salvează). Motorul îl
+>   citește prin Admin SDK (`readAutomationConfig`, default sigur dacă lipsește).
+> - i18n `admin.automation.cfg*` ro+en. Notă: `auto-pause` campanie tot indisponibil (ads_read, nu ads_management).
+> Verificat: 15/15 suites (test-automation +6 config) + e2e TEST X (poarta AI +4) + TEST Y + build (typecheck + paritate i18n)
+> + build:site + boot — toate verzi. DEPLOYED: functions (cores refactorizate + executori AI + triggere cu secret) + hosting
+> (config UI) + rules (appConfig). **Cum funcționează:** o regulă cu acțiune „Recomandare AI"/„Generează raport" rulează doar
+> dacă clientul campaniei are entitlement activ SAU e bifat bypass-ul, în limita plafonului zilnic setat din Admin.
+> **Următor (ordinea cerută de Andrei):** F3 workflows lead lifecycle → apoi DOCUMENTAREA GHIDULUI (separat operator/admin vs
+> client) ÎNAINTE de alte lucruri; F4 (email/SMS) amânat.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

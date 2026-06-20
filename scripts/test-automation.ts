@@ -9,6 +9,7 @@ import {
   applyOperator, evaluateConditions, matchesTrigger, buildIdempotencyKey, planActions, selectMatching,
   type AutomationEvent,
 } from '../src/automation/automationEngine';
+import { coerceToAutomationConfig, AUTOMATION_AI_CAP_DEFAULT, AUTOMATION_AI_CAP_MAX } from '../src/types/automationConfig';
 
 let failures = 0;
 function check(name: string, ok: boolean): void {
@@ -115,6 +116,17 @@ check('op: contains (case-insensitive)', applyOperator('contains', 'Bună Ziua',
   const ev: AutomationEvent = { trigger: 'lead.created', targetId: 'L1', clientUid: 'u1', ctx: {} };
   const matched = selectMatching(rules, ev);
   check('select: doar regula pornită + tip corect', matched.length === 1 && matched[0].automation.id === 'a' && !!matched[0].key);
+}
+
+// ── config motor (plafon AI + bypass) ──
+{
+  const d = coerceToAutomationConfig(null);
+  check('config: null → cap default + bypass OFF', d.aiDailyCap === AUTOMATION_AI_CAP_DEFAULT && d.aiBypassEntitlement === false && d.schema === 1);
+  check('config: bypass true păstrat', coerceToAutomationConfig({ aiBypassEntitlement: true }).aiBypassEntitlement === true);
+  check('config: cap negativ → 0', coerceToAutomationConfig({ aiDailyCap: -5 }).aiDailyCap === 0);
+  check('config: cap peste maxim → clamp', coerceToAutomationConfig({ aiDailyCap: 1e9 }).aiDailyCap === AUTOMATION_AI_CAP_MAX);
+  check('config: cap fracționar → floor', coerceToAutomationConfig({ aiDailyCap: 12.9 }).aiDailyCap === 12);
+  check('config: cap non-număr → default', coerceToAutomationConfig({ aiDailyCap: 'x' }).aiDailyCap === AUTOMATION_AI_CAP_DEFAULT);
 }
 
 console.log(`\nautomation: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);

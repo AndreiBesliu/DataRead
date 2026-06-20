@@ -192,9 +192,17 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   **`onMetricWrite`** (metrici → `campaign.metric_threshold`, ctx metric.spend/leads/cpl/roas/ctr + campaign.platform/
   aiInsight.verdict; stateHash data+valori = re-pull idempotent) + **`onCampaignAutomation`** (→ `campaign.insight` DOAR
   la schimbare de verdict aiInsight). Reguli `notifications/{id}` read admin-only/write:false; UI „Notificări recente" în
-  AutomationsPanel. **Acțiunile cu cost AI NU rulează încă** (report.generate/campaign.recommend = skipped; vin în F2b cu
-  plafon, pending decizie Andrei). Felii rămase: F2b acțiuni AI (plafon); F3 workflows lead lifecycle (lead.* + set_status/
-  task); F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
+  AutomationsPanel.
+  **Felia 2b ACTIV 20.06.2026 (acțiuni AI guvernate):** `campaign.recommend`/`report.generate` rulează prin nucleele
+  reutilizabile `performCampaignInsight`/`performClientReport` (extrase din callable-urile aiAnalyzeCampaign/aiClientReport,
+  acum delegare anti-drift; cota se consumă prin callback DUPĂ validare). **Guvernare:** poartă pură
+  `automationAiAllowed(config,{aiEnabled,entitlementActive})` = AI activ ȘI (bypass admin SAU client cu entitlement activ);
+  plafon GLOBAL/zi configurabil `consumeAutomationAiQuota` (`aiUsage/__automationGlobal`). Config `appConfig/automation`
+  (`src/types/automationConfig.ts`: `aiDailyCap` default 50 + `aiBypassEntitlement`) — reguli read+write admin, UI card în
+  AutomationsPanel (plafon + checkbox bypass). Triggerele automatizării au `secrets:[ANTHROPIC_API_KEY]` când AI_ENABLED.
+  `auto-pause` campanie tot imposibil (ads_read, nu ads_management). Felii rămase: **F3 workflows lead lifecycle** (lead.*
+  + executor set_status/task) → apoi **documentare ghid (separat operator/admin vs client)**; F4 email/SMS; F5 CRM
+  client-scope; F6 publicare campanii (ads_management).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

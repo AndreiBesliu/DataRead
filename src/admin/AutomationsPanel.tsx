@@ -7,14 +7,15 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase';
+import { auth, db, functions } from '../firebase';
 import {
   AUTOMATION_TRIGGERS, AUTOMATION_OPS, AUTOMATION_ACTIONS_V1, AUTOMATION_SCOPES,
   AUTOMATION_MAX_CONDITIONS, AUTOMATION_MAX_ACTIONS, coerceToAutomation,
   type Automation, type AutomationActionType,
 } from '../types/automation';
+import { coerceToAutomationConfig, AUTOMATION_AI_CAP_MAX, type AutomationConfig } from '../types/automationConfig';
 
 // Câmpul de config (cheie unică) afișat per tip de acțiune. Acțiunile fără config nu apar aici.
 const ACTION_CFG: Partial<Record<AutomationActionType, 'text' | 'status' | 'title'>> = {
@@ -34,6 +35,8 @@ export default function AutomationsPanel() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [draft, setDraft] = useState<Automation | null>(null);
+  const [cfg, setCfg] = useState<AutomationConfig>(() => coerceToAutomationConfig(null));
+  const [cfgSaved, setCfgSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -50,6 +53,24 @@ export default function AutomationsPanel() {
       setNotifs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Notif, 'id'>) })));
     }, () => { /* fără notificări încă */ });
   }, []);
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'appConfig', 'automation'), (snap) => {
+      setCfg(coerceToAutomationConfig(snap.exists() ? snap.data() : null));
+    }, () => { /* default */ });
+  }, []);
+
+  const saveConfig = async () => {
+    setBusy(true); setErr(''); setCfgSaved(false);
+    try {
+      await setDoc(doc(db, 'appConfig', 'automation'), {
+        schema: 1, aiDailyCap: cfg.aiDailyCap, aiBypassEntitlement: cfg.aiBypassEntitlement,
+        updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || '',
+      }, { merge: true });
+      setCfgSaved(true); setTimeout(() => setCfgSaved(false), 2500);
+    } catch (e) { console.warn('saveConfig failed:', e); setErr(t('admin.automation.err')); }
+    finally { setBusy(false); }
+  };
 
   const startNew = () => { setErr(''); setDraft(coerceToAutomation({ enabled: false, module: 'marketing' })); };
   const startEdit = (r: Rule) => { setErr(''); setDraft(coerceToAutomation(r)); };
@@ -181,6 +202,28 @@ export default function AutomationsPanel() {
             <button className="btn" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy} onClick={() => setDraft(null)}>{t('admin.automation.cancel')}</button>
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy || !valid} onClick={() => void save()}>{busy ? t('admin.automation.saving') : t('admin.automation.save')}</button>
           </div>
+        </div>
+      )}
+
+      {/* Config acțiuni AI (plafon zilnic + bypass entitlement) */}
+      {!draft && (
+        <div style={{ ...card, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{t('admin.automation.cfgTitle')}</div>
+          <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 8px', maxWidth: 640 }}>{t('admin.automation.cfgHint')}</p>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 700, marginRight: 6 }}>{t('admin.automation.cfgCap')}</span>
+              <input type="number" min={0} max={AUTOMATION_AI_CAP_MAX} value={cfg.aiDailyCap} style={{ ...input, width: 90 }}
+                onChange={(e) => setCfg({ ...cfg, aiDailyCap: Math.max(0, Math.min(AUTOMATION_AI_CAP_MAX, Math.floor(Number(e.target.value) || 0))) })} />
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700 }}>
+              <input type="checkbox" checked={cfg.aiBypassEntitlement} onChange={(e) => setCfg({ ...cfg, aiBypassEntitlement: e.target.checked })} />
+              {t('admin.automation.cfgBypass')}
+            </label>
+            <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 12 }} disabled={busy} onClick={() => void saveConfig()}>{t('admin.automation.cfgSave')}</button>
+            {cfgSaved && <span style={{ fontSize: 12, color: '#1e7e34', fontWeight: 700 }}>✓</span>}
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.automation.cfgBypassHint')}</p>
         </div>
       )}
 

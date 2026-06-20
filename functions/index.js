@@ -869,6 +869,104 @@ function buildClientReportPrompt(lead, camps) {
   ].join('\n');
 }
 
+// ── Nuclee AI reutilizabile (anti-drift): folosite de callable-urile aiAnalyzeCampaign/aiClientReport ȘI de motorul
+//    de automatizare (acțiunile campaign.recommend / report.generate). `consume` = callback de cotă apelat DUPĂ
+//    validare, ÎNAINTE de model (callable → consumeAiQuota; automatizare → consumeAutomationAiQuota). ──
+async function performCampaignInsight(db, campaignId, actorUid, consume) {
+  const campRef = db.collection('campaigns').doc(campaignId);
+  const campSnap = await campRef.get();
+  if (!campSnap.exists) throw new HttpsError('not-found', 'Campania nu există.');
+  const camp = campSnap.data() || {};
+  const totals = camp.totals || {};
+  if (!(Number(totals.spend) > 0)) throw new HttpsError('failed-precondition', 'Adaugă întâi date de cheltuială ca să poată fi analizată campania.');
+  const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
+  const metrics = metricsSnap.docs.map((d) => d.data());
+  const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
+  if (consume) await consume();
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: AI_MODEL, max_tokens: 8000, thinking: { type: 'adaptive' },
+      system: 'Ești analistul de performanță și strategul de media-buying al agenției DataRead. Judeci ' +
+        'campaniile pe cifre (ROAS, CPL, CTR), nu pe impresii, și dai recomandări acționabile.',
+      output_config: { format: { type: 'json_schema', schema: INSIGHT_SCHEMA } },
+      messages: [{ role: 'user', content: buildInsightPrompt(leadSnap && leadSnap.exists ? leadSnap.data() : {}, camp, metrics) }],
+    });
+  } catch (err) { logger.error('anthropic analyze failed', { err: String(err) }); throw new HttpsError('internal', 'Analiza AI a eșuat. Reîncearcă în câteva momente.'); }
+  if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat analiza.');
+  const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+  let out; try { out = JSON.parse(text); } catch (err) { throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.'); }
+  const insight = {
+    verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
+    headline: String(out.headline || '').slice(0, 4000),
+    reasoning: String(out.reasoning || '').slice(0, 4000),
+    actions: String(out.actions || '').slice(0, 4000),
+  };
+  await campRef.set({ aiInsight: insight, aiInsightAt: admin.firestore.FieldValue.serverTimestamp(), aiInsightBy: actorUid }, { merge: true });
+  logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: actorUid, usage: response.usage });
+  return { insight };
+}
+
+async function performClientReport(db, leadId, actorUid, consume) {
+  const leadSnap = await db.collection('leads').doc(leadId).get();
+  if (!leadSnap.exists) throw new HttpsError('not-found', 'Clientul nu există.');
+  const campsSnap = await db.collection('campaigns').where('leadId', '==', leadId).get();
+  const camps = campsSnap.docs.map((d) => d.data());
+  if (camps.length === 0) throw new HttpsError('failed-precondition', 'Clientul nu are campanii de raportat.');
+  if (consume) await consume();
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+  let response;
+  try {
+    response = await client.messages.create({
+      model: AI_MODEL, max_tokens: 10000, thinking: { type: 'adaptive' },
+      system: 'Ești account managerul agenției DataRead. Scrii rapoarte de performanță clare și oneste ' +
+        'pentru clienții firmelor mici și mijlocii din România.',
+      output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
+      messages: [{ role: 'user', content: buildClientReportPrompt(leadSnap.data(), camps) }],
+    });
+  } catch (err) { logger.error('anthropic report failed', { err: String(err) }); throw new HttpsError('internal', 'Generarea raportului a eșuat. Reîncearcă.'); }
+  if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat raportul.');
+  const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+  let out; try { out = JSON.parse(text); } catch (err) { throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.'); }
+  const report = {
+    summary: String(out.summary || '').slice(0, 6000),
+    highlights: String(out.highlights || '').slice(0, 6000),
+    recommendations: String(out.recommendations || '').slice(0, 6000),
+  };
+  const reportAt = admin.firestore.FieldValue.serverTimestamp();
+  await db.collection('leads').doc(leadId).set({ marketingReport: report, marketingReportAt: reportAt, marketingReportBy: actorUid }, { merge: true });
+  const clientUid = (leadSnap.data() || {}).clientUid;
+  if (typeof clientUid === 'string' && clientUid) await db.collection('clients').doc(clientUid).set({ marketingReport: report, marketingReportAt: reportAt }, { merge: true });
+  logger.info('client report generated', { leadId, campaigns: camps.length, by: actorUid, usage: response.usage });
+  return { report };
+}
+
+/** Plafon GLOBAL/zi pentru acțiunile AI declanșate de automatizări (configurabil din Admin — appConfig/automation).
+ *  Backstop de cost: chiar și o regulă „nebună" e oprită la `cap` rulări AI/zi. Tranzacție pe aiUsage/__automationGlobal. */
+async function consumeAutomationAiQuota(db, cap) {
+  const day = new Date().toISOString().slice(0, 10);
+  const ref = db.collection('aiUsage').doc('__automationGlobal');
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : {};
+    const count = data.day === day ? Number(data.count) || 0 : 0;
+    if (count >= cap) throw new HttpsError('resource-exhausted', 'Plafonul zilnic de acțiuni AI din automatizări a fost atins.');
+    tx.set(ref, { day, count: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  });
+}
+
+/** Poartă PURĂ pentru acțiunile AI din automatizări: AI activ + (bypass-ul de admin SAU clientul are entitlement
+ *  activ). „credite AI" = viitor; deocamdată entitlement.status==='active'. Testată în e2e. */
+function automationAiAllowed(config, opts) {
+  if (!opts || opts.aiEnabled !== true) return false;
+  if (config && config.aiBypassEntitlement === true) return true;
+  return (opts.entitlementActive === true);
+}
+exports.automationAiAllowed = automationAiAllowed;
+
 if (AI_ENABLED) {
   exports.aiClientReport = onCall(
     { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
@@ -877,64 +975,8 @@ if (AI_ENABLED) {
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot genera rapoarte.');
       const { leadId } = request.data || {};
       if (typeof leadId !== 'string' || !leadId) throw new HttpsError('invalid-argument', 'leadId e obligatoriu.');
-
-      const db = admin.firestore();
-      const leadSnap = await db.collection('leads').doc(leadId).get();
-      if (!leadSnap.exists) throw new HttpsError('not-found', 'Clientul nu există.');
-      const campsSnap = await db.collection('campaigns').where('leadId', '==', leadId).get();
-      const camps = campsSnap.docs.map((d) => d.data());
-      if (camps.length === 0) throw new HttpsError('failed-precondition', 'Clientul nu are campanii de raportat.');
-
-      await consumeAiQuota(request.auth.uid);
-
-      const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-
-      let response;
-      try {
-        response = await client.messages.create({
-          model: AI_MODEL,
-          max_tokens: 10000,
-          thinking: { type: 'adaptive' },
-          system:
-            'Ești account managerul agenției DataRead. Scrii rapoarte de performanță clare și oneste ' +
-            'pentru clienții firmelor mici și mijlocii din România.',
-          output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
-          messages: [{ role: 'user', content: buildClientReportPrompt(leadSnap.data(), camps) }],
-        });
-      } catch (err) {
-        logger.error('anthropic report failed', { err: String(err) });
-        throw new HttpsError('internal', 'Generarea raportului a eșuat. Reîncearcă.');
-      }
-
-      if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat raportul.');
-      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-      let out;
-      try {
-        out = JSON.parse(text);
-      } catch (err) {
-        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
-      }
-
-      const report = {
-        summary: String(out.summary || '').slice(0, 6000),
-        highlights: String(out.highlights || '').slice(0, 6000),
-        recommendations: String(out.recommendations || '').slice(0, 6000),
-      };
-      const reportAt = admin.firestore.FieldValue.serverTimestamp();
-      await db.collection('leads').doc(leadId).set(
-        { marketingReport: report, marketingReportAt: reportAt, marketingReportBy: request.auth.uid },
-        { merge: true }
-      );
-      // Mirror în subarborele clientului (dacă lead-ul e conectat la un cont) — clientul îl
-      // citește din portal fără să atingă documentul de lead (notele interne rămân izolate).
-      const clientUid = (leadSnap.data() || {}).clientUid;
-      if (typeof clientUid === 'string' && clientUid) {
-        await db.collection('clients').doc(clientUid).set({ marketingReport: report, marketingReportAt: reportAt }, { merge: true });
-      }
-
-      logger.info('client report generated', { leadId, campaigns: camps.length, by: request.auth.uid, usage: response.usage });
-      return { report };
+      // Nucleu partajat; cota lunară per-operator se consumă DUPĂ validare, înainte de model.
+      return await performClientReport(admin.firestore(), leadId, request.auth.uid, () => consumeAiQuota(request.auth.uid));
     }
   );
 
@@ -945,65 +987,7 @@ if (AI_ENABLED) {
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot analiza campanii.');
       const { campaignId } = request.data || {};
       if (typeof campaignId !== 'string' || !campaignId) throw new HttpsError('invalid-argument', 'campaignId e obligatoriu.');
-
-      const db = admin.firestore();
-      const campRef = db.collection('campaigns').doc(campaignId);
-      const campSnap = await campRef.get();
-      if (!campSnap.exists) throw new HttpsError('not-found', 'Campania nu există.');
-      const camp = campSnap.data() || {};
-      const totals = camp.totals || {};
-      if (!(Number(totals.spend) > 0)) {
-        throw new HttpsError('failed-precondition', 'Adaugă întâi date de cheltuială ca să poată fi analizată campania.');
-      }
-
-      await consumeAiQuota(request.auth.uid);
-
-      const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
-      const metrics = metricsSnap.docs.map((d) => d.data());
-      const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
-
-      const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-
-      let response;
-      try {
-        response = await client.messages.create({
-          model: AI_MODEL,
-          max_tokens: 8000,
-          thinking: { type: 'adaptive' },
-          system:
-            'Ești analistul de performanță și strategul de media-buying al agenției DataRead. Judeci ' +
-            'campaniile pe cifre (ROAS, CPL, CTR), nu pe impresii, și dai recomandări acționabile.',
-          output_config: { format: { type: 'json_schema', schema: INSIGHT_SCHEMA } },
-          messages: [{ role: 'user', content: buildInsightPrompt(leadSnap && leadSnap.exists ? leadSnap.data() : {}, camp, metrics) }],
-        });
-      } catch (err) {
-        logger.error('anthropic analyze failed', { err: String(err) });
-        throw new HttpsError('internal', 'Analiza AI a eșuat. Reîncearcă în câteva momente.');
-      }
-
-      if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat analiza.');
-      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-      let out;
-      try {
-        out = JSON.parse(text);
-      } catch (err) {
-        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
-      }
-
-      const insight = {
-        verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
-        headline: String(out.headline || '').slice(0, 4000),
-        reasoning: String(out.reasoning || '').slice(0, 4000),
-        actions: String(out.actions || '').slice(0, 4000),
-      };
-      await campRef.set(
-        { aiInsight: insight, aiInsightAt: admin.firestore.FieldValue.serverTimestamp(), aiInsightBy: request.auth.uid },
-        { merge: true }
-      );
-
-      logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: request.auth.uid, usage: response.usage });
-      return { insight };
+      return await performCampaignInsight(admin.firestore(), campaignId, request.auth.uid, () => consumeAiQuota(request.auth.uid));
     }
   );
 
@@ -2625,27 +2609,71 @@ exports.setAutomationEnabled = onCall({ region: REGION, enforceAppCheck: APP_CHE
   return { ok: true };
 });
 
-// ── EXECUȚIA motorului (Felia 2, notify-only) — dispatcher + executor. Testat e2e (TEST Y) cu store în memorie. ──
-// Executor pentru O acțiune. Felia 2 implementează DOAR notify.operator (zero cost extern); restul → 'skipped'
-// (acțiunile cu cost AI / țintă lead vin în feliile următoare, cu plafon).
-async function executeAutomationAction(db, action, match, event, nowMs, idx) {
+// ── EXECUȚIA motorului — dispatcher + executor. notify.operator = zero cost (Felia 2). Acțiunile AI
+//    (report.generate/campaign.recommend) = Felia 2b: gate prin entitlement client + bypass admin + plafon zilnic
+//    configurabil (appConfig/automation). Restul (lead.set_status/task.create) → felii viitoare ('skipped'). ──
+async function writeAutomationNotification(db, match, event, nowMs, idx, text, severity) {
+  const id = `${match.key}__a${idx}`.slice(0, 480);
+  await db.collection('notifications').doc(id).set({
+    schema: 1, source: 'automation', automationId: match.automation.id || '', automationName: match.automation.name || '',
+    trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '',
+    text: String(text || match.automation.name || 'Automatizare declanșată').slice(0, 500),
+    severity: severity || 'info', read: false, createdAt: nowMs,
+  });
+}
+
+async function executeAutomationAction(db, action, match, event, nowMs, idx, config) {
   if (action.type === 'notify.operator') {
-    const id = `${match.key}__a${idx}`.slice(0, 480);
-    await db.collection('notifications').doc(id).set({
-      schema: 1, source: 'automation', automationId: match.automation.id || '', automationName: match.automation.name || '',
-      trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '',
-      text: String((action.config && action.config.text) || match.automation.name || 'Automatizare declanșată').slice(0, 500),
-      severity: 'info', read: false, createdAt: nowMs,
-    });
+    await writeAutomationNotification(db, match, event, nowMs, idx, (action.config && action.config.text) || match.automation.name);
     return { type: action.type, status: 'done' };
   }
+  // ── Acțiuni AI (Felia 2b) — gate: AI activ + (bypass admin SAU client cu entitlement activ) + plafon zilnic. ──
+  if (action.type === 'campaign.recommend' || action.type === 'report.generate') {
+    const clientUid = event.clientUid || '';
+    let entitlementActive = false;
+    if (clientUid) {
+      const cSnap = await db.collection('clients').doc(clientUid).get();
+      const ent = (cSnap.exists && cSnap.data() && cSnap.data().entitlement) || {};
+      entitlementActive = ent.status === 'active';
+    }
+    if (!automationAiAllowed(config, { aiEnabled: AI_ENABLED, entitlementActive })) {
+      return { type: action.type, status: 'skipped', reason: AI_ENABLED ? 'no_entitlement' : 'ai_disabled' };
+    }
+    const consume = () => consumeAutomationAiQuota(db, config.aiDailyCap);
+    try {
+      if (action.type === 'campaign.recommend') {
+        const { insight } = await performCampaignInsight(db, event.targetId, 'automation', consume);
+        await writeAutomationNotification(db, match, event, nowMs, idx, `Recomandare AI (${insight.verdict}): ${insight.headline}`, 'info');
+      } else {
+        const campSnap = await db.collection('campaigns').doc(event.targetId).get();
+        const leadId = campSnap.exists ? ((campSnap.data() || {}).leadId || '') : '';
+        if (!leadId) return { type: action.type, status: 'skipped', reason: 'no_lead' };
+        await performClientReport(db, leadId, 'automation', consume);
+        await writeAutomationNotification(db, match, event, nowMs, idx, 'Raport de client generat automat de o regulă.', 'info');
+      }
+      return { type: action.type, status: 'done' };
+    } catch (e) {
+      if (e && e.code === 'resource-exhausted') return { type: action.type, status: 'skipped', reason: 'cap_reached' };
+      return { type: action.type, status: 'error', reason: String((e && e.message) || e).slice(0, 200) };
+    }
+  }
   return { type: action.type, status: 'skipped' };
+}
+
+// Config motor (plafon AI + bypass) din appConfig/automation. Citită o dată per dispatch; default sigure dacă lipsește.
+async function readAutomationConfig(db) {
+  let raw = {};
+  try { const s = await db.collection('appConfig').doc('automation').get(); if (s.exists) raw = s.data() || {}; } catch (e) { /* default */ }
+  let cap = (typeof raw.aiDailyCap === 'number' && Number.isFinite(raw.aiDailyCap)) ? Math.floor(raw.aiDailyCap) : 50;
+  cap = Math.max(0, Math.min(100000, cap));
+  return { aiDailyCap: cap, aiBypassEntitlement: raw.aiBypassEntitlement === true };
 }
 
 // Primește un eveniment normalizat, găsește regulile pornite care se potrivesc (pur: selectMatching) și execută
 // acțiunile lor — cu DEDUPE/anti-buclă prin `runs/{key}` creat cu .create() (eșuează dacă există ⇒ at-least-once safe).
 async function dispatchAutomationEvent(db, event, opts) {
   const nowMs = (opts && opts.nowMs) || 0;
+  const config = await readAutomationConfig(db);
   const snap = await db.collection('automations').where('enabled', '==', true).get();
   const autos = snap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
   const matches = selectMatching(autos, event);
@@ -2657,7 +2685,7 @@ async function dispatchAutomationEvent(db, event, opts) {
     } catch (e) { skipped++; continue; } // deja rulat pt. aceeași stare (dedupe / livrare dublă) → sare
     const done = [];
     for (let i = 0; i < m.actions.length; i++) {
-      try { done.push(await executeAutomationAction(db, m.actions[i], m, event, nowMs, i)); }
+      try { done.push(await executeAutomationAction(db, m.actions[i], m, event, nowMs, i, config)); }
       catch (e) { done.push({ type: m.actions[i].type, status: 'error' }); }
     }
     await runRef.set({ status: 'done', actions: done, finishedAt: nowMs }, { merge: true });
@@ -2672,7 +2700,7 @@ exports.dispatchAutomationEvent = dispatchAutomationEvent;
 // Triggere LIVE (gate-uite de AUTOMATION_ENABLED — cu flag false NU se exportă, deploy-safe). Fail-closed (nu aruncă).
 if (AUTOMATION_ENABLED) {
   // Metrică de campanie scrisă (manual / conector) → eveniment „prag metrică campanie".
-  exports.onMetricWrite = onDocumentWritten({ document: 'campaigns/{campaignId}/metrics/{date}', region: REGION }, async (ev) => {
+  exports.onMetricWrite = onDocumentWritten({ document: 'campaigns/{campaignId}/metrics/{date}', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async (ev) => {
     try {
       const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
       if (!after) return; // ștergere → ignoră
@@ -2700,7 +2728,7 @@ if (AUTOMATION_ENABLED) {
 
   // Campanie scrisă → eveniment „verdict AI", DOAR când verdictul aiInsight s-a schimbat (altfel recalculul de
   // totals la fiecare pull ar declanșa constant). before/after pe aiInsight.verdict.
-  exports.onCampaignAutomation = onDocumentWritten({ document: 'campaigns/{campaignId}', region: REGION }, async (ev) => {
+  exports.onCampaignAutomation = onDocumentWritten({ document: 'campaigns/{campaignId}', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async (ev) => {
     try {
       const before = ev.data && ev.data.before && ev.data.before.exists ? ev.data.before.data() : null;
       const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;

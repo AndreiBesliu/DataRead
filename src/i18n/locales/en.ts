@@ -1007,6 +1007,12 @@ const en: typeof ro = {
       runs: 'runs',
       notifTitle: 'Recent notifications',
       notifEmpty: 'No notifications yet.',
+      cfgTitle: 'AI actions in automations',
+      cfgHint: 'AI actions (report / recommendation) run only for clients with an active subscription or AI credits — within the daily cap below (cost backstop).',
+      cfgCap: 'AI cap/day:',
+      cfgBypass: 'Bypass subscription (AI for all)',
+      cfgBypassHint: 'When checked, AI actions run regardless of the client subscription. Use with care — it draws from the daily cap.',
+      cfgSave: 'Save settings',
       err: 'Something went wrong. Try again.',
       trig: {
         'lead.created': 'New lead',

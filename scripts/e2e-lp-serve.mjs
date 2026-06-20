@@ -932,6 +932,11 @@ console.log('\nX) motor automatizare — coerce + operatori + condiții + trigge
   const k = fns.buildIdempotencyKey('r1', { trigger: 'lead.status_changed', targetId: 'L1', stateHash: 'won' });
   ok(/^[A-Za-z0-9_.-]+$/.test(k), 'automation: cheie idempotență validă ca doc id');
   ok(fns.selectMatching([aR, aClient], hit).length === 1, 'automation: selectMatching → doar regula agency potrivită');
+  // Poarta AI (Felia 2b): AI activ + (bypass SAU entitlement client activ).
+  ok(fns.automationAiAllowed({ aiBypassEntitlement: false }, { aiEnabled: true, entitlementActive: true }) === true, 'automation AI gate: entitlement activ → permis');
+  ok(fns.automationAiAllowed({ aiBypassEntitlement: false }, { aiEnabled: true, entitlementActive: false }) === false, 'automation AI gate: fără entitlement → blocat');
+  ok(fns.automationAiAllowed({ aiBypassEntitlement: true }, { aiEnabled: true, entitlementActive: false }) === true, 'automation AI gate: bypass admin → permis fără entitlement');
+  ok(fns.automationAiAllowed({ aiBypassEntitlement: true }, { aiEnabled: false, entitlementActive: true }) === false, 'automation AI gate: AI dezactivat → blocat (chiar și cu bypass)');
 }
 
 // ── TEST Y: dispatch motor (Felia 2, notify-only) — store în memorie, notificare scrisă + dedupe prin runs.create(). ──

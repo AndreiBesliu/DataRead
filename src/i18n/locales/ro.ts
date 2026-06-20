@@ -1014,6 +1014,12 @@ const ro = {
       runs: 'rulări',
       notifTitle: 'Notificări recente',
       notifEmpty: 'Nicio notificare încă.',
+      cfgTitle: 'Acțiuni AI în automatizări',
+      cfgHint: 'Acțiunile cu AI (raport / recomandare) rulează doar pentru clienții cu abonament sau credite AI active — în limita plafonului zilnic de mai jos (backstop de cost).',
+      cfgCap: 'Plafon AI/zi:',
+      cfgBypass: 'Bypass abonament (AI pentru toți)',
+      cfgBypassHint: 'Când e bifat, acțiunile AI rulează indiferent de abonamentul clientului. Folosește cu grijă — consumă din plafonul zilnic.',
+      cfgSave: 'Salvează setările',
       err: 'A apărut o eroare. Reîncearcă.',
       trig: {
         'lead.created': 'Lead nou',

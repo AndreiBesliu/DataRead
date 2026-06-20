@@ -243,6 +243,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Config intern al platformei (zona operatorilor). Ex.: appConfig/automation = plafon zilnic AI + bypass entitlement
+    // pentru acțiunile AI din automatizări. Read+write admin (setat din /admin); motorul îl citește prin Admin SDK.
+    match /appConfig/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin()
+        && docId == 'automation'
+        && request.resource.data.schema == 1
+        && request.resource.data.aiDailyCap is int
+        && request.resource.data.aiDailyCap >= 0 && request.resource.data.aiDailyCap <= 100000
+        && request.resource.data.aiBypassEntitlement is bool;
+    }
+
     // ───────── Landing Pages (LP Studio) ─────────
     // Operatorii construiesc pagini publice de campanie (cod HTML + design). Doc ID = slug.
     // Pagina e servită de funcția serveLp (Admin SDK), dar permitem citirea publică a celor
