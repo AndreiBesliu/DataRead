@@ -246,9 +246,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   industry-allowlist cu JS). UI: tab public `/self-marketing` (explicativ) → funnel logat `/app/self-marketing`
   (`SelfMarketingFunnel` + `SelfStepper` + `SelfProfileFields`). **Țintă: paritate cu marketingexplorer.ro (AI Marketing
   Explorer).** LIVE: Profil → **Oportunități** (S2, ACTIV 20.06.2026: `selfGenerateOpportunities` → ~10 idei prioritizate
-  pe impact, `clients/{uid}/selfMarketing/opportunities`) → Strategie → Detalii (+export PDF/copy). Rămas pt. paritate:
-  S3 Execuție (plan 30 zile — pasul 5 încă „în curând"), S4 bibliotecă multi-firmă, S5 credite cumpărabile. Ghidul
-  CLIENTULUI (clSelf) se actualizează la fiecare felie. (Automatizările NU sunt pt. client — vezi motorul de automatizare.)
+  pe impact, `clients/{uid}/selfMarketing/opportunities`) → Strategie → Detalii → **Execuție** (S3, ACTIV 20.06.2026:
+  `selfGenerateExecution` → plan 30 zile pe 4 săptămâni + A/B + optimizare, `.../selfMarketing/execution`) — toți cei 5
+  pași LIVE, export PDF/copy peste tot. **Paritate funcțională de FLUX cu AI Marketing Explorer atinsă.** Rămas (non-flux):
+  S4 bibliotecă multi-firmă, S5 credite cumpărabile (Stripe). Ghidul CLIENTULUI (clSelf) se actualizează la fiecare felie.
+  (Automatizările NU sunt pt. client — vezi motorul de automatizare.)
   Hardening recomandat înainte de lansare publică largă: App Check (`VITE_RECAPTCHA_V3_KEY` + `enforceAppCheck`) +
   gate email-verified. Testat: test-self-marketing (coerce/validare) + e2e TEST Q (prompt/schema/coerce/allowlist).
 - **Export PDF (ACTIV 16.06.2026):** `src/utils/printDoc.ts` — print-to-PDF din browser, FĂRĂ dependență

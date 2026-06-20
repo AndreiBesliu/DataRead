@@ -4,9 +4,12 @@ import {
   coerceToSelfStrategy,
   coerceToSelfDetails,
   coerceToSelfOpportunities,
+  coerceToSelfExecution,
   coerceToSelfQuota,
   OPPORTUNITIES_MAX,
   OPPORTUNITY_LIMITS,
+  EXECUTION_WEEKS_MAX,
+  EXECUTION_LIMITS,
   emptySelfProfile,
   selfFreeRemaining,
   validateSelfProfile,
@@ -87,6 +90,15 @@ check('coerce oportunități: sortare pe impact (high înaintea low)', (() => {
 })());
 check('coerce oportunități: peste plafon → capate', coerceToSelfOpportunities({ items: Array.from({ length: 25 }, () => ({ title: 'x', impact: 'high' })) }).items.length === OPPORTUNITIES_MAX);
 check('coerce oportunități: câmp plafonat', coerceToSelfOpportunities({ items: [{ title: 't'.repeat(500), impact: 'high' }] }).items[0].title.length === OPPORTUNITY_LIMITS.title);
+
+// ── coerce execuție (S3) ──
+check('coerce execuție: null → 0 săptămâni (schema 1)', coerceToSelfExecution(null).weeks.length === 0 && coerceToSelfExecution(null).schema === 1);
+check('coerce execuție: săptămâni peste plafon → capate', coerceToSelfExecution({ weeks: Array.from({ length: 12 }, () => ({ title: 'S' })) }).weeks.length === EXECUTION_WEEKS_MAX);
+check('coerce execuție: câmpuri plafonate', (() => {
+  const e = coerceToSelfExecution({ summary: 's'.repeat(5000), weeks: [{ title: 't'.repeat(500), actions: 'a'.repeat(5000) }] });
+  return e.summary.length === EXECUTION_LIMITS.summary && e.weeks[0].title.length === EXECUTION_LIMITS.weekTitle && e.weeks[0].actions.length === EXECUTION_LIMITS.actions;
+})());
+check('coerce execuție: câmpuri lipsă pe săptămână → "" (nu aruncă)', coerceToSelfExecution({ weeks: [{ title: 'Doar titlu' }] }).weeks[0].kpi === '');
 
 // ── coerce quotă + remaining ──
 check('coerce quotă: null → total 0', coerceToSelfQuota(null).total === 0);

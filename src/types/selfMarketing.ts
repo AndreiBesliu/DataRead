@@ -235,6 +235,60 @@ export function coerceToSelfDetails(v: unknown): SelfDetails {
   };
 }
 
+// ── Execuție: plan pe 30 de zile (faze săptămânale) + KPI + sugestii A/B + optimizare buget (pasul „Execuție") ──
+
+export const EXECUTION_WEEKS_MAX = 6;
+export const EXECUTION_LIMITS = {
+  directionTitle: 140,
+  summary: 1000,
+  weekTitle: 140,
+  focus: 600,
+  actions: 1000,
+  kpi: 400,
+  abTests: 1000,
+  optimization: 1000,
+} as const;
+
+export interface SelfExecutionWeek {
+  title: string; // ex. „Săptămâna 1 — Pregătire"
+  focus: string; // obiectivul săptămânii
+  actions: string; // acțiunile concrete ale săptămânii
+  kpi: string; // ce se măsoară în acea săptămână
+}
+
+export interface SelfExecution {
+  schema: typeof SELF_MARKETING_SCHEMA;
+  directionTitle: string; // direcția pe care se bazează planul (din strategie)
+  summary: string; // rezumatul planului de 30 de zile
+  weeks: SelfExecutionWeek[]; // fazele săptămânale (cap EXECUTION_WEEKS_MAX)
+  abTests: string; // sugestii de testare A/B
+  optimization: string; // recomandări de optimizare a bugetului
+}
+
+export function coerceToSelfExecution(v: unknown): SelfExecution {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const L = EXECUTION_LIMITS;
+  const weeks = (Array.isArray(d.weeks) ? d.weeks : [])
+    .slice(0, EXECUTION_WEEKS_MAX)
+    .map((raw) => {
+      const x = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+      return {
+        title: str(x.title, L.weekTitle),
+        focus: str(x.focus, L.focus),
+        actions: str(x.actions, L.actions),
+        kpi: str(x.kpi, L.kpi),
+      };
+    });
+  return {
+    schema: SELF_MARKETING_SCHEMA,
+    directionTitle: str(d.directionTitle, L.directionTitle),
+    summary: str(d.summary, L.summary),
+    weeks,
+    abTests: str(d.abTests, L.abTests),
+    optimization: str(d.optimization, L.optimization),
+  };
+}
+
 // ── Quota de trial (clients/{uid}/selfMarketing/quota — scrisă doar de functions) ──
 
 export interface SelfQuota {

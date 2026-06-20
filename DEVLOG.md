@@ -1577,6 +1577,22 @@ normaliser, secretele niciodată în chat/repo.
 >   (selfGenerateOpportunities create) + hosting. **Self Marketing acum:** Profil→Oportunități→Strategie→Detalii (+export);
 >   rămas pt. paritate: S3 Execuție (plan 30 zile), S4 bibliotecă multi-firmă, S5 credite cumpărabile.
 
+**2026-06-20 - Task Completed — Self Marketing S3: pasul „Execuție" (plan 30 zile) — funnel COMPLET**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „continuă" → S3, ultimul pas „în curând" din funnel.
+> - `functions/index.js`: callable `selfGenerateExecution({directionIndex})` (clonă selfGenerateDetails: citește profil +
+>   direcția din strategie server-side; self-quota + global + refund) → `EXECUTION_SCHEMA` (summary + 4 săptămâni
+>   title/focus/actions/kpi + abTests + optimization) + `buildExecutionPrompt`; scrie `clients/{uid}/selfMarketing/execution`.
+> - `src/types/selfMarketing.ts`: `SelfExecution`/`SelfExecutionWeek` + `coerceToSelfExecution` (cap 6 săptămâni, plafoane)
+>   + EXECUTION_LIMITS (paritate JS).
+> - `src/app/SelfMarketingFunnel.tsx`: pasul 5 „Execuție" FUNCȚIONAL (selector direcție + generare + plan: rezumat +
+>   carduri săptămânale + A/B + optimizare + export). **Eliminat ultimul „în curând" — toți cei 5 pași sunt LIVE.**
+> - Ghid CLIENT `clSelf` 6→7 (adăugat „Execuție (plan pe 30 de zile)"). i18n `selfMarketing.exec*` + `help.clSelf_*` ro+en.
+> Verificat: 15/15 suites (+4 coerce execuție) + e2e TEST Q (+4 prompt/schema/paritate EXECUTION_LIMITS; re-export adăugat) +
+> build (paritate i18n) + build:site + boot. DEPLOYED: functions (selfGenerateExecution create) + hosting.
+> **Self Marketing = paritate funcțională cu AI Marketing Explorer pe flux:** Profil→Oportunități→Strategie→Detalii→Execuție,
+> cu export PDF/copy peste tot. Rămas (non-flux): S4 bibliotecă multi-firmă, S5 credite cumpărabile (Stripe).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

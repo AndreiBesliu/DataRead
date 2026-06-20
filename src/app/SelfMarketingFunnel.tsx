@@ -20,6 +20,7 @@ import {
   coerceToSelfStrategy,
   coerceToSelfDetails,
   coerceToSelfOpportunities,
+  coerceToSelfExecution,
   coerceToSelfQuota,
   emptySelfProfile,
   selfFreeRemaining,
@@ -28,6 +29,7 @@ import {
   type SelfStrategy,
   type SelfDetails,
   type SelfOpportunities,
+  type SelfExecution,
   type SelfImpact,
   type SelfQuota,
 } from '../types/selfMarketing';
@@ -41,12 +43,13 @@ const STEPS: SelfStep[] = [
   { key: 'opportunities', labelKey: 'selfMarketing.step_opportunities', available: true },
   { key: 'strategy', labelKey: 'selfMarketing.step_strategy', available: true },
   { key: 'details', labelKey: 'selfMarketing.step_details', available: true },
-  { key: 'execution', labelKey: 'selfMarketing.step_execution', available: false },
+  { key: 'execution', labelKey: 'selfMarketing.step_execution', available: true },
 ];
 const STEP_PROFILE = 0;
 const STEP_OPPORTUNITIES = 1;
 const STEP_STRATEGY = 2;
 const STEP_DETAILS = 3;
+const STEP_EXECUTION = 4;
 
 const IMPACT_COLOR: Record<SelfImpact, string> = { high: '#1e7e34', medium: '#b25e09', low: '#6b7280' };
 
@@ -60,6 +63,7 @@ export default function SelfMarketingFunnel() {
   const [strategy, setStrategy] = useState<SelfStrategy | null>(null);
   const [opportunities, setOpportunities] = useState<SelfOpportunities | null>(null);
   const [details, setDetails] = useState<SelfDetails | null>(null);
+  const [execution, setExecution] = useState<SelfExecution | null>(null);
   const [quota, setQuota] = useState<SelfQuota | null>(null);
   const [selectedDir, setSelectedDir] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -104,8 +108,9 @@ export default function SelfMarketingFunnel() {
     const offS = onSnapshot(base('strategy'), (snap) => setStrategy(snap.exists() ? coerceToSelfStrategy(snap.data()) : null), () => setStrategy(null));
     const offO = onSnapshot(base('opportunities'), (snap) => setOpportunities(snap.exists() ? coerceToSelfOpportunities(snap.data()) : null), () => setOpportunities(null));
     const offD = onSnapshot(base('details'), (snap) => setDetails(snap.exists() ? coerceToSelfDetails(snap.data()) : null), () => setDetails(null));
+    const offE = onSnapshot(base('execution'), (snap) => setExecution(snap.exists() ? coerceToSelfExecution(snap.data()) : null), () => setExecution(null));
     const offQ = onSnapshot(base('quota'), (snap) => setQuota(snap.exists() ? coerceToSelfQuota(snap.data()) : null), () => setQuota(null));
-    return () => { offS(); offO(); offD(); offQ(); };
+    return () => { offS(); offO(); offD(); offE(); offQ(); };
   }, [user]);
 
   // Autosave draft local (după încărcare, ca să nu suprascriem cu gol).
@@ -225,6 +230,21 @@ export default function SelfMarketingFunnel() {
     }
   };
 
+  const generateExecution = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const fn = httpsCallable<{ directionIndex: number }, { execution?: unknown }>(functions, 'selfGenerateExecution');
+      await fn({ directionIndex: selectedDir });
+      setMsg({ kind: 'ok', key: 'selfMarketing.execDone' });
+    } catch (e) {
+      console.warn('selfGenerateExecution failed:', e);
+      setMsg({ kind: 'err', key: errKey(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ── Export (copy + PDF) — reutilizează printDoc.ts (text AI escapat acolo). ──
   const strategySections = (s: SelfStrategy) => [
     { label: t('selfMarketing.overviewTitle'), body: s.overview },
@@ -257,6 +277,15 @@ export default function SelfMarketingFunnel() {
     { label: t('selfMarketing.dFunnel'), body: d.funnel },
     { label: t('selfMarketing.dBrief'), body: d.campaignBrief },
     { label: t('selfMarketing.dTimeline'), body: d.timeline },
+  ];
+  const executionSections = (e: SelfExecution) => [
+    { label: t('selfMarketing.execSummary'), body: e.summary },
+    ...e.weeks.map((w, i) => ({
+      label: w.title || `${t('selfMarketing.execWeek')} ${i + 1}`,
+      body: [`${t('selfMarketing.execFocus')}: ${w.focus}`, `${t('selfMarketing.execActions')}: ${w.actions}`, `${t('selfMarketing.execKpi')}: ${w.kpi}`].join('\n'),
+    })),
+    { label: t('selfMarketing.execAb'), body: e.abTests },
+    { label: t('selfMarketing.execOptim'), body: e.optimization },
   ];
   const sectionsToText = (secs: { label: string; body: string }[]) =>
     secs.filter((s) => s.body && s.body.trim()).map((s) => `## ${s.label}\n${s.body}`).join('\n\n');
@@ -442,10 +471,48 @@ export default function SelfMarketingFunnel() {
         </div>
       )}
 
-      {/* Pasul 5 (Execuție) — în curând */}
-      {step === 4 && (
-        <div style={{ ...card, textAlign: 'center', color: 'var(--fg-1)' }}>
-          <p style={{ margin: 0 }}>{t('selfMarketing.stepSoon')}</p>
+      {/* Pas 5 — Execuție (plan pe 30 de zile pentru o direcție din strategie) */}
+      {step === STEP_EXECUTION && (
+        <div>
+          {!strategy || strategy.directions.length === 0 ? (
+            <p style={{ color: 'var(--fg-1)' }}>{t('selfMarketing.detailsNeedStrategy')}</p>
+          ) : (
+            <>
+              <p style={{ color: 'var(--fg-1)', fontSize: 14, margin: '0 0 10px' }}>{t('selfMarketing.execIntro')}</p>
+              <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 600, maxWidth: 520 }}>
+                {t('selfMarketing.detailsPick')}
+                <select value={selectedDir} onChange={(e) => setSelectedDir(Number(e.target.value))} style={{ padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, background: 'var(--bg-0)', color: 'var(--fg-0)' }}>
+                  {strategy.directions.map((dir, i) => <option key={i} value={i}>{i + 1}. {dir.title || '—'}</option>)}
+                </select>
+              </label>
+              <button className="btn btn-primary" disabled={busy || !canGenerate} onClick={() => void generateExecution()} style={{ marginTop: 12, padding: '10px 22px', fontSize: 14 }}>
+                {busy ? t('selfMarketing.execGenerating') : t('selfMarketing.execGenerate')}
+              </button>
+              {quotaBlock()}
+
+              {execution && execution.weeks.length > 0 ? (
+                <div style={{ ...card, marginTop: 16 }}>
+                  <h2 style={{ fontSize: 16, margin: '0 0 4px' }}>{t('selfMarketing.execFor')} <span style={{ color: 'var(--accent)' }}>{execution.directionTitle}</span></h2>
+                  {execution.summary ? <p style={{ fontSize: 14, color: 'var(--fg-0)', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '4px 0 12px' }}>{execution.summary}</p> : null}
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {execution.weeks.map((w, i) => (
+                      <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{w.title || `${t('selfMarketing.execWeek')} ${i + 1}`}</div>
+                        {detailField(t('selfMarketing.execFocus'), w.focus)}
+                        {detailField(t('selfMarketing.execActions'), w.actions)}
+                        {detailField(t('selfMarketing.execKpi'), w.kpi)}
+                      </div>
+                    ))}
+                  </div>
+                  {detailField(t('selfMarketing.execAb'), execution.abTests)}
+                  {detailField(t('selfMarketing.execOptim'), execution.optimization)}
+                  {exportBar(t('selfMarketing.step_execution'), executionSections(execution))}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--fg-1)', fontSize: 13, marginTop: 14 }}>{t('selfMarketing.execEmpty')}</p>
+              )}
+            </>
+          )}
         </div>
       )}
     </main>

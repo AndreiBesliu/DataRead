@@ -43,7 +43,7 @@ export const OPERATOR_HELP: HelpSection[] = [
  *  unealta agenției); el doar (a) folosește self-serve „Self Marketing" și (b) vede rezultatele pe care i le generăm. */
 export const CLIENT_HELP: HelpSection[] = [
   sec('clAccount', 2),
-  sec('clSelf', 6),
+  sec('clSelf', 7),
   sec('clPerformance', 2),
   sec('clReport', 2),
   sec('clDeliverables', 2),

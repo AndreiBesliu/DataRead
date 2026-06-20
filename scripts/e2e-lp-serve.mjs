@@ -579,6 +579,15 @@ console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil serve
   ok(oit?.additionalProperties === false && ['title', 'channel', 'impact', 'why', 'description', 'firstStep'].every((k) => oit.required.includes(k)), 'item oportunitate: 6 câmpuri required + additionalProperties false');
   ok(JSON.stringify(oit?.properties?.impact?.enum) === JSON.stringify(['high', 'medium', 'low']), 'OPPORTUNITIES_SCHEMA: impact enum high/medium/low');
   ok(JSON.stringify(C.OPPORTUNITY_LIMITS) === JSON.stringify(fns.OPPORTUNITY_LIMITS), 'OPPORTUNITY_LIMITS identic TS↔JS');
+  // Pasul Execuție (S3): buildExecutionPrompt + EXECUTION_SCHEMA + paritate EXECUTION_LIMITS.
+  const eprompt = fns.buildExecutionPrompt(profile, { title: 'Achiziție plătită locală', positioningAngle: 'rapid', targetSegment: 'IMM', channelMix: 'Meta+Google' });
+  ok(typeof eprompt === 'string' && eprompt.includes('Presto Construct') && eprompt.includes('Achiziție plătită locală') && /30 de zile/i.test(eprompt), 'buildExecutionPrompt: firma + direcția + 30 de zile');
+  ok(fns.buildExecutionPrompt(null, null).length > 0, 'buildExecutionPrompt(null,null) nu aruncă');
+  const es = fns.EXECUTION_SCHEMA;
+  const ew = es?.properties?.weeks?.items;
+  ok(es?.additionalProperties === false && ['summary', 'weeks', 'abTests', 'optimization'].every((k) => es.required.includes(k)), 'EXECUTION_SCHEMA: summary/weeks/abTests/optimization required + additionalProperties false');
+  ok(ew?.additionalProperties === false && ['title', 'focus', 'actions', 'kpi'].every((k) => ew.required.includes(k)), 'item săptămână: title/focus/actions/kpi required');
+  ok(JSON.stringify(C.EXECUTION_LIMITS) === JSON.stringify(fns.EXECUTION_LIMITS), 'EXECUTION_LIMITS identic TS↔JS');
 }
 
 // ── Paritate TS↔JS pe constantele Self Marketing (limits/allowlist/quota): orice drift = silent data loss. ──
