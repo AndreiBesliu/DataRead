@@ -421,3 +421,6 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - Paginile publice se randează determinist (fără `Date.now()`/random în render) — `createRoot`
   înlocuiește HTML-ul prerenderizat și trebuie să fie identic.
 - Node local e 25, dar functions + CI rulează Node 20 (pinned prin `engines` și workflow).
+- **Code-splitting (App.tsx):** rutele auth-gated (NEprerenderizate) `/app*` + `/admin` sunt `React.lazy` (chunk-uri la
+  cerere; `index` 172KB). Paginile PUBLICE rămân import STATIC — dacă le faci lazy, prerender-ul capturează fallback-ul de
+  Suspense și hidratarea diferă (flash/mismatch). `firebase` (692KB) e tot pe calea critică (auth init) — lazy-firebase = backlog.

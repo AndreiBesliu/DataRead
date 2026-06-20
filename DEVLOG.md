@@ -1620,6 +1620,21 @@ normaliser, secretele niciodată în chat/repo.
 > build + build:site + boot. DEPLOYED: functions (dispatch) + rules. Motorul are acum TOATE garanțiile: dedupe + anti-buclă
 > (origin) + cap AI + **backstop orar**. **Următor: E2 (split bundle) → apoi D (verticală — aștept modulul) / B2.**
 
+**2026-06-20 - Task Completed — E2: split bundle (lazy-load rute auth-gated)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: B+E+D, „continuă" → E2. Chunk-ul principal `index` era 450KB (gzip 127KB) — încărca tot codul de
+> admin/LP Studio/Self Marketing chiar și pe paginile publice.
+> - `src/App.tsx`: rutele auth-gated (NEprerenderizate) `AdminHome`/`AppHome`/`OnboardingForm`/`SelfMarketingFunnel`/
+>   `HelpHome` trecute pe `React.lazy` + un singur `<Suspense>` peste `<Routes>`. Paginile PUBLICE rămân import STATIC
+>   (sunt prerenderizate → HTML determinist, fără flash de Suspense la hidratare).
+> Rezultat: `index` **450KB→172KB** (gzip 127→59KB); `AdminHome` (262KB) se încarcă DOAR pe /admin; AppHome/SelfMarketing/
+>   Onboarding/Help = chunk-uri separate la cerere. Paginile publice nu mai trag codul de admin/studio.
+> Verificat: build (typecheck + chunk split) + build:site (16 pagini prerender ALL PASS, HTML neschimbat) + boot (vizitează
+> /app lazy → AuthPanel OK) + 15/15 suites. DEPLOYED: hosting (doar frontend; fără functions/rules).
+> NOTĂ (capcană): lazy DOAR pe rutele neprerenderizate — paginile prerenderizate rămân statice ca să nu apară flash de
+> Suspense la hidratare (HTML-ul prerendat trebuie să fie identic cu primul render client). RĂMAS (E, opțional): chunk-ul
+> `firebase` (692KB) e tot pe calea critică (auth init); lazy-firebase = mai invaziv, lăsat pt. mai târziu.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
