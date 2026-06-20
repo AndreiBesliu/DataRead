@@ -1683,6 +1683,17 @@ normaliser, secretele niciodată în chat/repo.
 >   create + maxInstances pe toate) + hosting + rules. **RĂMAS pe Andrei (consolă GCP, ~5-30 min):** (3a) backup zilnic
 >   Firestore + PITR; (3b) o alertă de buget GCP. Pași dați în chat.
 
+**2026-06-20 - Task Completed — Ghid mai detaliat (corpuri structurate „ce e / cum folosești / de reținut")**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „vreau ca ghidul să fie mai detaliat". Am rescris TOATE corpurile (bodyKey) din ghid — operator (10
+> module) + client (7 module) — din 1-2 fraze în explicații structurate pe 3 linii: **Ce e / Cum folosești / De reținut**
+> (HelpView randează `pre-wrap`, deci \n dau structură vizuală). Conținut fundamentat pe funcțiile reale, cu pași concreți,
+> gotcha-uri și note (ex. token criptat server-only, anti-buclă, read-only Meta, notele interne invizibile clientului,
+> CTA-ul de audit din Self Marketing). i18n `help.*` ro (sursă) + en (paritate; EN fără apostrofuri ca să nu spargă
+> string-urile single-quote). Structura cheilor neschimbată (titlu+subtitlu+corp) → fără refactor UI.
+> Verificat: 16/16 suites (acoperire chei: toate corpurile există în ro) + build (paritate i18n en:typeof ro) + build:site
+> + boot. DEPLOYED: hosting (doar conținut UI/i18n).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
