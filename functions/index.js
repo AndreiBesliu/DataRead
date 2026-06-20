@@ -2423,6 +2423,157 @@ async function runMetaPull(db, opts) {
 }
 exports.runMetaPull = runMetaPull;
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+// MOTOR DE AUTOMATIZARE (Felia 0 — nucleu PUR, dormant + flag-gated). Port 1:1 al src/automation/automationEngine.ts
+// + src/types/automation.ts (coerce). O REGULĂ = Declanșator (1) → Condiții (AND) → Acțiuni (secvență). Cele 4
+// verticale se montează pe ACELAȘI motor prin enum-uri. Aici DOAR funcțiile pure + coerce + flag; triggerele/
+// executeAction/runs vin în feliile următoare. Paritate TS↔JS testată în e2e (TEST X).
+// ════════════════════════════════════════════════════════════════════════════════════════════════════
+const AUTOMATION_ENABLED = false; // ⚠️ Flip la true în Felia 1 (după ce triggerele + acțiunile sunt cablate).
+
+const AUTOMATION_SCHEMA = 1;
+const AUTOMATION_TRIGGERS = [
+  'lead.created', 'lead.status_changed', 'lead.inactive',
+  'campaign.metric_threshold', 'campaign.insight', 'lp.submission',
+  'schedule.daily', 'schedule.weekly', 'manual',
+];
+const AUTOMATION_OPS = ['eq', 'ne', 'gt', 'lt', 'gte', 'lte', 'in', 'contains'];
+const AUTOMATION_ACTIONS = [
+  'notify.operator', 'lead.set_status', 'task.create', 'report.generate', 'campaign.recommend',
+  'email.send', 'sms.send', 'campaign.pause', 'campaign.publish', 'webhook.call',
+];
+const AUTOMATION_SCOPES = ['agency', 'client'];
+const AUTOMATION_MAX_CONDITIONS = 10;
+const AUTOMATION_MAX_ACTIONS = 8;
+const AUTOMATION_NAME_MAX = 80;
+const AUTOMATION_STR_MAX = 500;
+const AUTOMATION_FIELD_MAX = 60;
+const AUTOMATION_MAX_RUNS_PER_TARGET_HOUR = 5;
+
+function autoStr(v, max) { return (typeof v === 'string' ? v : '').slice(0, max); }
+function autoNum(v) { return typeof v === 'number' && Number.isFinite(v) ? v : 0; }
+function autoCoerceConfig(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  let n = 0;
+  for (const k of Object.keys(raw)) {
+    if (n >= 20) break;
+    const v = raw[k]; const key = k.slice(0, AUTOMATION_FIELD_MAX);
+    if (typeof v === 'string') out[key] = v.slice(0, AUTOMATION_STR_MAX);
+    else if (typeof v === 'number' && Number.isFinite(v)) out[key] = v;
+    else continue;
+    n++;
+  }
+  return out;
+}
+function coerceToAutomationTrigger(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const type = AUTOMATION_TRIGGERS.includes(r.type) ? r.type : 'manual';
+  return { type, config: autoCoerceConfig(r.config) };
+}
+function coerceToAutomationCondition(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const field = autoStr(raw.field, AUTOMATION_FIELD_MAX);
+  if (!field) return null;
+  const op = AUTOMATION_OPS.includes(raw.op) ? raw.op : 'eq';
+  const value = (typeof raw.value === 'number' && Number.isFinite(raw.value)) ? raw.value : autoStr(raw.value, AUTOMATION_STR_MAX);
+  return { field, op, value };
+}
+function coerceToAutomationAction(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (!AUTOMATION_ACTIONS.includes(raw.type)) return null;
+  return { type: raw.type, config: autoCoerceConfig(raw.config) };
+}
+function coerceToAutomation(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const scope = AUTOMATION_SCOPES.includes(r.scope) ? r.scope : 'agency';
+  const conditions = Array.isArray(r.conditions)
+    ? r.conditions.map(coerceToAutomationCondition).filter(Boolean).slice(0, AUTOMATION_MAX_CONDITIONS) : [];
+  const actions = Array.isArray(r.actions)
+    ? r.actions.map(coerceToAutomationAction).filter(Boolean).slice(0, AUTOMATION_MAX_ACTIONS) : [];
+  return {
+    schema: AUTOMATION_SCHEMA,
+    id: typeof r.id === 'string' ? r.id : undefined,
+    name: autoStr(r.name, AUTOMATION_NAME_MAX),
+    enabled: r.enabled === true,
+    scope,
+    clientUid: scope === 'client' ? autoStr(r.clientUid, 128) : '',
+    module: autoStr(r.module, 40) || 'marketing',
+    trigger: coerceToAutomationTrigger(r.trigger),
+    conditions, actions,
+    createdBy: autoStr(r.createdBy, 128),
+    updatedAt: autoNum(r.updatedAt),
+    lastRunAt: autoNum(r.lastRunAt),
+    runCount: autoNum(r.runCount),
+  };
+}
+
+function automationApplyOperator(op, left, right) {
+  const ln = typeof left === 'number' ? left : Number(left);
+  const rn = typeof right === 'number' ? right : Number(right);
+  const numeric = Number.isFinite(ln) && Number.isFinite(rn);
+  switch (op) {
+    case 'eq': return String(left) === String(right);
+    case 'ne': return String(left) !== String(right);
+    case 'gt': return numeric && ln > rn;
+    case 'lt': return numeric && ln < rn;
+    case 'gte': return numeric && ln >= rn;
+    case 'lte': return numeric && ln <= rn;
+    case 'in': return String(right).split(',').map((x) => x.trim()).filter(Boolean).includes(String(left));
+    case 'contains': return String(left).toLowerCase().includes(String(right).toLowerCase());
+    default: return false;
+  }
+}
+function automationReadField(ctx, field) {
+  if (ctx && Object.prototype.hasOwnProperty.call(ctx, field)) return ctx[field];
+  const parts = String(field).split('.');
+  let cur = ctx;
+  for (const p of parts) {
+    if (cur && typeof cur === 'object' && p in cur) cur = cur[p];
+    else return undefined;
+  }
+  return cur;
+}
+function evaluateConditions(conditions, ctx) {
+  if (!Array.isArray(conditions) || conditions.length === 0) return true;
+  for (const c of conditions) {
+    if (!automationApplyOperator(c.op, automationReadField(ctx, c.field), c.value)) return false;
+  }
+  return true;
+}
+function matchesTrigger(a, event) {
+  if (!a || a.enabled !== true) return false;
+  if (a.trigger.type !== event.trigger) return false;
+  if (a.scope === 'client') return !!a.clientUid && a.clientUid === event.clientUid;
+  return true;
+}
+function buildIdempotencyKey(automationId, event) {
+  const safe = (x) => String(x || '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
+  return [safe(automationId), safe(event.trigger), safe(event.targetId), safe(event.stateHash || '')].join('__');
+}
+function planActions(a, event) {
+  if (event.origin === 'automation') return null;
+  if (!matchesTrigger(a, event)) return null;
+  if (!evaluateConditions(a.conditions, event.ctx)) return null;
+  return a.actions;
+}
+function selectMatching(automations, event) {
+  const out = [];
+  for (const a of (automations || [])) {
+    const actions = planActions(a, event);
+    if (actions && actions.length) out.push({ automation: a, actions, key: buildIdempotencyKey(a.id || a.name, event) });
+  }
+  return out;
+}
+exports.coerceToAutomation = coerceToAutomation;
+exports.automationApplyOperator = automationApplyOperator;
+exports.evaluateConditions = evaluateConditions;
+exports.matchesTrigger = matchesTrigger;
+exports.buildIdempotencyKey = buildIdempotencyKey;
+exports.planActions = planActions;
+exports.selectMatching = selectMatching;
+exports.AUTOMATION_ENABLED = AUTOMATION_ENABLED;
+
 const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;
 if (CONNECTORS_ANY) {
   const { onSchedule } = require('firebase-functions/v2/scheduler');

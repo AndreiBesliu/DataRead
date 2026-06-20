@@ -170,6 +170,20 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (builder campanie + App Review pe alt scope), NU acum.
   Activare Google/TikTok: secrete + flag=true + rewrite `/api/{platform}/callback` + deploy. Rămas: trigger incremental
   totals; backfill istoric; selectare cont (nu primul); HMAC pe cookie A/B (separat).
+- **Motor de automatizare (Felia 0 ACTIV 20.06.2026 — fundație pură, dormantă):** UN motor generic
+  `declanșatoare → condiții (AND) → acțiuni (secvență)` pe care cele 4 verticale (workflows marketing / optimizare
+  campanii / creare campanii / CRM) se montează ca module prin enum-uri — fără refactor de nucleu. Model unic
+  `src/types/automation.ts` (`Automation` schema:1: trigger{type,config} + conditions[] + actions[] + scope
+  `agency|client` + clientUid + enabled default OFF; 9 declanșatoare, 8 operatori, 10 acțiuni cu `AUTOMATION_ACTIONS_V1`
+  subset sigur + `AUTOMATION_AI_ACTIONS`; coerce unic cu plafoane). Nucleu PUR `src/automation/automationEngine.ts`
+  (`applyOperator`/`evaluateConditions`/`matchesTrigger`/`buildIdempotencyKey`/`planActions`/`selectMatching`), portat
+  1:1 în `functions/index.js` (paritate TS↔JS testată e2e TEST X). **Date:** `automations/{id}` + `automations/{id}/runs/{runId}`
+  (audit + dedupe). Reguli: read admin SAU client-owner scope:'client', **write:false** (mutații doar prin callable-uri).
+  **Garanții (din start):** anti-buclă (`origin:'automation'` ignorat + `buildIdempotencyKey` + backstop
+  `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR`), at-least-once dedupe (`runs/{key}` creat tranzacțional), cost AI mărginit de cotă,
+  izolare multi-tenant pe clientUid, **deploy-safe** (`AUTOMATION_ENABLED=false`; triggere/UI/email NU se exportă încă).
+  Felii: F1 optimizare pe datele conectori (`onMetricWrite`→praguri/insight→notificare+recomandare AI, flip flag); F2 builder
+  UI; F3 workflows lead lifecycle; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

@@ -899,6 +899,41 @@ console.log('\nW) A/B testing — helpers + serveLp split/sticky + abStats');
   state.lpDoc = servedDoc;
 }
 
+// ── TEST X: motor de automatizare (Felia 0) — paritate JS cu nucleul pur TS (functions/index.js real). ──
+console.log('\nX) motor automatizare — coerce + operatori + condiții + trigger/scope + idempotență + anti-buclă');
+{
+  ok(fns.AUTOMATION_ENABLED === false, 'automation: flag dormant (AUTOMATION_ENABLED=false)');
+  const a0 = fns.coerceToAutomation(null);
+  ok(a0.schema === 1 && a0.enabled === false && a0.trigger.type === 'manual', 'automation: coerce(null) → schema 1 + OFF + trigger manual');
+  const a1 = fns.coerceToAutomation({
+    id: 'r1', name: 'Alertă', enabled: true, scope: 'agency',
+    trigger: { type: 'campaign.metric_threshold', config: { threshold: 500 } },
+    conditions: [{ field: 'metric.spend', op: 'gt', value: 500 }, { field: 'metric.leads', op: 'eq', value: 0 }, { field: 'x', op: 'zzz', value: 1 }],
+    actions: [{ type: 'notify.operator', config: { text: 'Verifică' } }, { type: 'bogus', config: {} }],
+  });
+  ok(a1.actions.length === 1 && a1.conditions[2].op === 'eq', 'automation: coerce elimină acțiune invalidă + op invalid→eq');
+  ok(fns.automationApplyOperator('in', 'contacted', 'new,contacted,won') === true, 'automation: op „in" pe listă');
+  ok(fns.automationApplyOperator('gt', 'abc', 5) === false, 'automation: op „gt" pe non-numeric → false');
+  // Regulă curată (fără condiția-gunoi din a1) pentru verificările de evaluare/plan/select.
+  const aR = fns.coerceToAutomation({
+    id: 'r2', enabled: true, scope: 'agency', trigger: { type: 'campaign.metric_threshold' },
+    conditions: [{ field: 'metric.spend', op: 'gt', value: 500 }, { field: 'metric.leads', op: 'eq', value: 0 }],
+    actions: [{ type: 'notify.operator', config: { text: 'Verifică' } }],
+  });
+  const ctx = { 'metric.spend': 700, 'metric.leads': 0 };
+  ok(fns.evaluateConditions(aR.conditions, ctx) === true, 'automation: condiții AND îndeplinite');
+  ok(fns.evaluateConditions(aR.conditions, { 'metric.spend': 100, 'metric.leads': 0 }) === false, 'automation: o condiție falsă → false');
+  const hit = { trigger: 'campaign.metric_threshold', targetId: 'C1', clientUid: 'u1', ctx };
+  ok((fns.planActions(aR, hit) || []).length === 1, 'automation: planActions → acțiuni la potrivire');
+  ok(fns.planActions(aR, { ...hit, origin: 'automation' }) === null, 'automation: anti-buclă (origin=automation → null)');
+  const aClient = fns.coerceToAutomation({ id: 'rc', enabled: true, scope: 'client', clientUid: 'u2', trigger: { type: 'campaign.metric_threshold' }, actions: [{ type: 'notify.operator', config: {} }] });
+  ok(fns.matchesTrigger(aClient, hit) === false, 'automation: regulă client pe alt tenant → fără potrivire (izolare)');
+  ok(fns.matchesTrigger(aClient, { ...hit, clientUid: 'u2' }) === true, 'automation: regulă client pe tenantul ei → potrivire');
+  const k = fns.buildIdempotencyKey('r1', { trigger: 'lead.status_changed', targetId: 'L1', stateHash: 'won' });
+  ok(/^[A-Za-z0-9_.-]+$/.test(k), 'automation: cheie idempotență validă ca doc id');
+  ok(fns.selectMatching([aR, aClient], hit).length === 1, 'automation: selectMatching → doar regula agency potrivită');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

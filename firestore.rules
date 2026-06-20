@@ -218,6 +218,24 @@ service cloud.firestore {
       }
     }
 
+    // ───────── Motor de automatizare (declanșatoare → condiții → acțiuni) ─────────
+    // O REGULĂ = automations/{id}; jurnalul de rulări = automations/{id}/runs/{runId} (audit + dedupe idempotent).
+    // Regulile sunt deținute de operatori (scope:'agency') SAU de client (scope:'client', per clientUid — Verticala 2).
+    // Mutațiile trec EXCLUSIV prin callable-uri (validare + cote + anti-buclă server-side) ⇒ write:false aici
+    // (Admin SDK ocolește rules). Citire: admin, plus clientul își vede DOAR regulile lui de scope 'client'.
+    match /automations/{autoId} {
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.scope == 'client' && resource.data.clientUid == request.auth.uid);
+      allow write: if false;
+      match /runs/{runId} {
+        allow read: if isAdmin()
+          || (request.auth != null
+              && get(/databases/$(database)/documents/automations/$(autoId)).data.scope == 'client'
+              && get(/databases/$(database)/documents/automations/$(autoId)).data.clientUid == request.auth.uid);
+        allow write: if false;
+      }
+    }
+
     // ───────── Landing Pages (LP Studio) ─────────
     // Operatorii construiesc pagini publice de campanie (cod HTML + design). Doc ID = slug.
     // Pagina e servită de funcția serveLp (Admin SDK), dar permitem citirea publică a celor

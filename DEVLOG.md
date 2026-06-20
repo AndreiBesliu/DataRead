@@ -1404,6 +1404,29 @@ normaliser, secretele niciodată în chat/repo.
 > rămâne active") + build (paritate i18n) + build:site + boot — toate verzi. DEPLOYED: functions (`setPlatformIngest`
 > creat + runConnectorPull/metaOAuthCallback actualizate) + hosting (UI toggle) + rules.
 
+**2026-06-20 - Task Completed — Motor de automatizare, Felia 0 (fundație pură, dormantă, deploy-safe)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „vreau să începem automatizarea" → la întrebarea de scope, Andrei: „toate". Decizie: NU 4 lucruri separate,
+> ci UN motor `declanșatoare → condiții → acțiuni` pe care cele 4 verticale (workflows marketing / optimizare campanii /
+> creare campanii / CRM) se montează ca module (principiul de modularitate + feature flags). Design fundamentat printr-un
+> workflow multi-agent pe codul real (faza Understand a terminat: 4 hărți de hooks; fazele Design/Judge/Critique au fost
+> blocate de o limită de sesiune → am făcut sinteza inline, cu garanțiile pe care le-ar fi cerut critica adversarială).
+> **Felia 0 livrată (pură, dormantă):**
+> - `src/types/automation.ts`: model `Automation` (schema:1) + enum-uri (9 declanșatoare, 8 operatori, 10 acțiuni cu
+>   subset v1 sigur + acțiuni AI marcate) + `coerceToAutomation` unic (clamp/default/plafoane; `enabled` default OFF).
+> - `src/automation/automationEngine.ts`: nucleu PUR — `applyOperator`/`evaluateConditions`(AND)/`matchesTrigger`(+izolare
+>   scope client)/`buildIdempotencyKey`(anti-dublură)/`planActions`(anti-buclă pe `origin`)/`selectMatching`.
+> - Port JS 1:1 în `functions/index.js` (dormant, `AUTOMATION_ENABLED=false`; doar funcții pure exportate, ZERO
+>   triggere/endpoint-uri noi) + paritate TS↔JS testată e2e (TEST X, 13 aserțiuni).
+> - `firestore.rules`: `automations/{id}` + `automations/{id}/runs/{runId}` — read admin SAU client-owner (scope:'client'),
+>   write:false (mutații doar prin callable-uri în feliile următoare; runs = audit scris de motor).
+> - Garanții băgate din start (anti fals-pozitiv adversarial): anti-buclă (origin + idempotency key + backstop runs/oră),
+>   at-least-once dedupe (runs/{key} tranzacțional), cost AI mărginit de cotă, multi-tenant pe clientUid, deploy-safe (flag).
+> Verificat: 15/15 suites (test-automation, 37 checks) + e2e TEST X + build (typecheck noile fișiere). DEPLOYED: doar
+> firestore.rules (singura schimbare LIVE; functions = pure helpers dormante, deploy amânat la Felia 1 când cablez triggerele).
+> **Felii următoare:** F1 optimizare pe datele conectori (onMetricWrite → praguri/insight → notificare + recomandare AI,
+> flip flag); F2 builder UI (`AutomationsPanel`); F3 workflows lead; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
