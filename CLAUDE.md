@@ -253,8 +253,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   campanii fără raport luna curentă. `SuggestionsPanel` (tab nou în AdminHome) listenează `leads`/`campaigns`
   (limit 200/300), randează lista sortată pe severitate cu „Deschide" → schimbă tabul. Notă: la livrarea
   RBAC tabul Administratori lipsea din nav array (inaccesibil) — reparat odată cu acest tab.
-- **Ghid/Documentație — SCHELET (ACTIV 16.06.2026):** `src/help/helpContent.ts` (date pure: `OPERATOR_HELP`
-  8 module + `CLIENT_HELP` 5 module, doar chei i18n — titluri+subtitluri; `bodyKey` viitor pt. conținut),
+- **Ghid/Documentație — CONȚINUT COMPLET (ACTIV 20.06.2026; schelet din 16.06):** `src/help/helpContent.ts` — ghid
+  SEPARAT operator/admin (`OPERATOR_HELP`, 10 module: leads/suggestions/requests/opportunities/marketing/**connectors**/
+  **automation**/lp/admins/pdf) vs client (`CLIENT_HELP`, 5 module), randate în /admin tab „Ghid" respectiv /app „/app/ghid".
+  `sec()` generează acum titlu + subtitlu + `bodyKey` per item; CORPURILE sunt completate (i18n `help.*` ro+en, 1-2 fraze
+  scanabile). Test de acoperire verifică toate cheile (titlu+subtitlu+corp) în ro; paritate en prin typecheck. Conținut de
+  completat la fiecare feature nou (ca DEVLOG). (Înlocuiește nota veche „SCHELET ... bodyKey viitor".)
+- **(istoric) Ghid SCHELET (16.06.2026):** `src/help/helpContent.ts` (date pure: `OPERATOR_HELP`
+  + `CLIENT_HELP`, doar chei i18n — titluri+subtitluri; `bodyKey` viitor pt. conținut),
   `src/help/HelpView.tsx` (prezentațional, refolosit). Tab „Ghid" în /admin + rută `/app/ghid`
   (`src/app/HelpHome.tsx`) + link în header /app. **Strategie:** schelet acum, conținut completat
   INCREMENTAL per feature (ca DEVLOG), polish spre lansare. i18n `help.*` ro+en; test de acoperire a cheilor

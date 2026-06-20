@@ -1512,6 +1512,22 @@ normaliser, secretele niciodată în chat/repo.
 >   campaign.*, schedule.*) + acțiuni notify/set_status/task/AI. **Următor (ordinea Andrei): DOCUMENTARE GHID — separat
 >   operator/admin vs client.** F4 (email/SMS) amânat.
 
+**2026-06-20 - Task Completed — Ghid documentat (conținut real, separat operator/admin vs client)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „documentează ghidul; vreau ghid separat pentru operatori și admini față de ghidul clienților."
+> Separarea exista deja (OPERATOR_HELP în /admin tab „Ghid" + CLIENT_HELP în /app „/app/ghid"), dar corpurile erau goale
+> („în curând"). Completat CONȚINUTUL real:
+> - `src/help/helpContent.ts`: `sec()` adaugă acum `bodyKey` per item; **două secțiuni noi de operator**: `opConnectors`
+>   (4) + `opAutomation` (6) — funcțiile recente, nedocumentate. Ghidul operatorului = 10 secțiuni; al clientului = 5.
+> - i18n `help.*` ro (sursă) + en (paritate): corp explicativ (1-2 fraze, scanabil) pentru TOATE item-urile — operator
+>   (lead-uri, sugestii, cereri, oportunități, marketing, conectori, automatizări, LP, administratori, PDF) + client (cont,
+>   performanță, raport, livrabile, LP). Ghidul operatorului acoperă acum și conectorii Meta + tot motorul de automatizare.
+> `HelpView` randa deja `bodyKey` (placeholder dacă lipsea) → fără schimbare de UI. Testul de acoperire verifică acum și
+> corpurile (toate cheile bodyKey există în ro); paritatea en e impusă de typecheck (en: typeof ro).
+> Verificat: 15/15 suites (help: toate cheile există) + build (paritate i18n) + build:site + boot — toate verzi.
+> DEPLOYED: hosting (doar conținut UI/i18n; fără functions/rules). Notă: e separarea cerută — un ghid pentru echipă, unul
+> pentru clienți, fiecare la fața lui (/admin vs /app).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
