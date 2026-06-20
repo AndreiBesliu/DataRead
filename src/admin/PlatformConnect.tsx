@@ -16,6 +16,7 @@ export default function PlatformConnect({ uid }: { uid: string }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<Status>('loading');
   const [accountName, setAccountName] = useState('');
+  const [ingest, setIngest] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -27,8 +28,22 @@ export default function PlatformConnect({ uid }: { uid: string }) {
       const s = d.status;
       setStatus(s === 'active' || s === 'needs_reconnect' || s === 'revoked' ? s : 'none');
       setAccountName((typeof d.accountName === 'string' && d.accountName) ? d.accountName : (typeof d.accountId === 'string' ? d.accountId : ''));
+      setIngest(d.ingestEnabled !== false);
     } catch {
       setStatus('none');
+    }
+  };
+
+  const toggleIngest = async () => {
+    const next = !ingest;
+    setIngest(next); setBusy(true); setErr(''); // optimist
+    try {
+      await httpsCallable(functions, 'setPlatformIngest')({ clientUid: uid, platform: 'meta', enabled: next });
+    } catch (e) {
+      console.warn('setPlatformIngest failed:', e);
+      setIngest(!next); setErr(t('admin.connectors.err'));
+    } finally {
+      setBusy(false);
     }
   };
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [uid]);
@@ -80,6 +95,16 @@ export default function PlatformConnect({ uid }: { uid: string }) {
         </button>
       ) : (
         <>
+          {/* Comutator flux de date: ON = jobul zilnic trage; OFF = pe pauză (token-ul rămâne). */}
+          <button
+            type="button"
+            onClick={() => void toggleIngest()}
+            disabled={busy}
+            title={t('admin.connectors.ingestLabel')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: ingest ? '#1e7e34' : 'var(--bg-0)', color: ingest ? '#fff' : 'var(--fg-1)' }}
+          >
+            {t('admin.connectors.ingestLabel')}: {ingest ? t('admin.connectors.on') : t('admin.connectors.off')}
+          </button>
           <button className="btn" style={{ padding: '5px 12px', fontSize: 12 }} disabled={busy} onClick={() => void connect()}>
             {t('admin.connectors.reconnect')}
           </button>

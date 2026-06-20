@@ -2373,7 +2373,8 @@ async function runConnectorPull(db, opts) {
       if (ctx === undefined) {
         const credSnap = await credRef.get();
         const cred = credSnap.exists ? credSnap.data() || {} : null;
-        if (!cred || cred.status !== 'active' || !cred.tokenEnc) ctx = null;
+        // Sare dacă: lipsă / inactivă / fără token / ingestie pe pauză (ingestEnabled === false).
+        if (!cred || cred.status !== 'active' || cred.ingestEnabled === false || !cred.tokenEnc) ctx = null;
         else { try { ctx = { token: decryptToken(cred.tokenEnc, encKey), cred }; } catch (e) { ctx = null; } }
         credCache.set(clientUid, ctx);
       }
@@ -2460,6 +2461,18 @@ if (CONNECTORS_ANY) {
     return { ok: true };
   });
 
+  // Comutator flux de date (operator): pornește/oprește ingestia automată FĂRĂ a deconecta (token-ul rămâne).
+  exports.setPlatformIngest = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+    assertAdmin(request);
+    const d = request.data || {};
+    const clientUid = String(d.clientUid || '').slice(0, 128);
+    const platform = String(d.platform || '');
+    if (!clientUid || !['meta', 'google', 'tiktok'].includes(platform)) throw new HttpsError('invalid-argument', 'parametri invalizi');
+    await admin.firestore().collection('clients').doc(clientUid).collection('platformCredentials').doc(platform)
+      .set({ ingestEnabled: d.enabled === true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { ok: true };
+  });
+
   // ── Meta (Facebook/Instagram) ──
   if (META_ENABLED) {
     const META_APP_ID = defineSecret('META_APP_ID');
@@ -2498,6 +2511,7 @@ if (CONNECTORS_ANY) {
         await db.collection('clients').doc(sd.clientUid).collection('platformCredentials').doc('meta').set({
           schema: 1, platform: 'meta', accountId: acct.account_id ? `act_${acct.account_id}` : '', accountName: acct.name || '', status: 'active',
           accountTimezone: acct.timezone_name || 'Europe/Bucharest', accountCurrency: acct.currency || 'EUR', expiresAt, connectedBy: sd.createdBy || '',
+          ingestEnabled: true, // la conectare, fluxul de date pornește activ
           tokenEnc: encryptToken(token, TOKEN_ENC_KEY.value()), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         return res.status(200).send(okPage('Cont Meta conectat ✓.'));

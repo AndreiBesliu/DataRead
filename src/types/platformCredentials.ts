@@ -29,6 +29,8 @@ export interface PlatformCredential {
   expiresAt: number;
   /** UID-ul adminului care a conectat contul (audit). */
   connectedBy: string;
+  /** Comutatorul fluxului de date: jobul zilnic trage DOAR dacă ≠ false. OFF = pauză (token-ul rămâne). */
+  ingestEnabled: boolean;
 }
 
 const s = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice(0, n) : '');
@@ -49,5 +51,6 @@ export function coerceToPlatformCredential(raw: unknown): PlatformCredential | n
     accountCurrency: s(d.accountCurrency, 8) || 'EUR',
     expiresAt: nonNeg(d.expiresAt),
     connectedBy: s(d.connectedBy, 128),
+    ingestEnabled: d.ingestEnabled !== false, // default ON (legacy fără câmp = activ)
   };
 }

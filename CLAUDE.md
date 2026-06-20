@@ -163,6 +163,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `metaOAuthCallback`; funcții `initiateMetaOAuth`/`metaOAuthCallback`/`disconnectPlatform`/`pullMetaInsights` (zilnic
   05:00 Europe/Bucharest); UI `PlatformConnect` (buton „Conectează Meta" per client în Marketing Center). **Meta: pentru
   clienți reali necesită Tech Provider + verificare (App Review ads_read); test pe cont propriu = development mode.**
+  **Toggle „Ingestie automată" per conexiune (ACTIV 20.06.2026):** `platformCredentials.ingestEnabled` (coerce default
+  `true`) — comutator în `PlatformConnect` (callable admin `setPlatformIngest`) pune fluxul pe PAUZĂ fără a deconecta
+  (token-ul rămâne); `runConnectorPull` sare conexiunea cu `ingestEnabled===false` (skipped, status neatins). Conectorul
+  e **read-only `ads_read`** (doar ingestie) — crearea de campanii cap-coadă din admin = fază viitoare `ads_management`
+  (builder campanie + App Review pe alt scope), NU acum.
   Activare Google/TikTok: secrete + flag=true + rewrite `/api/{platform}/callback` + deploy. Rămas: trigger incremental
   totals; backfill istoric; selectare cont (nu primul); HMAC pe cookie A/B (separat).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat

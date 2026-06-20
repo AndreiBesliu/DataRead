@@ -1384,6 +1384,26 @@ normaliser, secretele niciodată în chat/repo.
 > URIs = `https://dataread.ro/api/meta/callback` + App Domains `dataread.ro` (pași 2–3) → apoi testează conectarea pe
 > contul propriu (development mode, fără App Review). Pentru clienți reali: Tech Provider + verificare (App Review ads_read).
 
+**2026-06-20 - Task Completed — Toggle „Ingestie automată" per conexiune (pauză fără deconectare)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „cred că cel mai bine ar fi să avem un toggle, care activează fluxul de date dinspre Meta." (preferat în
+> locul unui buton „Trage acum"). Implementat un comutator PER CONEXIUNE care pornește/oprește fluxul de date FĂRĂ a
+> deconecta (token-ul criptat rămâne, doar jobul zilnic e pus pe pauză):
+> - `src/types/platformCredentials.ts`: câmp nou `ingestEnabled: boolean` (coerce default `true` — conexiunile vechi
+>   rămân active). Token-ul NU e în tip (server-only).
+> - `functions/index.js`: gate-ul din `runConnectorPull` sare conexiunea dacă `ingestEnabled === false` (alături de
+>   lipsă/inactivă/fără token) → contorizată ca „skipped", status NEatins (nu needs_reconnect). `metaOAuthCallback`
+>   scrie `ingestEnabled: true` la conectare. Callable nou admin-gated **`setPlatformIngest`** ({clientUid, platform,
+>   enabled}) → merge pe `clients/{uid}/platformCredentials/{platform}`.
+> - `src/admin/PlatformConnect.tsx`: comutator (pill verde PORNIT / gri OPRIT) lângă reconectează/deconectează,
+>   optimist (revine la eroare). i18n `admin.connectors.ingestLabel/on/off` ro+en.
+> Răspuns la a doua întrebare a lui Andrei („putem crea o campanie cap-coadă doar din admin, fără să intru în Meta?"):
+> NU acum — conectorul e read-only (`ads_read`, doar ingestie). Crearea de campanii = fază viitoare separată
+> (`ads_management` + builder de campanie + App Review pe alt scope). Notat în backlog.
+> Verificat: 14/14 suites (+2 coerce ingestEnabled) + e2e (+3 aserțiuni „pe pauză → 0 procesate, fără metrică, status
+> rămâne active") + build (paritate i18n) + build:site + boot — toate verzi. DEPLOYED: functions (`setPlatformIngest`
+> creat + runConnectorPull/metaOAuthCallback actualizate) + hosting (UI toggle) + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

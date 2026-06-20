@@ -72,6 +72,8 @@ check('cred: platformă necunoscută → null', coerceToPlatformCredential({ pla
 check('cred: status invalid → active (default)', coerceToPlatformCredential({ platform: 'google', status: 'hacked' })?.status === 'active');
 check('cred: timezone/currency goale → default-uri', (() => { const c = coerceToPlatformCredential({ platform: 'tiktok' }); return !!c && c.accountTimezone === 'Europe/Bucharest' && c.accountCurrency === 'EUR'; })());
 check('cred: toate platformele acceptate', CRED_PLATFORMS.every((p) => coerceToPlatformCredential({ platform: p })?.platform === p));
+check('cred: ingestEnabled default true', coerceToPlatformCredential({ platform: 'meta' })?.ingestEnabled === true);
+check('cred: ingestEnabled false păstrat', coerceToPlatformCredential({ platform: 'meta', ingestEnabled: false })?.ingestEnabled === false);
 
 // ── coerceToCampaign: clientUid nou ──
 check('campaign: clientUid păstrat', coerceToCampaign({ name: 'X', clientUid: 'uid-123' })?.clientUid === 'uid-123');

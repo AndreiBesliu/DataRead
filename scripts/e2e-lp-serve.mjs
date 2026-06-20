@@ -757,6 +757,19 @@ console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (
   ok(store.get('clients/u2/platformCredentials/meta').status === 'needs_reconnect', 'runMetaPull: credențiala u2 marcată needs_reconnect');
   ok(!store.get('campaigns/c3/metrics/2026-06-18'), 'runMetaPull: campania google neatinsă (filtru platform)');
 
+  // ── ingestEnabled:false → conexiune pe PAUZĂ (token păstrat, dar jobul NU trage) ──
+  {
+    const seedP = {
+      'campaigns/p1': { platform: 'meta', externalId: '777', clientUid: 'u9', totals: {} },
+      'clients/u9/platformCredentials/meta': { status: 'active', ingestEnabled: false, tokenEnc: fns.encryptToken('TOK-U9', KEY) },
+    };
+    const { db: dbP, store: storeP } = makeAdsStore(seedP);
+    const sumP = await fns.runMetaPull(dbP, { fetchImpl: () => mkRes2(true, 200, insights), encKey: KEY, today: '2026-06-18', windowDays: 7 });
+    ok(sumP.processed === 0 && sumP.skipped === 1, 'runConnectorPull: ingestEnabled:false → campanie sărită (pe pauză)');
+    ok(!storeP.get('campaigns/p1/metrics/2026-06-18'), 'runConnectorPull: pe pauză → nicio metrică scrisă');
+    ok(storeP.get('clients/u9/platformCredentials/meta').status === 'active', 'runConnectorPull: pe pauză → status rămâne active (nu needs_reconnect)');
+  }
+
   // ── Google Ads: mapare (cost_micros/1e6!) + query + runConnectorPull generic ──
   const gRow = { segments: { date: '2026-06-18' }, metrics: { costMicros: '12500000', impressions: '900', clicks: '30', conversions: 2, conversionsValue: 220 } };
   const gm = fns.mapGoogleAdsRow(gRow);
