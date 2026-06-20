@@ -1038,6 +1038,19 @@ console.log('\nY) dispatch automatizare — onMetric → notify.operator + dedup
   const { db: cdb2, store: cstore2 } = makeAutoStore(seedC);
   await fns.dispatchAutomationEvent(cdb2, { trigger: 'lead.created', targetId: 'L21', clientUid: 'u8', ctx: {}, stateHash: 'created' }, { nowMs: 900 });
   ok([...cstore2.keys()].filter((k) => k.startsWith('clients/')).length === 0, 'F5a: regulă client pe alt tenant (u8) → nimic scris');
+
+  // ── E1: backstop orar — max 5 rulări per (regulă, țintă)/oră, chiar cu stateHash diferit (anti-oscilație). ──
+  const seedR = {
+    'automations/rl': { enabled: true, scope: 'agency', name: 'Oscilant', trigger: { type: 'campaign.insight', config: {} }, conditions: [], actions: [{ type: 'notify.operator', config: {} }], runCount: 0 },
+  };
+  const { db: rdb, store: rstore } = makeAutoStore(seedR);
+  let lim = 0; let exe = 0;
+  for (let i = 0; i < 7; i++) {
+    const r = await fns.dispatchAutomationEvent(rdb, { trigger: 'campaign.insight', targetId: 'CX', clientUid: 'u1', ctx: {}, stateHash: `v${i}` }, { nowMs: 1000 + i });
+    exe += r.executed; lim += r.limited;
+  }
+  ok(exe === 5 && lim === 2, 'E1: backstop orar → 5 rulări executate, 2 limitate (din 7 stări diferite)');
+  ok((rstore.get('automations/rl/rate/CX') || {}).count === 5, 'E1: contorul orar al țintei = 5');
 }
 
 rmSync(tmp, { force: true });

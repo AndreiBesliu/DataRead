@@ -1607,6 +1607,19 @@ normaliser, secretele niciodată în chat/repo.
 > **Rămas din #55 (B2):** termen de valabilitate pe campanie → `serveLp` comută pe pagină „ofertă expirată" + tracking
 > diferențiat (atinge serveLp + schema campaniei — felie separată). Apoi E1 (backstop orar automatizări) → E2 (split bundle).
 
+**2026-06-20 - Task Completed — E1: backstop orar la motorul de automatizare (anti-runaway)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: B+E+D, „ok" → E1. Constanta `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR` (=5) exista dar NU era aplicată;
+> dedupe-ul (`runs/{key}.create`) prinde re-rulările cu ACEEAȘI stare, dar nu o regulă care oscilează (stateHash diferit
+> de fiecare dată — ex. verdict AI care se schimbă) → putea rula nelimitat pe aceeași țintă. Acum:
+> - `functions/index.js` (`dispatchAutomationEvent`): backstop orar pe (regulă, țintă) — UN doc `automations/{id}/rate/{targetId}`
+>   cu fereastră fixă (count + windowStart; reset când a trecut ora). Sub plafon → rulează + incrementează; la plafon →
+>   sare (`limited`). Fără bloat per-bucket (un doc per țintă, nu per oră). Întoarce și `limited` în sumar.
+> - `firestore.rules`: `automations/{id}/rate/{rid}` read admin, write false (doar motorul).
+> Verificat: 15/15 suites + e2e TEST Y (+2 E1: din 7 stări diferite pe aceeași țintă → 5 rulate, 2 limitate; contor=5) +
+> build + build:site + boot. DEPLOYED: functions (dispatch) + rules. Motorul are acum TOATE garanțiile: dedupe + anti-buclă
+> (origin) + cap AI + **backstop orar**. **Următor: E2 (split bundle) → apoi D (verticală — aștept modulul) / B2.**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

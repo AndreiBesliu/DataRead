@@ -248,6 +248,11 @@ service cloud.firestore {
               && get(/databases/$(database)/documents/automations/$(autoId)).data.clientUid == request.auth.uid);
         allow write: if false;
       }
+      // Contoare backstop orar (anti-runaway) — scrise EXCLUSIV de motor (Admin SDK).
+      match /rate/{rid} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
 
     // Notificări produse de motorul de automatizare (acțiunea notify.operator). Zona operatorilor; scrise EXCLUSIV

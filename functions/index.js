@@ -2946,12 +2946,25 @@ async function dispatchAutomationEvent(db, event, opts) {
     autos = snap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
   }
   const matches = selectMatching(autos, event);
-  let executed = 0; let skipped = 0;
+  const safeId = (x) => String(x || '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 200) || '_';
+  let executed = 0; let skipped = 0; let limited = 0;
   for (const m of matches) {
+    // Backstop orar (anti-runaway): max AUTOMATION_MAX_RUNS_PER_TARGET_HOUR rulări per (regulă, țintă) pe oră.
+    // Fereastră fixă, UN doc per (regulă, țintă) — se resetează când ora a trecut (fără bloat per-bucket).
+    const rateRef = db.collection('automations').doc(m.automation.id).collection('rate').doc(safeId(event.targetId));
+    const rateSnap = await rateRef.get();
+    const rd = rateSnap.exists ? (rateSnap.data() || {}) : {};
+    let rcount = Number(rd.count) || 0;
+    let windowStart = Number(rd.windowStart) || nowMs; // doc nou → fereastra începe acum
+    if (nowMs - windowStart >= 3600000) { rcount = 0; windowStart = nowMs; } // fereastră nouă de o oră
+    if (rcount >= AUTOMATION_MAX_RUNS_PER_TARGET_HOUR) { limited++; continue; } // plafon orar atins → sare
+
     const runRef = db.collection('automations').doc(m.automation.id).collection('runs').doc(m.key);
     try {
       await runRef.create({ schema: 1, trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '', createdAt: nowMs, status: 'running' });
     } catch (e) { skipped++; continue; } // deja rulat pt. aceeași stare (dedupe / livrare dublă) → sare
+    // O rulare reală a trecut de dedupe → o numărăm în fereastra orară.
+    await rateRef.set({ count: rcount + 1, windowStart, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     const done = [];
     for (let i = 0; i < m.actions.length; i++) {
       try { done.push(await executeAutomationAction(db, m.actions[i], m, event, nowMs, i, config)); }
@@ -2961,7 +2974,7 @@ async function dispatchAutomationEvent(db, event, opts) {
     await db.collection('automations').doc(m.automation.id).set({ runCount: (m.automation.runCount || 0) + 1, lastRunAt: nowMs }, { merge: true });
     executed++;
   }
-  return { matched: matches.length, executed, skipped };
+  return { matched: matches.length, executed, skipped, limited };
 }
 exports.executeAutomationAction = executeAutomationAction;
 exports.dispatchAutomationEvent = dispatchAutomationEvent;

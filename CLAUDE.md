@@ -214,7 +214,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   dropdown de clienți la scope=client în AutomationsPanel + secțiune `ClientAutomationFeed` în /app (client vede notificări+
   task-uri proprii, marchează „Gata"). Felii rămase: **F5b** (client self-serve — builder în /app pe mini-CRM, gated abonament)
   → **F5c** (CRM clasic facturi/memento — necesită modelul de date Vertical 2). F4 email/SMS (AMÂNAT); F6 publicare campanii
-  (ads_management). Backstop neimplementat: `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR` (doar dedupe+cap AI activ).
+  (ads_management). **Backstop orar ACTIV 20.06.2026 (E1):** `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR`=5 aplicat în
+  `dispatchAutomationEvent` prin `automations/{id}/rate/{targetId}` (fereastră fixă count+windowStart, reset orar; read
+  admin/write false) — oprește oscilația (stateHash diferit) pe aceeași țintă. Garanții complete: dedupe + anti-buclă +
+  cap AI + backstop orar. NOTĂ: F5b/F5c din nota de mai sus = ANULATE (clientul NU face automatizări — vezi Self Marketing).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
