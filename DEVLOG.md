@@ -1782,6 +1782,19 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 16/16 suites (incl. acoperire ghid) + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED:
 >   hosting + rules (fără functions — niciun callable nou). Backlog: e-Factura ANAF; storno; reset anual; notificare client la emitere.
 
+**2026-06-21 - Task Completed — Notificare client la emiterea facturii**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). La emiterea unei facturi, clientul primește o notificare în feed-ul lui din
+> /app — reutilizează infra de notificări a motorului de automatizare (ZERO cod frontend nou).
+> - `issueInvoice` (wrapper onCall): după emiterea NON-idempotentă, scrie `clients/{uid}/notifications/invoice-{id}` (id
+>   determinist ⇒ fără dubluri) prin `writeInvoiceNotification` (Admin SDK; regula notifications = write:false). Best-effort:
+>   un eșec la notificare NU anulează emiterea; nu re-notifică la re-apel idempotent.
+> - Text localizat `invoiceNotifText(kind, docNo, lang)` (pur, testat) — ro implicit / en după `clients/{uid}.locale`;
+>   formă compatibilă cu `ClientAutomationFeed` (text + createdAt millis). `performIssueInvoice` întoarce acum și `kind`.
+> Verificat: e2e (notifText ro/en + fără spațiu dublu, writeInvoiceNotification scrie în feed, performIssueInvoice→kind) +
+>   16/16 suites + build. DEPLOYED: functions (issueInvoice). Fără rules/hosting (notificarea apare în feed-ul existent).
+>   Backlog: localizare completă a tuturor notificărilor (azi doar cea de factură e bilingvă).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

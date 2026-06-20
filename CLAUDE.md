@@ -234,9 +234,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `hasOnly` whitelist. **Contorul depinde de backup/PITR** (responsabilitate Andrei — vezi mai jos). **Portal client (ACTIV
   21.06.2026):** clientul logat în /app vede DOAR facturile EMISE (`InvoicesPortal` în AppHome; `where('number','!=','')`,
   read-only + descărcare PDF prin composer-ul pur; sortare cu fallback pe `issuedNumberAt`); regula de read e strânsă la
-  `isAdmin() || (signedInAs(uid) && number != '')` (ciornele rămân admin-only). e-Factura ANAF + storno/corecții + reset
-  anual + notificare client la emitere = felii viitoare. NU e gated încă pe pachet (unealtă operator). Restul Verticalei 2
-  (CRM intern, comunicare, automatizări CRM) = neînceput.
+  `isAdmin() || (signedInAs(uid) && number != '')` (ciornele rămân admin-only). **Notificare la emitere (ACTIV 21.06.2026):**
+  `issueInvoice` scrie `clients/{uid}/notifications/invoice-{id}` (id determinist, best-effort, doar la prima emitere) prin
+  `writeInvoiceNotification`; text localizat `invoiceNotifText` (ro/en după `clients/{uid}.locale`) — apare în feed-ul existent
+  `ClientAutomationFeed` (zero cod frontend nou). e-Factura ANAF + storno/corecții + reset anual = felii viitoare. NU e gated
+  încă pe pachet (unealtă operator). Restul Verticalei 2 (CRM intern, comunicare, automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

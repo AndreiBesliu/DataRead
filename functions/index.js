@@ -843,7 +843,7 @@ async function performIssueInvoice(db, data) {
     const inv = invSnap.data() || {};
     // Idempotent: deja numerotată → o întoarcem ca atare, fără să consumăm un alt număr.
     if (inv.number && String(inv.number).trim()) {
-      return { series: String(inv.series || ''), number: String(inv.number), already: true };
+      return { series: String(inv.series || ''), number: String(inv.number), kind: inv.kind || 'proforma', already: true };
     }
     const series = String(inv.series || '').trim().slice(0, 20);
     if (!series) throw new HttpsError('failed-precondition', 'NO_SERIES');
@@ -863,15 +863,46 @@ async function performIssueInvoice(db, data) {
     // Emitere = atribuie număr + mută draft→sent + marchează momentul; număr+serie devin imuabile (vezi reguli).
     tx.set(invRef, { number, series, status: inv.status === 'draft' ? 'sent' : (inv.status || 'sent'), issuedNumberAt: ts, updatedAt: ts }, { merge: true });
     tx.set(counterRef, { series, next: next + 1, updatedAt: ts }, { merge: true });
-    return { series, number, already: false };
+    return { series, number, kind: inv.kind || 'proforma', already: false };
   });
 }
 exports.performIssueInvoice = performIssueInvoice;
 
+/** Textul notificării de emitere, localizat (ro implicit / en). Pur + testat. */
+function invoiceNotifText(kind, docNo, lang) {
+  const doc = String(docNo || '').trim();
+  const en = lang === 'en';
+  const label = en ? (kind === 'factura' ? 'Invoice' : 'Proforma') : (kind === 'factura' ? 'Factura' : 'Proforma');
+  const ref = doc ? ` ${doc}` : '';
+  return en ? `${label}${ref} has been issued.` : `${label}${ref} a fost emisă.`;
+}
+exports.invoiceNotifText = invoiceNotifText;
+
+/** Scrie o notificare „factură emisă" în feed-ul clientului (clients/{uid}/notifications). Id determinist per
+ *  factură ⇒ fără dubluri. Formă compatibilă cu ClientAutomationFeed (text + createdAt millis). Admin SDK (write:false). */
+async function writeInvoiceNotification(db, clientUid, invoiceId, res, lang) {
+  const docNo = [res.series, res.number].filter(Boolean).join(' ');
+  await db.collection('clients').doc(clientUid).collection('notifications').doc(`invoice-${invoiceId}`).set({
+    schema: 1, source: 'invoice', text: invoiceNotifText(res.kind, docNo, lang), severity: 'info', read: false, createdAt: Date.now(),
+  });
+}
+exports.writeInvoiceNotification = writeInvoiceNotification;
+
 exports.issueInvoice = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
   assertAdmin(request);
-  const res = await performIssueInvoice(admin.firestore(), request.data || {});
-  logger.info('invoice issued', { by: request.auth.uid, ...res });
+  const data = request.data || {};
+  const res = await performIssueInvoice(admin.firestore(), data);
+  // Notificăm clientul DOAR la prima emitere (nu la re-apel idempotent). Best-effort: un eșec aici NU anulează emiterea.
+  if (!res.already) {
+    try {
+      const db = admin.firestore();
+      const clientUid = String(data.clientUid || '');
+      let lang = 'ro';
+      try { const cs = await db.collection('clients').doc(clientUid).get(); if (cs.exists && cs.data() && cs.data().locale === 'en') lang = 'en'; } catch (e) { /* ro implicit */ }
+      await writeInvoiceNotification(db, clientUid, String(data.invoiceId || ''), res, lang);
+    } catch (e) { logger.warn('invoice notification failed', { e: String(e) }); }
+  }
+  logger.info('invoice issued', { by: request.auth.uid, series: res.series, number: res.number, already: res.already });
   return res;
 });
 

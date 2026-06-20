@@ -1097,7 +1097,10 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
   function makeInvStore(seed) {
     const store = new Map(Object.entries(seed || {}));
     const colRef = (path) => ({ doc: (id) => docRef(`${path}/${id}`) });
-    const docRef = (path) => ({ _path: path, collection: (sub) => colRef(`${path}/${sub}`) });
+    const docRef = (path) => ({ _path: path, collection: (sub) => colRef(`${path}/${sub}`),
+      // set/get directe (în afara tranzacției) — pt. writeInvoiceNotification + citirea locale-ului clientului.
+      async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
+      async get() { return { exists: store.has(path), data: () => store.get(path) }; } });
     let wrote = false; // gardă: oglindește regula Firestore „toate citirile înainte de orice scriere" (prinde un refactor greșit)
     const tx = {
       async get(r) { if (wrote) throw new Error('READ_AFTER_WRITE'); const has = store.has(r._path); return { exists: has, data: () => store.get(r._path) }; },
@@ -1173,6 +1176,22 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
     const { db } = makeInvStore({ 'clients/u1/invoices/i9': { series: 'A/B', number: '', status: 'draft' } });
     const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i9' }));
     ok(err && /BAD_SERIES/.test(err.message || ''), 'serie cu caractere nesigure → failed-precondition BAD_SERIES (anti-coliziune contor)');
+  }
+  // 10) performIssueInvoice întoarce `kind` (pt. textul notificării)
+  {
+    const { db } = makeInvStore({ 'clients/u1/invoices/iK': { series: 'DR', number: '', status: 'draft', kind: 'factura' } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'iK' }));
+    ok(res.kind === 'factura', 'performIssueInvoice întoarce kind (factura)');
+  }
+  // 11) invoiceNotifText (pur, localizat) + writeInvoiceNotification (feed client)
+  ok(fns.invoiceNotifText('factura', 'DR 5', 'ro') === 'Factura DR 5 a fost emisă.', 'notifText: factură RO');
+  ok(fns.invoiceNotifText('proforma', 'PRO 1', 'en') === 'Proforma PRO 1 has been issued.', 'notifText: proformă EN');
+  ok(fns.invoiceNotifText('factura', '', 'ro') === 'Factura a fost emisă.', 'notifText: fără număr → fără spațiu dublu');
+  {
+    const { db, store } = makeInvStore({});
+    await fns.writeInvoiceNotification(db, 'u1', 'i1', { series: 'DR', number: '5', kind: 'factura' }, 'ro');
+    const n = store.get('clients/u1/notifications/invoice-i1');
+    ok(n && n.source === 'invoice' && n.text === 'Factura DR 5 a fost emisă.' && n.read === false && typeof n.createdAt === 'number', 'notificare factură scrisă în feed (text RO + createdAt millis)');
   }
 }
 
