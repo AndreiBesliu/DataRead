@@ -1666,6 +1666,23 @@ normaliser, secretele niciodată în chat/repo.
 > RĂMAS pe Facturi: numerotare automată serie/număr (counter, gapless — fază cu grijă); status plătit↔încasări; facturi în
 > portalul clientului; e-Factura ANAF.
 
+**2026-06-20 - Task Completed — „Cel mai eficient drum": funnel conversie self-serve→agenție + plafon cost AI**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „care e cel mai eficient drum" → „da". Recomandare: monetizează ce există + 2 plase ieftine, nu funcții noi.
+> Livrat pașii 1+2 (cod); pasul 3 (backup/billing) = consolă GCP, rămâne pe Andrei (pași dați separat).
+> - **(1) Funnel conversie:** callable `requestSelfAudit` (auth + App Check, NU AI) — clientul logat din Self Marketing cere
+>   un audit → creează/actualizează `leads/self-{uid}` (Admin SDK; source='self-discovery' + clientUid, profil pre-completat
+>   din selfMarketing/profile + email; idempotent, nu re-resetează statusul operatorului). UI: CTA „Cere audit gratuit" în
+>   pașii Strategie + Execuție din `SelfMarketingFunnel` (state idle/busy/sent). Admin: badge „🔎 Self" pe lead-urile din
+>   self-discovery în tabelul de lead-uri. → transformă Self Marketing (azi cost pur, fără cale de conversie) în PIPELINE
+>   cald, refolosind lead-urile + triggerul `lead.created` (automatizările pot reacționa). Fără Stripe, fără tabele noi.
+>   i18n `selfMarketing.audit*` + `admin.leadSelfDiscovery` ro+en.
+> - **(2) Plafon cost AI:** `setGlobalOptions({ maxInstances: 10 })` la încărcarea functions/index.js — plasă de cost pe
+>   TOATE funcțiile gen-2 (mai ales callable-urile Opus); non-breaking. (Confirmat absent înainte de analiza multi-agent.)
+> Verificat: 16/16 suites + e2e + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: functions (requestSelfAudit
+>   create + maxInstances pe toate) + hosting + rules. **RĂMAS pe Andrei (consolă GCP, ~5-30 min):** (3a) backup zilnic
+>   Firestore + PITR; (3b) o alertă de buget GCP. Pași dați în chat.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -67,6 +67,7 @@ export default function SelfMarketingFunnel() {
   const [quota, setQuota] = useState<SelfQuota | null>(null);
   const [selectedDir, setSelectedDir] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [auditState, setAuditState] = useState<'idle' | 'busy' | 'sent'>('idle');
   const [copied, setCopied] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; key: string } | null>(null);
   const justSaved = useRef(false);
@@ -245,6 +246,19 @@ export default function SelfMarketingFunnel() {
     }
   };
 
+  // ── Funnel de conversie: clientul cere un audit gratuit → creează un lead în pipeline-ul agenției (callable). ──
+  const requestAudit = async () => {
+    setAuditState('busy');
+    try {
+      await httpsCallable(functions, 'requestSelfAudit')({});
+      setAuditState('sent');
+    } catch (e) {
+      console.warn('requestSelfAudit failed:', e);
+      setAuditState('idle');
+      setMsg({ kind: 'err', key: 'selfMarketing.genError' });
+    }
+  };
+
   // ── Export (copy + PDF) — reutilizează printDoc.ts (text AI escapat acolo). ──
   const strategySections = (s: SelfStrategy) => [
     { label: t('selfMarketing.overviewTitle'), body: s.overview },
@@ -314,6 +328,23 @@ export default function SelfMarketingFunnel() {
     <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
       <button className="btn" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => void copy(secs)}>{copied ? t('selfMarketing.copied') : t('selfMarketing.copy')}</button>
       <button className="btn" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => exportPdf(title, secs)}>📄 {t('selfMarketing.exportPdf')}</button>
+    </div>
+  );
+
+  // CTA de conversie spre serviciul de agenție (lucrăm noi pentru client) — apare după strategie/execuție.
+  const auditCta = (
+    <div style={{ ...card, marginTop: 16, borderColor: 'var(--accent)' }}>
+      {auditState === 'sent' ? (
+        <p style={{ margin: 0, color: '#1e7e34', fontWeight: 700 }}>{t('selfMarketing.auditThanks')}</p>
+      ) : (
+        <>
+          <h3 style={{ fontSize: 16, margin: '0 0 4px' }}>{t('selfMarketing.auditTitle')}</h3>
+          <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 10px' }}>{t('selfMarketing.auditBody')}</p>
+          <button className="btn btn-primary" disabled={auditState === 'busy'} onClick={() => void requestAudit()} style={{ padding: '10px 22px', fontSize: 14 }}>
+            {auditState === 'busy' ? t('selfMarketing.auditSending') : t('selfMarketing.auditCta')}
+          </button>
+        </>
+      )}
     </div>
   );
 
@@ -425,6 +456,7 @@ export default function SelfMarketingFunnel() {
                 ))}
               </div>
               {exportBar(t('selfMarketing.step_strategy'), strategySections(strategy))}
+              {auditCta}
             </>
           )}
           <button className="btn" onClick={() => setStep(STEP_PROFILE)} style={{ marginTop: 16, padding: '9px 20px', fontSize: 14 }}>
@@ -511,6 +543,7 @@ export default function SelfMarketingFunnel() {
               ) : (
                 <p style={{ color: 'var(--fg-1)', fontSize: 13, marginTop: 14 }}>{t('selfMarketing.execEmpty')}</p>
               )}
+              {auditCta}
             </>
           )}
         </div>

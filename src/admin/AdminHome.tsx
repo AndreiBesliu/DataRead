@@ -623,7 +623,10 @@ export default function AdminHome() {
                         <Fragment key={l.id}>
                           <tr style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : undefined}>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTs(l.createdAt)}</td>
-                            <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>{l.data.companyName || '—'}</td>
+                            <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>
+                              {l.data.companyName || '—'}
+                              {(l.data as unknown as Record<string, unknown>).source === 'self-discovery' ? <span title={t('admin.leadSelfDiscovery')} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--accent)', borderRadius: 4, padding: '1px 5px' }}>🔎 Self</span> : null}
+                            </td>
                             <td style={td}>{l.data.contactEmail || '—'}</td>
                             <td style={td}>{l.data.contactPhone || '—'}</td>
                             <td style={td}>{l.data.packageInterest ? t(`pachete.${l.data.packageInterest}.name`) : '—'}</td>

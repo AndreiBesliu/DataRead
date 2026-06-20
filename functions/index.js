@@ -12,10 +12,15 @@
  * Deploy:  firebase deploy --only functions   (cere planul Blaze)
  */
 const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { setGlobalOptions } = require('firebase-functions/v2');
 const { logger } = require('firebase-functions');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
+
+// Plafon GLOBAL de instanțe pe TOATE funcțiile gen-2 (plasă de cost): chiar și un bug/abuz care trece de quotele
+// soft nu poate scala nelimitat (mai ales callable-urile Opus). 10 e generos pt. scara actuală; non-breaking.
+setGlobalOptions({ maxInstances: 10 });
 
 const REGION = 'europe-central2'; // trebuie să coincidă cu VITE_FIREBASE_FUNCTIONS_REGION + extensia Stripe
 
@@ -765,6 +770,41 @@ function buildExecutionPrompt(profile, direction) {
   ].join('\n');
 }
 exports.buildExecutionPrompt = buildExecutionPrompt;
+
+// ── Funnel self-serve → agenție: clientul logat din Self Marketing cere un audit gratuit → creăm/actualizăm un
+//    LEAD în pipeline-ul operatorilor, etichetat source='self-discovery' + legat de cont (clientUid). NU e gated de
+//    AI (nu cheamă model). Idempotent: doc determinist leads/self-{uid} ⇒ un singur lead per client; reapelarea nu
+//    re-resetează statusul gestionat de operator. Triggerul onLeadAutomation (lead.created) poate reacționa automat. ──
+exports.requestSelfAudit = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  assertAuth(request);
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+  const leadRef = db.collection('leads').doc(`self-${uid}`);
+  const existing = await leadRef.get();
+  if (existing.exists) {
+    await leadRef.set({ auditRequestedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { ok: true, repeat: true };
+  }
+  const profSnap = await db.collection('clients').doc(uid).collection('selfMarketing').doc('profile').get();
+  const p = profSnap.exists ? (profSnap.data() || {}) : {};
+  const email = (request.auth.token && request.auth.token.email) || '';
+  await leadRef.set({
+    schema: 1,
+    companyName: String(p.companyName || '').slice(0, 120),
+    industry: String(p.industry || '').slice(0, 40),
+    industryOther: String(p.industryOther || '').slice(0, 80),
+    contactEmail: String(email).slice(0, 120),
+    description: [p.productsServices, p.goals].filter(Boolean).join(' — ').slice(0, 2000),
+    objectives: [],
+    source: 'self-discovery',
+    clientUid: uid,
+    status: 'new',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    auditRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  logger.info('self audit requested', { uid });
+  return { ok: true };
+});
 
 /** Quota lunară per operator (tranzacție pe aiUsage/{uid}). Aruncă resource-exhausted la depășire. */
 async function consumeAiQuota(uid) {
