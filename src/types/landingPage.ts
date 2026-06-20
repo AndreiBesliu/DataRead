@@ -22,6 +22,11 @@ export const LP_SLUG_MAX = 60;
 export const LP_FORM_FIELDS_MAX = 12;
 export const LP_FORM_STEPS_MAX = 6; // pași maximi într-un formular multi-step (0..5)
 export const LP_FIELD_OPTIONS_MAX = 20;
+// A/B testing „pe sloturi": un bloc `experiment` ocupă o poziție în pagină; serveLp servește una dintre `arms`.
+export const LP_EXPERIMENTS_MAX = 3; // sloturi de experiment per pagină (anti-combinatorie)
+export const LP_ARMS_MAX = 4; // variante (arms) per experiment
+export const LP_ARMS_MIN = 2;
+export const LP_AB_SAMPLE_DEFAULT = 200; // prag minim de vizite/variantă înainte de orice verdict
 export const LP_VALUE_MAX = 2000;
 export const LP_PAGE_DECORS_MAX = 5; // straturi de fundal decorativ suprapuse pe pagină
 
@@ -82,6 +87,27 @@ export interface LpFormConfig {
   notifyEmail: string; // <= 120 (opțional, notificare ops)
 }
 
+export const LP_EXP_STATUSES = ['off', 'running', 'stopped'] as const;
+export type LpExpStatus = (typeof LP_EXP_STATUSES)[number];
+
+/** O variantă (arm) a unui experiment A/B — propriile blocuri, compilate separat în armsHtml. */
+export interface LpExpArm {
+  id: string; // [a-z0-9-], <= 16 — cheia variantei (ex. 'a'/'b'/'control')
+  label: string; // <= 40 (UI)
+  weight: number; // int 1..100 — pondere la split-ul de trafic
+  blocks: LpBlock[];
+}
+
+/** Un experiment A/B = un slot din pagină (bloc `experiment` cu același id) cu 2+ variante. */
+export interface LpExperiment {
+  id: string; // [a-z0-9-], <= 24 — unic în pagină; = props.expId al blocului-slot
+  name: string; // <= 60 (UI)
+  status: LpExpStatus;
+  arms: LpExpArm[]; // LP_ARMS_MIN..LP_ARMS_MAX
+  minSample: number; // vizite minime/variantă înainte de verdict (clamp 30..100000)
+  winnerArm: string; // armId promovat (serveLp servește 100%); '' = test în desfășurare
+}
+
 export interface LandingPage {
   schema: typeof LANDING_PAGE_SCHEMA;
   /** Campanie (/p/{slug}) sau pagină de site (/pagina/{slug}, temă publică). */
@@ -110,6 +136,10 @@ export interface LandingPage {
   /** Nudge-uri de conversie (sticky CTA + exit popup) + markup-ul compilat (injectat de serveLp). */
   conversion: LpConversion;
   conversionHtml: string;
+  /** Experimente A/B (sursa: blocuri per variantă). `html` conține placeholdere `<!--LP_EXP:id-->`;
+   *  `armsHtml[expId][armId]` = HTML-ul compilat al fiecărei variante (serveLp substituie la servire). */
+  experiments: LpExperiment[];
+  armsHtml: Record<string, Record<string, string>>;
   /** Allowlist de variante de link cunoscute (scris de Link Builder) — serveLp atribuie trafic DOAR
    *  acestor chei (anti-bloat); restul → __other / __direct. */
   knownVariants: Record<string, true>;
@@ -210,6 +240,67 @@ function coerceHttpsUrl(v: unknown): string {
   return SAFE_HTTPS.test(s) ? s.slice(0, LP_URL_MAX) : '';
 }
 
+/** id sigur pentru experimente/arme: doar [a-z0-9-], fără margini de cratimă, plafonat. */
+function sanitizeAbId(v: unknown, max: number): string {
+  return typeof v === 'string' ? v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max) : '';
+}
+
+function coerceArm(v: unknown): LpExpArm | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  const id = sanitizeAbId(d.id, 16);
+  if (!id) return null;
+  const weight = typeof d.weight === 'number' && Number.isFinite(d.weight) ? Math.min(Math.max(Math.round(d.weight), 1), 100) : 1;
+  return { id, label: str(d.label, 40), weight, blocks: coerceBlocks(d.blocks) };
+}
+
+function coerceExperiment(v: unknown): LpExperiment | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  const id = sanitizeAbId(d.id, 24);
+  if (!id) return null;
+  const seen = new Set<string>();
+  const arms = (Array.isArray(d.arms) ? d.arms : [])
+    .map(coerceArm)
+    .filter((a): a is LpExpArm => a !== null)
+    .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true))) // dedup pe id
+    .slice(0, LP_ARMS_MAX);
+  const reqStatus = LP_EXP_STATUSES.includes(d.status as LpExpStatus) ? (d.status as LpExpStatus) : 'off';
+  const minSample = typeof d.minSample === 'number' && Number.isFinite(d.minSample) ? Math.min(Math.max(Math.round(d.minSample), 30), 100000) : LP_AB_SAMPLE_DEFAULT;
+  return {
+    id,
+    name: str(d.name, 60),
+    // Sub minimul de arme experimentul NU poate rula (coerce-everything: dezactivat, nu rupt).
+    status: arms.length >= LP_ARMS_MIN ? reqStatus : 'off',
+    arms,
+    minSample,
+    winnerArm: arms.some((a) => a.id === d.winnerArm) ? (d.winnerArm as string) : '',
+  };
+}
+
+function coerceExperiments(v: unknown): LpExperiment[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  return v
+    .map(coerceExperiment)
+    .filter((e): e is LpExperiment => e !== null)
+    .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))) // dedup pe id de experiment
+    .slice(0, LP_EXPERIMENTS_MAX);
+}
+
+/** Păstrează DOAR perechile exp/arm care încă există (curăță HTML-ul compilat al armelor șterse). */
+function coerceArmsHtml(v: unknown, experiments: LpExperiment[]): Record<string, Record<string, string>> {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const out: Record<string, Record<string, string>> = {};
+  for (const exp of experiments) {
+    const em = (typeof d[exp.id] === 'object' && d[exp.id] !== null ? d[exp.id] : {}) as Record<string, unknown>;
+    const m: Record<string, string> = {};
+    for (const arm of exp.arms) if (typeof em[arm.id] === 'string') m[arm.id] = (em[arm.id] as string).slice(0, LP_HTML_MAX);
+    out[exp.id] = m;
+  }
+  return out;
+}
+
 export function emptyLandingPage(createdBy = ''): LandingPage {
   return {
     schema: LANDING_PAGE_SCHEMA,
@@ -231,6 +322,8 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     form: coerceForm({}),
     conversion: emptyConversion(),
     conversionHtml: '',
+    experiments: [],
+    armsHtml: {},
     knownVariants: {},
     projectId: '',
     clientUid: '',
@@ -263,6 +356,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
   if (typeof data !== 'object' || data === null) return emptyLandingPage();
   const d = data as Record<string, unknown>;
   const form = coerceForm(d.form);
+  const experiments = coerceExperiments(d.experiments);
   return {
     schema: LANDING_PAGE_SCHEMA,
     kind: LP_KINDS.includes(d.kind as LpKind) ? (d.kind as LpKind) : 'campaign',
@@ -283,6 +377,8 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     form,
     conversion: coerceConversion(d.conversion),
     conversionHtml: str(d.conversionHtml, LP_HTML_MAX),
+    experiments,
+    armsHtml: coerceArmsHtml(d.armsHtml, experiments),
     knownVariants: coerceKnownVariants(d.knownVariants),
     projectId: str(d.projectId, 128),
     clientUid: str(d.clientUid, 128),
@@ -308,12 +404,27 @@ export function effectiveLpForm(lp: LandingPage): LpFormConfig {
 /** Recompilează asset-urile SERVITE din modelul curent: `html` (blocuri compilate în mod vizual; html-ul
  *  brut în mod cod) + `pageDecorHtml` (decor pagină) + formular efectiv. Sursă unică pentru salvarea din
  *  editor ȘI pentru „recompilează toate" (paginile vechi prind logica nouă de compilare fără re-salvare). */
-export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; conversionHtml: string; form: LpFormConfig; hasForm: boolean } {
+export function recompileLpAssets(lp: LandingPage): { html: string; pageDecorHtml: string; conversionHtml: string; armsHtml: Record<string, Record<string, string>>; form: LpFormConfig; hasForm: boolean } {
   const form = effectiveLpForm(lp);
   const html = lp.editor === 'visual' ? compileBlocks(lp.blocks, { form, lang: lp.lang }) : lp.html;
   const pageDecorHtml = compilePageDecors(lp.pageDecors);
   const conversionHtml = compileConversion(lp.conversion);
-  return { html, pageDecorHtml, conversionHtml, form, hasForm: form.enabled };
+  // Variantele A/B: fiecare arm.blocks compilat prin ACELAȘI compileBlocks (precompilat ca html/pageDecorHtml).
+  const armsHtml: Record<string, Record<string, string>> = {};
+  for (const exp of lp.experiments) {
+    const m: Record<string, string> = {};
+    for (const arm of exp.arms) m[arm.id] = compileBlocks(arm.blocks, { form, lang: lp.lang });
+    armsHtml[exp.id] = m;
+  }
+  return { html, pageDecorHtml, conversionHtml, armsHtml, form, hasForm: form.enabled };
+}
+
+/** Mărimea totală în octeți a documentului SERVIT (html + toate armele + decor + conversie) — pentru garda
+ *  de 200KB la salvare. Sursă unică pt. editor (refuz, nu truncare). */
+export function lpServedByteSize(a: { html: string; pageDecorHtml: string; conversionHtml: string; armsHtml: Record<string, Record<string, string>> }): number {
+  let n = htmlByteSize(a.html) + htmlByteSize(a.pageDecorHtml) + htmlByteSize(a.conversionHtml);
+  for (const exp of Object.values(a.armsHtml || {})) for (const html of Object.values(exp || {})) n += htmlByteSize(html);
+  return n;
 }
 
 // ── Submissions (landingPages/{slug}/submissions/{id}) ──

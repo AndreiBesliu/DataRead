@@ -7,7 +7,7 @@
 import { LP_HP_FIELD, type LpFormConfig, type LpConversion } from './landingPage';
 import { coerceToLpDecor, compileDecor, defaultDecor } from './lpDecor';
 
-export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor', 'pricing', 'stats', 'logos', 'gallery', 'accordion', 'countdown', 'video'] as const;
+export const LP_BLOCK_TYPES = ['hero', 'heading', 'text', 'image', 'button', 'features', 'testimonial', 'faq', 'form', 'spacer', 'decor', 'pricing', 'stats', 'logos', 'gallery', 'accordion', 'countdown', 'video', 'experiment'] as const;
 export type LpBlockType = (typeof LP_BLOCK_TYPES)[number];
 
 export interface LpBlock {
@@ -67,6 +67,8 @@ export function defaultBlockProps(type: LpBlockType): Record<string, unknown> {
       return { heading: 'Oferta expiră în', targetDate: '', expiredText: 'Oferta a expirat.', align: 'center' };
     case 'video':
       return { url: '', title: '' };
+    case 'experiment':
+      return { expId: '' };
     default:
       return {};
   }
@@ -312,6 +314,13 @@ function compileBlock(block: LpBlock, ctx: { form: LpFormConfig; lang?: 'ro' | '
       const src = ytVimeoEmbed(p.url);
       if (!src) return '';
       return `<section style="${WRAP};padding:24px"><div style="position:relative;width:100%;max-width:760px;margin:0 auto;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000"><iframe src="${escAttr(src)}" title="${escAttr(str(p.title, 140))}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;border:0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe></div></section>`;
+    }
+    case 'experiment': {
+      // Slot A/B: emite un placeholder ne-injectabil (expId sanitizat la [a-z0-9-]). serveLp îl înlocuiește cu
+      // HTML-ul variantei alese (armsHtml[expId][arm]). Compilat în interiorul unei arme (nested) → tot placeholder,
+      // dar serveLp nu-l rezolvă (inofensiv: comentariu HTML). Gol dacă expId lipsește.
+      const id = String(p.expId == null ? '' : p.expId).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+      return id ? `<!--LP_EXP:${id}-->` : '';
     }
     default:
       return '';

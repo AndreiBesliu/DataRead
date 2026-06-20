@@ -19,7 +19,7 @@ import LpDecorLayers from './LpDecorLayers';
 import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
 import { compileConversion } from '../types/lpBlocks';
-import { compilePageDecors, htmlByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
+import { compilePageDecors, lpServedByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
 import type { LpProject } from '../types/lpProject';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
@@ -94,6 +94,8 @@ export default function LpEditor({
       pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
       conversion: draft.conversion,
       conversionHtml: assets.conversionHtml, // sticky CTA + exit popup, injectat de serveLp
+      experiments: draft.experiments, // A/B: sursa (blocuri per variantă)
+      armsHtml: assets.armsHtml, // A/B: HTML compilat per variantă (serveLp substituie placeholderele)
       hasForm: assets.hasForm,
       form: assets.form,
       projectId: draft.projectId,
@@ -108,7 +110,7 @@ export default function LpEditor({
     // Gardă de mărime: refuzăm salvarea în loc să trunchiem tăcut html-ul (truncare = pagină ruptă).
     // Validăm DOCUMENTUL SERVIT integral — serveLp compune pageDecorHtml + html în <body> — deci straturile
     // de decor multiple intră în plafon (altfel 5 straturi ar putea împinge pagina peste limită fără gardă).
-    if (htmlByteSize(payload.html) + htmlByteSize(payload.pageDecorHtml) + htmlByteSize(payload.conversionHtml) > LP_HTML_MAX) {
+    if (lpServedByteSize(payload) > LP_HTML_MAX) {
       setErr(t('admin.lpStudio.errTooLarge', { max: Math.round(LP_HTML_MAX / 1000) }));
       return;
     }

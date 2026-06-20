@@ -242,7 +242,11 @@ service cloud.firestore {
         // kind: 'campaign' (LP, /p/) sau 'site' (pagină de site, /pagina/) — opțional (legacy fără kind = campaign).
         && (!('kind' in request.resource.data) || request.resource.data.kind in ['campaign', 'site'])
         // conversionHtml (sticky CTA + exit popup compilate) — opțional, plafonat (anti-bloat; injectat de serveLp).
-        && (!('conversionHtml' in request.resource.data) || (request.resource.data.conversionHtml is string && request.resource.data.conversionHtml.size() <= 200000));
+        && (!('conversionHtml' in request.resource.data) || (request.resource.data.conversionHtml is string && request.resource.data.conversionHtml.size() <= 200000))
+        // A/B testing: experimente (listă plafonată) + armsHtml (map). Garda de OCTEȚI (sumă html+arme ≤200KB)
+        // rămâne în editor (regulile nu pot itera map-uri); admin-only write + limita Firestore 1MiB = backstop.
+        && (!('experiments' in request.resource.data) || (request.resource.data.experiments is list && request.resource.data.experiments.size() <= 3))
+        && (!('armsHtml' in request.resource.data) || request.resource.data.armsHtml is map);
       allow delete: if isAdmin();
 
       // Portal client: clientul logat citește submisiile/statisticile/variantele LP-urilor LUI

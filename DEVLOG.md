@@ -1315,6 +1315,26 @@ normaliser, secretele niciodată în chat/repo.
 > CTA+exit popup 3b · multi-step acum). Notă: navigarea pe pași nu rulează în preview-ul sandbox (scripturi
 > dezactivate) — se vede pasul 1; funcționează pe pagina servită.
 
+**2026-06-19 - Task în lucru — A/B testing LP, felia 1+2 (model + motor câștigător) [#60]**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „ok, 60" → A/B testing pe LP. Design printr-un workflow (hartă cod + 3 abordări + sinteză + critic
+> adversarial); ales „A/B pe sloturi" (un bloc `experiment` ocupă o poziție; pagina are placeholdere
+> `<!--LP_EXP:id-->`; serveLp substituie varianta aleasă). Critica a impus: z-test (nu doar uplift), prag pe
+> conversii, plafon armsHtml în reguli, cookie HMAC Node-only, motor câștigător în fișier separat.
+> **Felia 1 (model/compile/coerce, pur):** `LpExperiment`/`LpExpArm` + tip bloc `experiment` (emite placeholder
+> ne-injectabil, expId sanitizat [a-z0-9-]) + coerce (dedup id-uri, clamp weight 1..100/minSample≥30/nr.
+> experimente≤3/arme≤4, <2 arme→status off, winnerArm validat, armsHtml păstrează doar perechi existente).
+> `recompileLpAssets` emite `armsHtml[exp][arm]` (fiecare arm.blocks prin ACELAȘI compileBlocks) + `html` cu
+> placeholdere; `lpServedByteSize` (garda 200KB = html+toate armele+decor+conversie). LpEditor persistă
+> experiments/armsHtml + folosește noua gardă. Reguli: experiments listă≤3 + armsHtml map (byte-sum rămâne în editor).
+> **Felia 2 (motor câștigător, pur, `src/analytics/lpABWinner.ts` — fișier separat, NU atinge lpStats.ts):**
+> `pickAbWinner` cu **z-test pe două proporții** (CDF normal via erf, fără deps) la α=0.05 + prag minSample vizite →
+> verdict insufficient/no-difference/winner; `leaderId` doar pt. afișaj (nu acționabil → anti-peeking).
+> Verificat: 14/14 suites (+ `test-ab.ts`: z-test, fals-pozitiv pe sample mic respins; + exp coerce/compile/size în
+> test-landing) + e2e + build + build:site (16 pagini) + boot. DEPLOYED: hosting + rules (zero efect runtime — fără
+> UI încă, experiments rămâne []). **RĂMAS #60:** Felia 3 (serveLp split + sticky cookie HMAC + abStats) · Felia 4
+> (reguli abStats scoped) · Felia 5 (UI: editor experimente + panou rezultate).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

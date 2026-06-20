@@ -8,9 +8,12 @@ import {
   recompileLpAssets,
   sanitizeSlug,
   sanitizeSubmissionValues,
+  lpServedByteSize,
   LP_HTML_MAX,
   LP_FORM_FIELDS_MAX,
   LP_FORM_STEPS_MAX,
+  LP_EXPERIMENTS_MAX,
+  LP_ARMS_MAX,
   LP_PAGE_DECORS_MAX,
   LP_FIELD_TYPES,
   LP_HP_FIELD,
@@ -531,6 +534,40 @@ check('multi-step cu un singur pas → formular plat', (() => {
 check('multiStep off → plat chiar cu step-uri setate', (() => {
   const f = coerceToLandingPage({ form: { enabled: true, multiStep: false, fields: [{ name: 'a', label: 'A', type: 'text', step: 0 }, { name: 'b', label: 'B', type: 'text', step: 1 }] } }).form;
   return !compileBlocks([{ id: '1', type: 'form', props: {} }], { form: f }).includes('data-lp-step');
+})());
+
+// ── A/B testing „pe sloturi" (#60, felia 1) ──
+const abExp = {
+  id: 'Hero Test!', name: 'Hero A/B', status: 'running',
+  arms: [
+    { id: 'a', label: 'Control', weight: 50, blocks: [{ id: 'h1', type: 'hero', props: { heading: 'Titlu A' } }] },
+    { id: 'b', label: 'Variantă', weight: 50, blocks: [{ id: 'h2', type: 'hero', props: { heading: 'Titlu B' } }] },
+  ],
+  minSample: 200, winnerArm: 'b',
+};
+check('exp coerce: id sanitizat la [a-z0-9-]', coerceToLandingPage({ experiments: [abExp] }).experiments[0].id === 'hero-test');
+check('exp coerce: status running păstrat (≥2 arme)', coerceToLandingPage({ experiments: [abExp] }).experiments[0].status === 'running');
+check('exp coerce: winnerArm valid păstrat', coerceToLandingPage({ experiments: [abExp] }).experiments[0].winnerArm === 'b');
+check('exp coerce: winnerArm inexistent → ""', coerceToLandingPage({ experiments: [{ ...abExp, winnerArm: 'zzz' }] }).experiments[0].winnerArm === '');
+check('exp coerce: <2 arme → status off (nu poate rula)', coerceToLandingPage({ experiments: [{ ...abExp, arms: [abExp.arms[0]] }] }).experiments[0].status === 'off');
+check('exp coerce: arme dedup pe id', coerceToLandingPage({ experiments: [{ ...abExp, arms: [abExp.arms[0], abExp.arms[0], abExp.arms[1]] }] }).experiments[0].arms.length === 2);
+check('exp coerce: weight clamp 1..100', coerceToLandingPage({ experiments: [{ ...abExp, arms: [{ id: 'a', weight: 999, blocks: [] }, { id: 'b', weight: -5, blocks: [] }] }] }).experiments[0].arms.map((a) => a.weight).join(',') === '100,1');
+check('exp coerce: minSample clamp ≥30', coerceToLandingPage({ experiments: [{ ...abExp, minSample: 5 }] }).experiments[0].minSample === 30);
+check('exp coerce: nr. experimente plafonat', coerceToLandingPage({ experiments: Array.from({ length: 9 }, (_, i) => ({ ...abExp, id: 'e' + i })) }).experiments.length === LP_EXPERIMENTS_MAX);
+check('exp coerce: arme plafonate', coerceToLandingPage({ experiments: [{ ...abExp, arms: Array.from({ length: 9 }, (_, i) => ({ id: 'a' + i, weight: 1, blocks: [] })) }] }).experiments[0].arms.length === LP_ARMS_MAX);
+check('exp block → placeholder ne-injectabil', compileBlocks([{ id: '1', type: 'experiment', props: { expId: 'Hero Test' } }], { form }) === '<!--LP_EXP:hero-test-->');
+check('exp block fără expId → gol', compileBlocks([{ id: '1', type: 'experiment', props: {} }], { form }) === '');
+{
+  const lp = coerceToLandingPage({ editor: 'visual', blocks: [{ id: '1', type: 'experiment', props: { expId: 'hero-test' } }], experiments: [abExp] });
+  const assets = recompileLpAssets(lp);
+  check('recompile: html are placeholderul slotului', assets.html.includes('<!--LP_EXP:hero-test-->'));
+  check('recompile: armsHtml compilat per armă (A+B)', assets.armsHtml['hero-test'].a.includes('Titlu A') && assets.armsHtml['hero-test'].b.includes('Titlu B'));
+  check('recompile: armsHtml NU în html-ul paginii (servit separat)', !assets.html.includes('Titlu A'));
+  check('lpServedByteSize: include armele', lpServedByteSize(assets) > lpServedByteSize({ ...assets, armsHtml: {} }));
+}
+check('armsHtml coerce: păstrează doar perechi existente', (() => {
+  const lp = coerceToLandingPage({ experiments: [abExp], armsHtml: { 'hero-test': { a: '<p>A</p>', zzz: '<p>orfan</p>' }, ghost: { x: '<p>x</p>' } } });
+  return lp.armsHtml['hero-test'].a === '<p>A</p>' && !('zzz' in lp.armsHtml['hero-test']) && !('ghost' in lp.armsHtml);
 })());
 
 if (failures) {
