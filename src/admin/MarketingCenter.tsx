@@ -20,6 +20,7 @@ import { db, functions } from '../firebase';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { parseMetricsCsv } from '../utils/metricsCsv';
 import { toCsv } from '../utils/csv';
+import PlatformConnect from './PlatformConnect';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -505,9 +506,19 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
       </div>
     ) : null;
 
+  const clientUid = campaigns.find((c) => c.data.clientUid)?.data.clientUid || '';
+
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
       <KpiCards kpis={kpis} />
+      {/* Conectare conturi de reclame ale clientului pentru ingestie automată (Meta etc.). Apare doar dacă
+          lead-ul e conectat la un cont client (clientUid). */}
+      {clientUid ? (
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 14px' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', marginTop: 6 }}>{t('admin.connectors.title')}</div>
+          <PlatformConnect uid={clientUid} />
+        </div>
+      ) : null}
       <PlatformBreakdown items={campaigns.map((c) => c.data)} title={campaigns[0]?.clientName || ''} />
       <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>
         {campaigns.map((c) => {

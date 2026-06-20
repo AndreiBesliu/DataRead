@@ -1368,6 +1368,22 @@ normaliser, secretele niciodată în chat/repo.
 > **#60 COMPLET:** model+coerce (f1) · motor câștigător z-test (f2) · serveLp split+sticky+abStats (f3) · reguli (f4)
 > · UI editor+rezultate (f5). Backlog A/B v2: HMAC pe cookie (LP_AB_SECRET); backfill; auto-promovare programată.
 
+**2026-06-19 - Task Completed — Conector Meta ACTIVAT (ingestie automată live)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „ajută-mă cu Meta" → Andrei a creat app-ul Meta (App ID 1015855461036302, Facebook Login for Business)
+> + a pus secretele în Secret Manager (META_APP_ID, META_APP_SECRET, TOKEN_ENC_KEY). Eu am activat:
+> - `firebase.json`: rewrite `/api/meta/callback` → funcția `metaOAuthCallback` (gen-2, europe-central2), înainte de catch-all.
+> - `functions/index.js`: `META_ENABLED = true` → exportate `initiateMetaOAuth`/`metaOAuthCallback`/`disconnectPlatform`/
+>   `pullMetaInsights` (toate create la deploy; secretele s-au legat OK). serveLp/restul neschimbate.
+> - **UI conectare** (`PlatformConnect`): buton „Conectează Meta" per client în Marketing Center (view pe client, când
+>   lead-ul are clientUid) → `initiateMetaOAuth` → redirect Meta → callback stochează credențiala criptată; status
+>   (conectat/reconectare/revocat) + reconectează/deconectează. i18n `admin.connectors.*` ro+en.
+> Verificat: 14/14 suites + e2e (index.js încarcă cu flag on) + build (paritate i18n) + build:site + boot. DEPLOYED:
+> functions (4 funcții Meta noi) + hosting (rewrite + UI) + rules. LIVE: `https://dataread.ro/api/meta/callback` → 400
+> „parametri lipsă" (rewrite→funcție OK, nu 404). **RĂMAS pe Andrei (Meta dashboard):** confirmă Valid OAuth Redirect
+> URIs = `https://dataread.ro/api/meta/callback` + App Domains `dataread.ro` (pași 2–3) → apoi testează conectarea pe
+> contul propriu (development mode, fără App Review). Pentru clienți reali: Tech Provider + verificare (App Review ads_read).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

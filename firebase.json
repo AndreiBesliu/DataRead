@@ -36,6 +36,13 @@
         }
       },
       {
+        "source": "/api/meta/callback",
+        "function": {
+          "functionId": "metaOAuthCallback",
+          "region": "europe-central2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/app.html"
       }

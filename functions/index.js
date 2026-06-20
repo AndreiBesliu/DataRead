@@ -2323,7 +2323,7 @@ exports.encryptToken = encryptToken;
 exports.decryptToken = decryptToken;
 
 // ⚠️ Flip la true DOAR după verificarea platformei + secretele ei în Secret Manager (vezi docs/CONNECTORS-ADS-API.md).
-const META_ENABLED = false;
+const META_ENABLED = true; // ACTIVAT 2026-06-19: secrete META_APP_ID/META_APP_SECRET/TOKEN_ENC_KEY puse de Andrei
 const GOOGLE_ENABLED = false;
 const TIKTOK_ENABLED = false;
 
