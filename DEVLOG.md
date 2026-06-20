@@ -1352,6 +1352,22 @@ normaliser, secretele niciodată în chat/repo.
 > 24 verificări) + build + build:site + boot. DEPLOYED: functions(serveLp) + rules. **RĂMAS #60:** Felia 5 — UI
 > (editor experimente: slot+arme+clonă+weight+status; panou rezultate cu `pickAbWinner` + „Promovează câștigătorul").
 
+**2026-06-19 - Task Completed — A/B testing LP, felia 5 (UI) → #60 ÎNCHIS COMPLET**
+> Model: Claude Opus 4.8 (1M context)
+> UI-ul de A/B, ultima felie din #60.
+> - **Editor** (`LpExperimentsPanel`, tab nou „🧪 A/B" în LpEditor): definește experimente (nume/status/minSample/
+>   expId) + variante (etichetă/pondere + „Editează conținut" = builder-ul de blocuri REUTILIZAT per variantă;
+>   „Adaugă variantă" clonează controlul) + „Adaugă slot în pagină" (inserează blocul `experiment` în vizual sau
+>   placeholderul în cod). Blocul `experiment` are câmp expId în builder.
+> - **Rezultate** (`LpAbResults`, în LpAnalytics): citește experimentele de pe doc + `abStats`, calculează verdictul
+>   cu `pickAbWinner` (z-test); tabel variante (vizite/conversii/rată) + ⭐ câștigător + verdict + p-value.
+>   „Promovează câștigătorul" (DOAR la verdict statistic — anti-peeking) scrie `winnerArm`+`status:stopped` →
+>   serveLp servește 100%. Hint anti-peeking la sample insuficient.
+> - i18n `admin.lpStudio.ab*`/`bt_experiment`/`bf_expId` ro+en.
+> Verificat: 14/14 suites + e2e + build (paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: hosting.
+> **#60 COMPLET:** model+coerce (f1) · motor câștigător z-test (f2) · serveLp split+sticky+abStats (f3) · reguli (f4)
+> · UI editor+rezultate (f5). Backlog A/B v2: HMAC pe cookie (LP_AB_SECRET); backfill; auto-promovare programată.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

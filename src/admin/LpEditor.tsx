@@ -13,6 +13,7 @@ import ThemeControls from '../theme/ThemeControls';
 import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpConversionPanel from './LpConversionPanel';
+import LpExperimentsPanel from './LpExperimentsPanel';
 import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorLayers from './LpDecorLayers';
@@ -24,7 +25,7 @@ import type { LpProject } from '../types/lpProject';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'links' | 'analytics';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'ab' | 'links' | 'analytics';
 
 function composeDoc(lp: LandingPage): string {
   const pageDecor = compilePageDecors(lp.pageDecors);
@@ -103,6 +104,19 @@ export default function LpEditor({
       leadId: draft.leadId,
     };
   }, [draft]);
+
+  // A/B: inserează slotul experimentului în pagină. Mod vizual → bloc `experiment`; mod cod → placeholder în html.
+  // Întoarce false dacă slotul există deja (UI avertizează). serveLp substituie placeholderul cu varianta aleasă.
+  const addSlot = (expId: string): boolean => {
+    if (draft.editor === 'code') {
+      if (draft.html.includes(`<!--LP_EXP:${expId}-->`)) return false;
+      setDraft((d) => ({ ...d, html: `${d.html}\n<!--LP_EXP:${expId}-->` }));
+      return true;
+    }
+    if (draft.blocks.some((b) => b.type === 'experiment' && (b.props as Record<string, unknown>)?.expId === expId)) return false;
+    setDraft((d) => ({ ...d, blocks: [...d.blocks, { id: `exp-${expId}-${d.blocks.length}`, type: 'experiment', props: { expId } }] }));
+    return true;
+  };
 
   async function save(nextStatus?: LandingPage['status']) {
     setErr('');
@@ -269,6 +283,7 @@ export default function LpEditor({
         {draft.editor === 'code' ? <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button> : null}
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
         <button onClick={() => setTab('conversion')} style={tabBtn(tab === 'conversion')}>🎯 {t('admin.lpStudio.tabConversion')}</button>
+        <button onClick={() => setTab('ab')} style={tabBtn(tab === 'ab')}>🧪 {t('admin.lpStudio.tabAb')}</button>
         {!isNew ? <button onClick={() => setTab('links')} style={tabBtn(tab === 'links')}>🔗 {t('admin.lpStudio.tabLinks')}</button> : null}
         {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
@@ -329,6 +344,14 @@ export default function LpEditor({
             )}
             {tab === 'conversion' && (
               <LpConversionPanel value={draft.conversion} onChange={(conversion) => setDraft((d) => ({ ...d, conversion }))} />
+            )}
+            {tab === 'ab' && (
+              <LpExperimentsPanel
+                value={draft.experiments}
+                form={draft.form}
+                onChange={(experiments) => setDraft((d) => ({ ...d, experiments }))}
+                onAddSlot={addSlot}
+              />
             )}
           </div>
 

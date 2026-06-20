@@ -9,6 +9,7 @@ import { db } from '../firebase';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { toCsv } from '../utils/csv';
+import LpAbResults from './LpAbResults';
 
 interface SubRow {
   id: string;
@@ -183,6 +184,9 @@ export default function LpAnalytics({ slug }: { slug: string }) {
           </button>
         ))}
       </div>
+
+      {/* Rezultate A/B (citește abStats + experimente; verdict prin pickAbWinner). Ascuns dacă nu există experimente. */}
+      <LpAbResults slug={slug} />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={card}><div style={kpiVal}>{fmtN(k.visits)}</div><div style={kpiLabel}>{t('admin.lpStudio.anVisits')}</div></div>

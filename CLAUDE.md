@@ -288,6 +288,22 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **Analytics LP extins:** tabel variante sortabil + export CSV + comparație A/B/n (agregare după
   versiune/asset/platformă/campanie, câștigător după rata de conversie). Contoarele `variants/{key}` sunt
   all-time (fără axă de zi); tabelul/comparația sunt etichetate „(total, toate timpurile)".
+- **A/B testing „pe sloturi" (ACTIV 19.06.2026, #60):** test de CONȚINUT pe un slot din pagină, NU pe UTM
+  (axă ortogonală de `variants/{key}`). Model: bloc `experiment` (props.expId) ocupă o poziție → `html` are
+  placeholder `<!--LP_EXP:id-->`; `LandingPage.experiments[]` (LpExperiment: arms cu blocks/weight/label, status,
+  minSample, winnerArm) + `armsHtml[exp][arm]` (fiecare arm.blocks prin ACELAȘI compileBlocks; precompilat ca
+  pageDecorHtml). Gardă 200KB pe SUMA html+toate armele+decor+conversie (`lpServedByteSize`). **serveLp** (JS pur,
+  testat e2e): `pickAbAssignment` alege varianta per slot — winner promovat→100% (fără cookie/contor); off/stopped→
+  control; running→sticky-cookie `lpab_{slug}` (Path=/p, SameSite=Lax, Secure) sau split ponderat; **boții→control
+  fără contor** (nu poluează eșantionul). O dată/request → consistență vizită↔contor. `applyArms` înlocuiește
+  placeholderele. Contoare `landingPages/{slug}/abStats/{expId__armId}` (vizite în logLpVisit, conversii în
+  handleSubmit din cookie sau `__unattributed`); reguli read scoped (ca stats/variants), write false. **FĂRĂ HMAC în
+  v1** (ar lega serveLp de secret indisponibil; tamper = mutarea propriei conversii între arme valide = neglijabil;
+  HMAC = backlog). **Motor câștigător PUR** `src/analytics/lpABWinner.ts` (`pickAbWinner`): **z-test pe două proporții**
+  (CDF normal via erf, fără deps) la α=0.05 + prag minSample → insufficient/no-difference/winner (NU doar uplift —
+  anti fals-pozitiv). UI: tab „A/B" (`LpExperimentsPanel`: experimente+arme, conținut prin builder reutilizat, slot)
+  + card rezultate în LpAnalytics (`LpAbResults`: tabel + verdict + „Promovează câștigătorul" DOAR la verdict
+  statistic → anti-peeking). NON-REGRESIE: LP fără experimente → assign gol, applyArms no-op → output identic.
 - **Acces client la datele LP în portal (ACTIV 15.06.2026):** clientul logat în `/app` vede LP-urile LUI
   (`LP.clientUid == uid`) — performanță + defalcare canal/versiune + **lead-urile capturate** (clienții
   lui; portalul = și CRM de monitorizare a propriilor clienți). HIBRID: scoped reads (reguli `get(parinte)

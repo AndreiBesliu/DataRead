@@ -44,6 +44,7 @@ const BLOCK_FIELDS: Partial<Record<LpBlockType, Field[]>> = {
   accordion: [{ k: 'items', t: 'items', item: [{ k: 'q', t: 'text' }, { k: 'a', t: 'textarea' }] }],
   countdown: [{ k: 'heading', t: 'text' }, { k: 'targetDate', t: 'text' }, { k: 'expiredText', t: 'text' }, { k: 'align', t: 'align' }],
   video: [{ k: 'url', t: 'url' }, { k: 'title', t: 'text' }],
+  experiment: [{ k: 'expId', t: 'text' }], // slot A/B: id-ul experimentului (definit în tabul A/B)
 };
 
 function newId(): string {
