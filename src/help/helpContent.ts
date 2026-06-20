@@ -33,17 +33,20 @@ export const OPERATOR_HELP: HelpSection[] = [
   sec('opOpportunities', 3),
   sec('opMarketing', 4),
   sec('opConnectors', 4),
-  sec('opAutomation', 6),
+  sec('opAutomation', 7),
   sec('opLp', 9),
   sec('opAdmins', 3),
   sec('opPdf', 2),
 ];
 
-/** Ghidul clientului (/app). */
+/** Ghidul clientului (/app) — SEPARAT de ghidul operatorului. NB: clientul NU construiește automatizări (acelea sunt
+ *  unealta agenției); el doar (a) folosește self-serve „Self Marketing" și (b) vede rezultatele pe care i le generăm. */
 export const CLIENT_HELP: HelpSection[] = [
   sec('clAccount', 2),
+  sec('clSelf', 5),
   sec('clPerformance', 2),
   sec('clReport', 2),
   sec('clDeliverables', 2),
   sec('clLp', 3),
+  sec('clAlerts', 2),
 ];

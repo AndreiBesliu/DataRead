@@ -1545,6 +1545,18 @@ normaliser, secretele niciodată în chat/repo.
 > **Următor: F5b** (client self-serve — builder de automatizări în /app pe mini-CRM-ul lui, gated de abonament) → **F5c**
 > (CRM clasic facturi/memento — necesită întâi modelul de date Vertical 2). F4 (email/SMS) amânat.
 
+**2026-06-20 - Task Completed — Ghiduri actualizate la scope (Self Marketing + agenție vs client)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „ține cont că și ghidurile trebuie să reflecte asta" (clarificarea de scope: automatizările = unealta NOASTRĂ;
+> Self Marketing = self-serve clientului, ca marketingexplorer.ro). Ghidul clientului nici nu menționa Self Marketing (live!)
+> nici „Notificări & memento-uri" (F5a). Reparat:
+> - `helpContent.ts`: ghid CLIENT += `clSelf` (5: ce e / profil / strategie & sugestii / aprofundare / export & explorări) +
+>   `clAlerts` (2: ce vezi / task-uri). Ghid OPERATOR: `opAutomation` 6→7 (+ „Domeniu: agenție vs client" — explică explicit
+>   că automatizările sunt unealta agenției, clientul nu le construiește, iar rezultatele regulilor pe-un-client apar în portalul lui).
+> - i18n `help.clSelf*`/`help.clAlerts*`/`help.opAutomation_7*` ro+en (titlu+subtitlu+corp).
+> Verificat: 15/15 suites (acoperire chei: toate corpurile noi există) + build (paritate i18n) + build:site + boot. DEPLOYED:
+> hosting (UI/i18n). NB pt. viitor: la fiecare felie Self Marketing (Oportunități/Execuție/...) se actualizează și ghidul clientului.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
