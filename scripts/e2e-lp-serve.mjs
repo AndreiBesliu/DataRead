@@ -986,6 +986,25 @@ console.log('\nY) dispatch automatizare — onMetric → notify.operator + dedup
   ok(nk().length === 1, 'dispatch: fără notificare dublă (anti livrare-dublă)');
   const r3 = await fns.dispatchAutomationEvent(adb, { trigger: 'campaign.metric_threshold', targetId: 'C2', clientUid: 'u1', ctx: { 'metric.spend': 100, 'metric.leads': 0 }, stateHash: 'low' }, { nowMs: 333 });
   ok(r3.executed === 0, 'dispatch: condiție neîndeplinită (spend<500) → nicio acțiune');
+
+  // ── Felia 3: lead.set_status (cu marcaj anti-buclă) + task.create + gardă origin. ──
+  const seedL = {
+    'automations/s1': { enabled: true, scope: 'agency', name: 'Auto contactare', trigger: { type: 'lead.created', config: {} }, conditions: [{ field: 'lead.status', op: 'eq', value: 'new' }], actions: [{ type: 'lead.set_status', config: { status: 'contacted' } }, { type: 'task.create', config: { title: 'Sună lead-ul nou' } }], runCount: 0 },
+  };
+  const { db: ldb, store: lstore } = makeAutoStore(seedL);
+  const evL = { trigger: 'lead.created', targetId: 'L9', clientUid: '', ctx: { 'lead.status': 'new' }, stateHash: 'created' };
+  const rr = await fns.dispatchAutomationEvent(ldb, evL, { nowMs: 500 });
+  ok(rr.executed === 1, 'F3: regulă lead.created executată');
+  ok(lstore.get('leads/L9') && lstore.get('leads/L9').status === 'contacted', 'F3: lead.set_status → status=contacted');
+  ok(lstore.get('leads/L9').automationStamp === 500, 'F3: marcaj automationStamp pus (anti-buclă)');
+  const tks = [...lstore.keys()].filter((k) => k.startsWith('tasks/'));
+  ok(tks.length === 1 && lstore.get(tks[0]).title === 'Sună lead-ul nou' && lstore.get(tks[0]).status === 'open', 'F3: task.create → task open');
+  const rrLoop = await fns.dispatchAutomationEvent(ldb, { ...evL, targetId: 'L10', origin: 'automation' }, { nowMs: 600 });
+  ok(rrLoop.matched === 0 && rrLoop.executed === 0, 'F3: origin=automation → nicio regulă (anti-buclă)');
+  const seedB = { 'automations/s2': { enabled: true, scope: 'agency', name: 'Bad', trigger: { type: 'lead.created', config: {} }, conditions: [], actions: [{ type: 'lead.set_status', config: { status: 'zzz' } }], runCount: 0 } };
+  const { db: bdb, store: bstore } = makeAutoStore(seedB);
+  await fns.dispatchAutomationEvent(bdb, { trigger: 'lead.created', targetId: 'L11', clientUid: '', ctx: {}, stateHash: 'created' }, { nowMs: 700 });
+  ok(!bstore.get('leads/L11'), 'F3: status invalid (zzz) → lead neatins (skipped)');
 }
 
 rmSync(tmp, { force: true });

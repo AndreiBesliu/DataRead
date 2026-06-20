@@ -243,6 +243,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Task-uri operator generate de automatizări (acțiunea task.create). Create de motor (Admin SDK). Operatorii le
+    // citesc + le pot închide/șterge (status open→done). Zona operatorilor.
+    match /tasks/{id} {
+      allow read: if isAdmin();
+      allow create: if false; // doar motorul (Admin SDK)
+      allow update, delete: if isAdmin();
+    }
+
     // Config intern al platformei (zona operatorilor). Ex.: appConfig/automation = plafon zilnic AI + bypass entitlement
     // pentru acțiunile AI din automatizări. Read+write admin (setat din /admin); motorul îl citește prin Admin SDK.
     match /appConfig/{docId} {

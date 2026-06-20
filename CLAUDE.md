@@ -200,9 +200,15 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   plafon GLOBAL/zi configurabil `consumeAutomationAiQuota` (`aiUsage/__automationGlobal`). Config `appConfig/automation`
   (`src/types/automationConfig.ts`: `aiDailyCap` default 50 + `aiBypassEntitlement`) — reguli read+write admin, UI card în
   AutomationsPanel (plafon + checkbox bypass). Triggerele automatizării au `secrets:[ANTHROPIC_API_KEY]` când AI_ENABLED.
-  `auto-pause` campanie tot imposibil (ads_read, nu ads_management). Felii rămase: **F3 workflows lead lifecycle** (lead.*
-  + executor set_status/task) → apoi **documentare ghid (separat operator/admin vs client)**; F4 email/SMS; F5 CRM
-  client-scope; F6 publicare campanii (ads_management).
+  `auto-pause` campanie tot imposibil (ads_read, nu ads_management).
+  **Felia 3 ACTIV 20.06.2026 (workflows lead lifecycle):** executori `lead.set_status` (scrie status + marcaj
+  `automationStamp`) + `task.create` (`tasks/{id}`). Triggere `onLeadAutomation` (lead.created/lead.status_changed) cu
+  GARDĂ ANTI-BUCLĂ (scrierile motorului poartă `automationStamp` → origin='automation' → planActions null) + scaner zilnic
+  `automationDailyScan` (06:00, lead.inactive cu ctx `lead.daysSinceUpdate`; reguli+config încărcate o dată).
+  `tasks/{id}` read admin/create false/update-delete admin; UI „Task-uri deschise" în AutomationsPanel.
+  **Motorul acoperă toate declanșatoarele planificate** (lead.*/campaign.*/schedule.*) + acțiuni notify/set_status/task/AI.
+  Felii rămase: F4 email/SMS (AMÂNAT); F5 CRM client-scope; F6 publicare campanii (ads_management). Backstop neimplementat
+  încă: `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR` (constanta există; doar dedupe+cap AI activ).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

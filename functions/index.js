@@ -2657,6 +2657,26 @@ async function executeAutomationAction(db, action, match, event, nowMs, idx, con
       return { type: action.type, status: 'error', reason: String((e && e.message) || e).slice(0, 200) };
     }
   }
+  // ── Acțiuni pe lead (Felia 3). Doar pentru declanșatoarele pe lead (avem leadId sigur = event.targetId). ──
+  if (action.type === 'lead.set_status') {
+    if (!String(event.trigger).startsWith('lead.')) return { type: action.type, status: 'skipped', reason: 'no_lead' };
+    const status = String((action.config && action.config.status) || '').trim();
+    if (!['new', 'contacted', 'won', 'lost'].includes(status)) return { type: action.type, status: 'skipped', reason: 'bad_status' };
+    // `automationStamp` = marcaj de origine: onLeadAutomation îl vede schimbat → NU re-declanșează (anti-buclă).
+    await db.collection('leads').doc(event.targetId).set(
+      { status, automationStamp: nowMs, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { type: action.type, status: 'done' };
+  }
+  if (action.type === 'task.create') {
+    const id = `${match.key}__a${idx}`.slice(0, 480);
+    await db.collection('tasks').doc(id).set({
+      schema: 1, source: 'automation', automationId: match.automation.id || '',
+      title: String((action.config && action.config.title) || match.automation.name || 'Task').slice(0, 200),
+      leadId: String(event.trigger).startsWith('lead.') ? (event.targetId || '') : '',
+      clientUid: event.clientUid || '', status: 'open', createdAt: nowMs,
+    });
+    return { type: action.type, status: 'done' };
+  }
   return { type: action.type, status: 'skipped' };
 }
 
@@ -2673,9 +2693,13 @@ async function readAutomationConfig(db) {
 // acțiunile lor — cu DEDUPE/anti-buclă prin `runs/{key}` creat cu .create() (eșuează dacă există ⇒ at-least-once safe).
 async function dispatchAutomationEvent(db, event, opts) {
   const nowMs = (opts && opts.nowMs) || 0;
-  const config = await readAutomationConfig(db);
-  const snap = await db.collection('automations').where('enabled', '==', true).get();
-  const autos = snap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
+  // opts.config / opts.automations pot fi pre-încărcate (ex. de scanerul zilnic, ca să nu re-interogheze per lead).
+  const config = (opts && opts.config) || await readAutomationConfig(db);
+  let autos = opts && opts.automations;
+  if (!autos) {
+    const snap = await db.collection('automations').where('enabled', '==', true).get();
+    autos = snap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
+  }
   const matches = selectMatching(autos, event);
   let executed = 0; let skipped = 0;
   for (const m of matches) {
@@ -2741,6 +2765,52 @@ if (AUTOMATION_ENABLED) {
       await dispatchAutomationEvent(admin.firestore(), event, { nowMs: Date.now() });
     } catch (e) { console.error('onCampaignAutomation failed:', e); }
   });
+
+  // Lead scris → eveniment „lead nou" (create) sau „status lead schimbat". GARDĂ ANTI-BUCLĂ: dacă scrierea a venit
+  // de la motor (acțiunea lead.set_status pune `automationStamp`), origin='automation' ⇒ planActions întoarce null
+  // (regulile NU reacționează la propriile lor scrieri — doar la cele umane/externe). Trigger SEPARAT de onLeadWrite.
+  exports.onLeadAutomation = onDocumentWritten({ document: 'leads/{leadId}', region: REGION }, async (ev) => {
+    try {
+      const before = ev.data && ev.data.before && ev.data.before.exists ? ev.data.before.data() : null;
+      const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
+      if (!after) return; // ștergere → ignoră
+      const leadId = ev.params.leadId;
+      const origin = (after.automationStamp && after.automationStamp !== (before && before.automationStamp)) ? 'automation' : undefined;
+      const baseCtx = { 'lead.status': after.status || '', 'lead.source': after.source || '' };
+      const db = admin.firestore();
+      if (!before) {
+        await dispatchAutomationEvent(db, { trigger: 'lead.created', targetId: leadId, clientUid: after.clientUid || '', ctx: baseCtx, stateHash: 'created', origin }, { nowMs: Date.now() });
+      } else if ((before.status || '') !== (after.status || '')) {
+        await dispatchAutomationEvent(db, { trigger: 'lead.status_changed', targetId: leadId, clientUid: after.clientUid || '', ctx: Object.assign({}, baseCtx, { 'lead.prevStatus': before.status || '' }), stateHash: String(after.status || ''), origin }, { nowMs: Date.now() });
+      }
+    } catch (e) { console.error('onLeadAutomation failed:', e); }
+  });
+
+  // Scaner zilnic → eveniment „lead inactiv": lead-uri active (new/contacted) cu `updatedAt` vechi. ctx include
+  // `lead.daysSinceUpdate` (condiția regulii decide pragul, ex. ≥7). stateHash = updatedAt ⇒ se declanșează O DATĂ
+  // per perioadă de inactivitate (până cineva atinge lead-ul). Reguli + config încărcate O SINGURĂ DATĂ (eficiență).
+  {
+    const { onSchedule } = require('firebase-functions/v2/scheduler');
+    exports.automationDailyScan = onSchedule({ schedule: '0 6 * * *', timeZone: 'Europe/Bucharest', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async () => {
+      try {
+        const db = admin.firestore();
+        const nowMs = Date.now();
+        const config = await readAutomationConfig(db);
+        const aSnap = await db.collection('automations').where('enabled', '==', true).get();
+        const autos = aSnap.docs.map((d) => coerceToAutomation(Object.assign({}, d.data(), { id: d.id })));
+        if (!autos.some((a) => a.trigger.type === 'lead.inactive')) return; // nicio regulă de inactivitate → nu scana
+        const tms = (v) => (v && typeof v.toMillis === 'function') ? v.toMillis() : (typeof v === 'number' ? v : 0);
+        const snap = await db.collection('leads').where('status', 'in', ['new', 'contacted']).limit(1000).get();
+        for (const d of snap.docs) {
+          const lead = d.data() || {};
+          const updatedMs = tms(lead.updatedAt);
+          const days = updatedMs ? Math.floor((nowMs - updatedMs) / 86400000) : 0;
+          const ctx = { 'lead.status': lead.status || '', 'lead.source': lead.source || '', 'lead.daysSinceUpdate': days };
+          await dispatchAutomationEvent(db, { trigger: 'lead.inactive', targetId: d.id, clientUid: lead.clientUid || '', ctx, stateHash: String(updatedMs) }, { nowMs, config, automations: autos });
+        }
+      } catch (e) { console.error('automationDailyScan failed:', e); }
+    });
+  }
 }
 
 const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;

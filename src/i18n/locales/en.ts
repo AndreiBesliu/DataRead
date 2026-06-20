@@ -1007,6 +1007,8 @@ const en: typeof ro = {
       runs: 'runs',
       notifTitle: 'Recent notifications',
       notifEmpty: 'No notifications yet.',
+      tasksTitle: 'Open tasks',
+      taskDone: 'Done',
       cfgTitle: 'AI actions in automations',
       cfgHint: 'AI actions (report / recommendation) run only for clients with an active subscription or AI credits — within the daily cap below (cost backstop).',
       cfgCap: 'AI cap/day:',

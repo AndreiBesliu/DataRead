@@ -1014,6 +1014,8 @@ const ro = {
       runs: 'rulări',
       notifTitle: 'Notificări recente',
       notifEmpty: 'Nicio notificare încă.',
+      tasksTitle: 'Task-uri deschise',
+      taskDone: 'Gata',
       cfgTitle: 'Acțiuni AI în automatizări',
       cfgHint: 'Acțiunile cu AI (raport / recomandare) rulează doar pentru clienții cu abonament sau credite AI active — în limita plafonului zilnic de mai jos (backstop de cost).',
       cfgCap: 'Plafon AI/zi:',

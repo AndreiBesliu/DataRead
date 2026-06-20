@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '../firebase';
 import {
@@ -29,11 +29,13 @@ const FIELD_SUGGESTIONS = ['lead.status', 'lead.source', 'metric.spend', 'metric
 
 type Rule = Automation & { id: string };
 type Notif = { id: string; automationName?: string; text?: string; trigger?: string; createdAt?: number };
+type Task = { id: string; title?: string; leadId?: string; createdAt?: number };
 
 export default function AutomationsPanel() {
   const { t } = useTranslation();
   const [rules, setRules] = useState<Rule[]>([]);
   const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [draft, setDraft] = useState<Automation | null>(null);
   const [cfg, setCfg] = useState<AutomationConfig>(() => coerceToAutomationConfig(null));
   const [cfgSaved, setCfgSaved] = useState(false);
@@ -59,6 +61,17 @@ export default function AutomationsPanel() {
       setCfg(coerceToAutomationConfig(snap.exists() ? snap.data() : null));
     }, () => { /* default */ });
   }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'tasks'), where('status', '==', 'open'), orderBy('createdAt', 'desc'), limit(20));
+    return onSnapshot(q, (snap) => {
+      setTasks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Task, 'id'>) })));
+    }, () => { /* fără task-uri */ });
+  }, []);
+
+  const doneTask = async (id: string) => {
+    try { await updateDoc(doc(db, 'tasks', id), { status: 'done' }); } catch (e) { console.warn('task done failed:', e); }
+  };
 
   const saveConfig = async () => {
     setBusy(true); setErr(''); setCfgSaved(false);
@@ -224,6 +237,20 @@ export default function AutomationsPanel() {
             {cfgSaved && <span style={{ fontSize: 12, color: '#1e7e34', fontWeight: 700 }}>✓</span>}
           </div>
           <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.automation.cfgBypassHint')}</p>
+        </div>
+      )}
+
+      {/* Task-uri deschise create de motor (acțiunea task.create) */}
+      {!draft && tasks.length > 0 && (
+        <div style={{ ...card, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{t('admin.automation.tasksTitle')}</div>
+          {tasks.map((tk) => (
+            <div key={tk.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 12 }}>
+              <span style={{ flex: 1 }}>{tk.title}</span>
+              <span style={{ color: 'var(--fg-1)' }}>{tk.createdAt ? new Date(tk.createdAt).toLocaleDateString() : ''}</span>
+              <button className="btn" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => void doneTask(tk.id)}>{t('admin.automation.taskDone')}</button>
+            </div>
+          ))}
         </div>
       )}
 

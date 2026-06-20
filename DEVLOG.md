@@ -1492,6 +1492,26 @@ normaliser, secretele niciodată în chat/repo.
 > **Următor (ordinea cerută de Andrei):** F3 workflows lead lifecycle → apoi DOCUMENTAREA GHIDULUI (separat operator/admin vs
 > client) ÎNAINTE de alte lucruri; F4 (email/SMS) amânat.
 
+**2026-06-20 - Task Completed — Motor de automatizare, Felia 3 (workflows pe lead-uri)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „continuă cum am zis" → F3 din ordinea stabilită (workflows lead lifecycle).
+> - `functions/index.js`: executori noi — `lead.set_status` (scrie status + marcaj `automationStamp`; valid doar pt.
+>   declanșatoare pe lead; status ∈ new/contacted/won/lost) + `task.create` (scrie `tasks/{id}`). Triggere LIVE:
+>   `onLeadAutomation` (leads/{id} → `lead.created` la create / `lead.status_changed` la schimbarea statusului) cu
+>   **GARDĂ ANTI-BUCLĂ**: dacă scrierea vine de la motor (`automationStamp` schimbat) → origin='automation' ⇒ planActions
+>   întoarce null (regulile NU reacționează la propriile scrieri). Scaner zilnic `automationDailyScan` (06:00 Europe/
+>   Bucharest) → `lead.inactive` pentru lead-uri new/contacted cu `updatedAt` vechi (ctx `lead.daysSinceUpdate`; stateHash=
+>   updatedAt ⇒ o dată per perioadă de inactivitate); reguli+config încărcate O DATĂ (eficiență). `dispatchAutomationEvent`
+>   acceptă acum opts.automations/config pre-încărcate.
+> - `firestore.rules`: `tasks/{id}` read admin, create false (doar motorul), update/delete admin (operatorii închid task-uri).
+> - UI `AutomationsPanel`: secțiune „Task-uri deschise" (listener tasks status=open) cu „Gata" (→ status done). i18n
+>   `admin.automation.tasksTitle/taskDone` ro+en.
+> Verificat: 15/15 suites + e2e TEST Y (+6 F3: set_status scrie status+stamp, task.create, anti-buclă origin, status invalid
+>   skipped) + build + build:site + boot — toate verzi. DEPLOYED: functions (onLeadAutomation + automationDailyScan create +
+>   executori) + hosting (tasks UI) + rules (tasks). **Motorul acoperă acum toate declanșatoarele planificate** (lead.*,
+>   campaign.*, schedule.*) + acțiuni notify/set_status/task/AI. **Următor (ordinea Andrei): DOCUMENTARE GHID — separat
+>   operator/admin vs client.** F4 (email/SMS) amânat.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
