@@ -806,6 +806,75 @@ exports.requestSelfAudit = onCall({ region: REGION, enforceAppCheck: APP_CHECK_E
   return { ok: true };
 });
 
+// ── Verticala 2 „Lansare Soft" — NUMEROTARE FACTURI (atomică, fără goluri). ──
+// Cerință legală RO: numerele de factură sunt SECVENȚIALE per serie, FĂRĂ goluri, ALE EMITENTULUI (agenția),
+// deci contorul e GLOBAL pe serie (NU per client — altfel s-ar duplica numere între clienți). Numerotarea +
+// incrementarea contorului se fac într-o SINGURĂ tranzacție ⇒ ori ambele, ori niciuna (fără goluri). Idempotent:
+// o factură deja numerotată NU se renumerotează. Numărul se atribuie EXCLUSIV aici (Admin SDK); regulile interzic
+// clientului să scrie/schimbe `number` (vezi firestore.rules) → integritate end-to-end.
+function invoiceCounterKey(series) {
+  return String(series || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || '_';
+}
+/** Următorul număr de atribuit. Contor existent: `next` TREBUIE să fie întreg pozitiv — dacă e corupt
+ *  (null/NaN/string/0/negativ) ABORTĂM (CORRUPT_COUNTER), fiindcă a presupune 1 ar DUPLICA numere legale
+ *  (recuperare din backup/PITR — vezi CLAUDE.md). Contor absent: seed din startNumber (default 1). */
+function nextInvoiceNumber(counterExists, counterNext, startNumber) {
+  if (counterExists) {
+    const n = Number(counterNext);
+    if (!Number.isInteger(n) || n < 1) throw new HttpsError('failed-precondition', 'CORRUPT_COUNTER');
+    return n;
+  }
+  const s = Math.floor(Number(startNumber));
+  return Number.isFinite(s) && s > 0 ? s : 1;
+}
+exports.invoiceCounterKey = invoiceCounterKey;
+exports.nextInvoiceNumber = nextInvoiceNumber;
+
+/** Nucleu testabil (tranzacție reală pe Firestore în memorie în e2e). Presupune apelantul DEJA autorizat (admin). */
+async function performIssueInvoice(db, data) {
+  const clientUid = String((data || {}).clientUid || '');
+  const invoiceId = String((data || {}).invoiceId || '');
+  if (!clientUid || !invoiceId) throw new HttpsError('invalid-argument', 'clientUid și invoiceId necesare.');
+  const invRef = db.collection('clients').doc(clientUid).collection('invoices').doc(invoiceId);
+  return db.runTransaction(async (tx) => {
+    // TOATE citirile înainte de orice scriere (regula tranzacțiilor Firestore).
+    const invSnap = await tx.get(invRef);
+    if (!invSnap.exists) throw new HttpsError('not-found', 'Factura nu există.');
+    const inv = invSnap.data() || {};
+    // Idempotent: deja numerotată → o întoarcem ca atare, fără să consumăm un alt număr.
+    if (inv.number && String(inv.number).trim()) {
+      return { series: String(inv.series || ''), number: String(inv.number), already: true };
+    }
+    const series = String(inv.series || '').trim().slice(0, 20);
+    if (!series) throw new HttpsError('failed-precondition', 'NO_SERIES');
+    // Bijecție serie↔cheie contor: o serie cu caractere în afara [A-Za-z0-9_-] ar coliziona cu alta pe ACELAȘI
+    // contor → goluri per serie. Regulile + coerce + UI o previn; aici e plasa finală (defense-in-depth).
+    if (invoiceCounterKey(series) !== series) throw new HttpsError('failed-precondition', 'BAD_SERIES');
+    const counterRef = db.collection('invoiceCounters').doc(invoiceCounterKey(series));
+    const cSnap = await tx.get(counterRef);
+    let startNumber = 0;
+    if (!cSnap.exists) {
+      const cfgSnap = await tx.get(db.collection('appConfig').doc('invoiceSeller'));
+      startNumber = cfgSnap.exists ? Number((cfgSnap.data() || {}).startNumber) : 0;
+    }
+    const next = nextInvoiceNumber(cSnap.exists, cSnap.exists ? cSnap.data().next : undefined, startNumber);
+    const number = String(next);
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+    // Emitere = atribuie număr + mută draft→sent + marchează momentul; număr+serie devin imuabile (vezi reguli).
+    tx.set(invRef, { number, series, status: inv.status === 'draft' ? 'sent' : (inv.status || 'sent'), issuedNumberAt: ts, updatedAt: ts }, { merge: true });
+    tx.set(counterRef, { series, next: next + 1, updatedAt: ts }, { merge: true });
+    return { series, number, already: false };
+  });
+}
+exports.performIssueInvoice = performIssueInvoice;
+
+exports.issueInvoice = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  assertAdmin(request);
+  const res = await performIssueInvoice(admin.firestore(), request.data || {});
+  logger.info('invoice issued', { by: request.auth.uid, ...res });
+  return res;
+});
+
 /** Quota lunară per operator (tranzacție pe aiUsage/{uid}). Aruncă resource-exhausted la depășire. */
 async function consumeAiQuota(uid) {
   const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM'

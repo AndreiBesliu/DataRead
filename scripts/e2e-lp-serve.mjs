@@ -1089,6 +1089,93 @@ console.log('\nY) dispatch automatizare — onMetric → notify.operator + dedup
   ok((rstore.get('automations/rl/rate/CX') || {}).count === 5, 'E1: contorul orar al țintei = 5');
 }
 
+// ── TEST INV: performIssueInvoice (numerotare facturi atomică, fără goluri, idempotentă) + helperi puri. ──
+// Cerință legală RO: numere secvențiale per serie, fără goluri, ale emitentului (contor GLOBAL pe serie). Tranzacția
+// reală pe Firestore în memorie acoperă calea pe care testele pure nu o ating (citire factură + contor + config).
+console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
+{
+  function makeInvStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    const colRef = (path) => ({ doc: (id) => docRef(`${path}/${id}`) });
+    const docRef = (path) => ({ _path: path, collection: (sub) => colRef(`${path}/${sub}`) });
+    let wrote = false; // gardă: oglindește regula Firestore „toate citirile înainte de orice scriere" (prinde un refactor greșit)
+    const tx = {
+      async get(r) { if (wrote) throw new Error('READ_AFTER_WRITE'); const has = store.has(r._path); return { exists: has, data: () => store.get(r._path) }; },
+      set(r, data, opts) { wrote = true; store.set(r._path, opts && opts.merge ? Object.assign({}, store.get(r._path) || {}, data) : Object.assign({}, data)); },
+    };
+    return { db: { collection: (c) => colRef(c), async runTransaction(fn) { wrote = false; return fn(tx); } }, store };
+  }
+  const grab = async (fn) => { try { return { res: await fn(), err: null }; } catch (e) { return { res: null, err: e }; } };
+
+  // helperi puri
+  ok(fns.invoiceCounterKey('A/B 2026!') === 'A_B_2026_', 'invoiceCounterKey: sanitizează caractere nesigure');
+  ok(fns.invoiceCounterKey('') === '_', 'invoiceCounterKey: gol → "_"');
+  ok(fns.nextInvoiceNumber(false, undefined, 0) === 1, 'nextInvoiceNumber: serie nouă fără start → 1');
+  ok(fns.nextInvoiceNumber(false, undefined, 248) === 248, 'nextInvoiceNumber: serie nouă, start=248 → 248');
+  ok(fns.nextInvoiceNumber(true, 7, 248) === 7, 'nextInvoiceNumber: contor existent → next contor (ignoră start)');
+  // Contor corupt (exists dar next non-întreg) → ABORTĂ (NU presupune 1, care ar duplica numere legale).
+  ok((await grab(async () => fns.nextInvoiceNumber(true, 'x', 0))).err?.message?.includes('CORRUPT_COUNTER'), 'nextInvoiceNumber: contor corupt → aruncă CORRUPT_COUNTER (nu fallback 1)');
+  ok((await grab(async () => fns.nextInvoiceNumber(true, 0, 0))).err, 'nextInvoiceNumber: contor next=0 → aruncă (nu e întreg pozitiv)');
+
+  // 1) prima factură DR, fără contor/config → număr 1, status sent, contor next 2
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i1': { series: 'DR', number: '', status: 'draft', kind: 'factura' } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i1' }));
+    ok(res && res.number === '1' && res.series === 'DR' && res.already === false, 'emitere: prima factură DR → număr 1');
+    ok(store.get('clients/u1/invoices/i1').number === '1' && store.get('clients/u1/invoices/i1').status === 'sent', 'emitere: factura primește număr + status sent');
+    ok((store.get('invoiceCounters/DR') || {}).next === 2, 'emitere: contorul DR → next 2');
+  }
+  // 2) a doua factură DR (contor la 2) → număr 2, fără goluri
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i2': { series: 'DR', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR', next: 2 } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i2' }));
+    ok(res.number === '2' && store.get('invoiceCounters/DR').next === 3, 'emitere: a doua factură DR → număr 2 (fără goluri)');
+  }
+  // 3) idempotent: deja numerotată → același număr, contor neatins
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i3': { series: 'DR', number: '5', status: 'sent' }, 'invoiceCounters/DR': { series: 'DR', next: 9 } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i3' }));
+    ok(res.number === '5' && res.already === true && store.get('invoiceCounters/DR').next === 9, 'idempotent: deja numerotată → același număr, contor neatins');
+  }
+  // 4) serie nouă seed din config.startNumber
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i4': { series: 'AA', number: '', status: 'draft' }, 'appConfig/invoiceSeller': { startNumber: 248 } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i4' }));
+    ok(res.number === '248' && store.get('invoiceCounters/AA').next === 249, 'emitere: serie nouă AA seed din startNumber=248');
+  }
+  // 5) serie lipsă → failed-precondition NO_SERIES
+  {
+    const { db } = makeInvStore({ 'clients/u1/invoices/i5': { series: '', number: '', status: 'draft' } });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i5' }));
+    ok(err && /NO_SERIES/.test(err.message || ''), 'serie lipsă → failed-precondition NO_SERIES');
+  }
+  // 6) factură inexistentă → not-found
+  {
+    const { db } = makeInvStore({});
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'zzz' }));
+    ok(err && /nu există/.test(err.message || ''), 'factură inexistentă → not-found');
+  }
+  // 7) serii independente: AA pornește la 1, DR neatins
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/iA': { series: 'AA', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR', next: 50 } });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'iA' }));
+    ok(res.number === '1' && store.get('invoiceCounters/DR').next === 50, 'serii independente: AA → 1, contorul DR neatins');
+  }
+  // 8) contor corupt (există dar fără `next` valid) → ABORTĂ (nu reseta la 1 → ar duplica numere legale)
+  {
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i8': { series: 'DR', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR' } });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i8' }));
+    ok(err && /CORRUPT_COUNTER/.test(err.message || ''), 'contor corupt → failed-precondition CORRUPT_COUNTER');
+    ok(store.get('clients/u1/invoices/i8').number === '', 'contor corupt → factura rămâne nenumerotată (fără scriere)');
+  }
+  // 9) serie cu caractere nesigure (s-ar coliziona pe contor) → BAD_SERIES
+  {
+    const { db } = makeInvStore({ 'clients/u1/invoices/i9': { series: 'A/B', number: '', status: 'draft' } });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i9' }));
+    ok(err && /BAD_SERIES/.test(err.message || ''), 'serie cu caractere nesigure → failed-precondition BAD_SERIES (anti-coliziune contor)');
+  }
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

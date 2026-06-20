@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../firebase';
 import {
   coerceToInvoice, invoiceTotals, lineTotal, emptyParty, coerceToInvoiceConfig,
   INVOICE_KINDS, INVOICE_STATUSES, INVOICE_ITEMS_MAX,
@@ -77,6 +78,7 @@ export default function InvoicesPanel() {
     try {
       await setDoc(doc(db, 'appConfig', 'invoiceSeller'), {
         schema: 1, seller: cfg.seller, defaultSeries: cfg.defaultSeries, defaultVatRate: cfg.defaultVatRate, defaultCurrency: cfg.defaultCurrency,
+        startNumber: Math.max(0, Math.floor(cfg.startNumber) || 0),
         updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || '',
       }, { merge: true });
       setCfgSaved(true); setTimeout(() => setCfgSaved(false), 2500);
@@ -104,6 +106,22 @@ export default function InvoicesPanel() {
   const remove = async (r: Row) => {
     if (!window.confirm(t('admin.invoices.deleteConfirm'))) return;
     try { await deleteDoc(doc(db, 'clients', uid, 'invoices', r.id)); } catch (e) { console.warn(e); }
+  };
+  // Emitere = numerotare atomică server-side (callable). După emitere, numărul/seria sunt blocate (legal, fără goluri).
+  const issue = async (r: Row) => {
+    if (!uid) return;
+    if (!String(r.series || '').trim()) { setErr(t('admin.invoices.errSeries')); return; }
+    if (!window.confirm(t('admin.invoices.issueConfirm', { series: r.series }))) return;
+    setBusy(true); setErr('');
+    try {
+      await httpsCallable<{ clientUid: string; invoiceId: string }, { series: string; number: string }>(functions, 'issueInvoice')({ clientUid: uid, invoiceId: r.id });
+      // lista se actualizează prin onSnapshot
+    } catch (e) {
+      const msg = String((e as { message?: string }).message ?? '');
+      setErr(msg.includes('NO_SERIES') ? t('admin.invoices.errSeries')
+        : msg.includes('BAD_SERIES') ? t('admin.invoices.errSeriesChars')
+        : t('admin.invoices.errIssue'));
+    } finally { setBusy(false); }
   };
 
   const pdfLabels = (kind: InvoiceKind): InvoiceLabels => ({
@@ -166,10 +184,12 @@ export default function InvoicesPanel() {
                 <div><label style={lbl}>{t('admin.invoices.address')}</label><input style={inp} value={cfg.seller.address} onChange={(e) => patchCfgSeller({ address: e.target.value })} /></div>
                 <div><label style={lbl}>{t('admin.invoices.iban')}</label><input style={inp} value={cfg.seller.iban} onChange={(e) => patchCfgSeller({ iban: e.target.value })} /></div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.series')}</label><input style={inp} value={cfg.defaultSeries} onChange={(e) => setCfg((c) => ({ ...c, defaultSeries: e.target.value }))} /></div>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.series')}</label><input style={inp} value={cfg.defaultSeries} onChange={(e) => setCfg((c) => ({ ...c, defaultSeries: e.target.value.replace(/[^A-Za-z0-9_-]/g, '') }))} /></div>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.startNumber')}</label><input type="number" min={1} step={1} style={inp} value={cfg.startNumber} onChange={(e) => setCfg((c) => ({ ...c, startNumber: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))} /></div>
                   <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.vatRate')}</label><input type="number" min={0} max={100} style={inp} value={cfg.defaultVatRate} onChange={(e) => setCfg((c) => ({ ...c, defaultVatRate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))} /></div>
                   <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.currency')}</label><input style={inp} value={cfg.defaultCurrency} onChange={(e) => setCfg((c) => ({ ...c, defaultCurrency: e.target.value }))} /></div>
                 </div>
+                <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: 0 }}>{t('admin.invoices.startNumberHint')}</p>
               </div>
               <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 12 }} disabled={busy} onClick={() => void saveConfig()}>{t('admin.invoices.save')}</button>
@@ -208,6 +228,9 @@ export default function InvoicesPanel() {
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tt.total.toFixed(2)} {r.currency}</td>
                         <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.status_${r.status}`)}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                          {!String(r.number || '').trim() && (
+                            <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} disabled={busy} onClick={() => void issue(r)} title={t('admin.invoices.issueTitle')}>{t('admin.invoices.issue')}</button>
+                          )}
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => { setErr(''); setDraft(coerceToInvoice(r)); }}>{t('admin.invoices.edit')}</button>
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => printInvoice(coerceToInvoice(r), pdfLabels(r.kind))}>📄 {t('admin.invoices.print')}</button>
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r)}>{t('admin.invoices.delete')}</button>
@@ -231,8 +254,8 @@ export default function InvoicesPanel() {
                 {INVOICE_KINDS.map((k) => <option key={k} value={k}>{t(`admin.invoices.${k}`)}</option>)}
               </select>
             </div>
-            <div><label style={lbl}>{t('admin.invoices.series')}</label><input style={inp} value={draft.series} onChange={(e) => patch({ series: e.target.value })} /></div>
-            <div><label style={lbl}>{t('admin.invoices.number')}</label><input style={inp} value={draft.number} onChange={(e) => patch({ number: e.target.value })} /></div>
+            <div><label style={lbl}>{t('admin.invoices.series')}</label><input style={{ ...inp, ...(draft.number ? { opacity: 0.6 } : {}) }} value={draft.series} disabled={!!draft.number} onChange={(e) => patch({ series: e.target.value.replace(/[^A-Za-z0-9_-]/g, '') })} /></div>
+            <div><label style={lbl}>{t('admin.invoices.number')}</label><input style={{ ...inp, opacity: 0.6 }} value={draft.number || t('admin.invoices.numberAuto')} disabled readOnly /></div>
             <div><label style={lbl}>{t('admin.invoices.issued')}</label><input type="date" style={inp} value={draft.issuedAt} onChange={(e) => patch({ issuedAt: e.target.value })} /></div>
             <div><label style={lbl}>{t('admin.invoices.due')}</label><input type="date" style={inp} value={draft.dueAt} onChange={(e) => patch({ dueAt: e.target.value })} /></div>
             <div><label style={lbl}>{t('admin.invoices.currency')}</label><input style={inp} value={draft.currency} onChange={(e) => patch({ currency: e.target.value })} /></div>
@@ -263,7 +286,7 @@ export default function InvoicesPanel() {
             <div><label style={lbl}>{t('admin.invoices.vatRate')} (%)</label><input type="number" min={0} max={100} step="any" style={{ ...inp, width: 90 }} value={draft.vatRate} onChange={(e) => patch({ vatRate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} /></div>
             <div><label style={lbl}>{t('admin.invoices.status')}</label>
               <select style={{ ...inp, width: 150 }} value={draft.status} onChange={(e) => patch({ status: e.target.value as InvoiceStatus })}>
-                {INVOICE_STATUSES.map((st) => <option key={st} value={st}>{t(`admin.invoices.status_${st}`)}</option>)}
+                {INVOICE_STATUSES.filter((st) => !draft.number || st !== 'draft').map((st) => <option key={st} value={st}>{t(`admin.invoices.status_${st}`)}</option>)}
               </select>
             </div>
             <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: 13 }}>

@@ -1739,6 +1739,30 @@ normaliser, secretele niciodată în chat/repo.
 >   **RĂMAS pe Andrei (config, nu cod):** confirmă că App Check ENFORCEMENT e pornit în consola Firebase pt. Cloud
 >   Functions; backup zilnic Firestore + PITR; alertă de buget GCP.
 
+**2026-06-20 - Task Completed — Numerotare facturi atomică, fără goluri (Verticala 2)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). Verticala 2 (Facturi) avea numerotare manuală → ilegal în RO (numerele de
+> factură trebuie SECVENȚIALE per serie, FĂRĂ goluri, ALE EMITENTULUI). Am adăugat numerotare automată atomică.
+> - **Callable `issueInvoice` (Admin SDK):** `performIssueInvoice` rulează o SINGURĂ tranzacție Firestore — citește
+>   factura → dacă e deja numerotată o întoarce idempotent → altfel citește contorul `invoiceCounters/{serie}` (GLOBAL pe
+>   agenție, NU per client, ca să nu se dubleze numere între clienți) → atribuie număr + incrementează contorul ÎN aceeași
+>   tranzacție ⇒ gap-free. Mută draft→sent + `issuedNumberAt`. Seed la prima factură a seriei din `appConfig/invoiceSeller.startNumber`
+>   (continuare dintr-un sistem vechi, ex. 248). UI: buton „Emite" pe rândurile nenumerotate; câmpul „număr" devine read-only,
+>   seria se blochează după numerotare.
+> - **Integritate end-to-end (reguli):** clientul NU poate seta/schimba `number` (create cere number=='', update păstrează
+>   numărul); seria blocată după numerotare; `invoiceCounters` write:false (doar callable); `hasOnly` whitelist pe facturi;
+>   numerotată ⇒ statusul nu mai revine la draft.
+> - **Review adversarial multi-agent (3 dimensiuni → verificare per-finding):** 10 constatări confirmate, reparate cele
+>   reale: (HIGH) cheia de contor lossy colaționa serii distincte ('A/B' vs 'A.B') → goluri → FIX bijecție serie↔cheie
+>   (`safeSeries` [A-Za-z0-9_-] în coerce + reguli `matches` + UI strip + gardă `BAD_SERIES` în callable); (HIGH) contor
+>   corupt reseta tăcut la 1 → numere DUPLICATE → FIX `nextInvoiceNumber` aruncă `CORRUPT_COUNTER` (testul care endorsa
+>   bug-ul a fost inversat); (MED) status revenea la draft pe o factură numerotată → blocat în reguli + UI; (MED/LOW) lipsea
+>   `hasOnly` → adăugat; stub-ul de test nu impunea read-before-write → gardă adăugată. Acceptate (operațional/amânat):
+>   integritatea contorului ține de backup/PITR (consola Andrei); suită de reguli cu emulator (amânată în tot proiectul).
+> Verificat: 16/16 suites + e2e (tranzacție: 1,2 fără goluri, idempotent, seed, CORRUPT_COUNTER, BAD_SERIES, serii
+>   independente, read-before-write) + build + build:site + boot. DEPLOYED: functions (issueInvoice) + hosting + rules.
+>   Rămas (backlog): e-Factura ANAF; storno/corecții; numerotare cu reset anual; facturi în portalul clientului.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

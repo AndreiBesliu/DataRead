@@ -54,6 +54,11 @@ export interface Invoice {
 function s(v: unknown, max: number): string {
   return (typeof v === 'string' ? v : '').slice(0, max);
 }
+/** Seria de facturare e cheia contorului de numerotare → trebuie bijectivă cu cheia: doar [A-Za-z0-9_-].
+ *  Altfel serii distincte ('A/B' vs 'A.B') ar partaja un contor și ar crea goluri per serie (ilegal). */
+export function safeSeries(v: unknown): string {
+  return (typeof v === 'string' ? v : '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, INVOICE_LIMITS.series);
+}
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
@@ -88,7 +93,7 @@ export function coerceToInvoice(raw: unknown): Invoice {
     schema: INVOICE_SCHEMA,
     id: typeof d.id === 'string' ? d.id : undefined,
     kind: INVOICE_KINDS.includes(d.kind as InvoiceKind) ? (d.kind as InvoiceKind) : 'proforma',
-    series: s(d.series, L.series),
+    series: safeSeries(d.series),
     number: s(d.number, L.number),
     issuedAt: s(d.issuedAt, 10),
     dueAt: s(d.dueAt, 10),
@@ -105,24 +110,30 @@ export function coerceToInvoice(raw: unknown): Invoice {
 }
 
 // ── Config furnizor (appConfig/invoiceSeller) — datele agenției + default-uri, salvate o singură dată. ──
+export const INVOICE_NUMBER_MAX = 100000000; // plafon sanitate pt. numărul de pornire (anti-typo)
+
 export interface InvoiceConfig {
   schema: number;
   seller: InvoiceParty;
   defaultSeries: string;
   defaultVatRate: number;
   defaultCurrency: string;
+  /** Primul număr atribuit când o serie e numerotată prima oară (continuare dintr-un sistem vechi). Default 1. */
+  startNumber: number;
 }
 
 export function coerceToInvoiceConfig(raw: unknown): InvoiceConfig {
   const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   let vat = num(d.defaultVatRate);
   vat = Math.max(0, Math.min(100, vat));
+  const start = Math.max(0, Math.min(INVOICE_NUMBER_MAX, Math.floor(num(d.startNumber))));
   return {
     schema: INVOICE_SCHEMA,
     seller: coerceParty(d.seller),
-    defaultSeries: s(d.defaultSeries, INVOICE_LIMITS.series),
+    defaultSeries: safeSeries(d.defaultSeries),
     defaultVatRate: d.defaultVatRate === undefined ? INVOICE_DEFAULT_VAT : vat,
     defaultCurrency: s(d.defaultCurrency, INVOICE_LIMITS.currency) || 'RON',
+    startNumber: start > 0 ? start : 1,
   };
 }
 

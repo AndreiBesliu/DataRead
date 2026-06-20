@@ -223,8 +223,17 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   linie, apoi TVA pe subtotal). PDF: `src/utils/invoiceDoc.ts` (`composeInvoiceHtml` pur+escapat, reutilizează printDoc;
   print-to-PDF, fără deps). Colecție `clients/{uid}/invoices/{id}` (read owner+admin, write admin — validat în reguli).
   UI: tab „Facturi" în /admin (`InvoicesPanel`) — alegi client → listă + editor (părți/linii/TVA/status, totaluri live) +
-  PDF. Test `scripts/test-invoice.ts`. e-Factura ANAF + numerotare auto + portal client = felii viitoare. NU e gated încă
-  pe pachet (unealtă operator). Restul Verticalei 2 (CRM intern, comunicare, automatizări CRM) = neînceput.
+  PDF. Test `scripts/test-invoice.ts`. **Numerotare automată atomică (ACTIV 20.06.2026):** cerință legală RO (numere
+  secvențiale per serie, fără goluri, ale emitentului). Callable `issueInvoice`→`performIssueInvoice` (Admin SDK) rulează O
+  SINGURĂ tranzacție: factură idempotentă dacă e numerotată, altfel contor `invoiceCounters/{serie}` (GLOBAL pe agenție, NU
+  per client) → atribuie număr + increment în aceeași tranzacție ⇒ gap-free; mută draft→sent + `issuedNumberAt`. Seed la
+  prima factură a seriei din `appConfig/invoiceSeller.startNumber` (continuare legacy). **Integritate:** seria = cheia
+  contorului → bijecție `[A-Za-z0-9_-]` (`safeSeries` în coerce + reguli `matches` + UI strip + gardă `BAD_SERIES`); contor
+  corupt → `nextInvoiceNumber` aruncă `CORRUPT_COUNTER` (NU resetează la 1 — ar duplica); reguli: clientul nu setează/schimbă
+  `number` (create number=='', update păstrează), serie+status blocate după numerotare, `invoiceCounters` write:false,
+  `hasOnly` whitelist. **Contorul depinde de backup/PITR** (responsabilitate Andrei — vezi mai jos). e-Factura ANAF + storno/
+  corecții + reset anual + portal client = felii viitoare. NU e gated încă pe pachet (unealtă operator). Restul Verticalei 2
+  (CRM intern, comunicare, automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

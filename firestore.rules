@@ -142,9 +142,14 @@ service cloud.firestore {
       }
 
       // Facturi / Proforme (Verticala 2, modul crm) — create/editate de operatori; clientul le CITEȘTE (read owner).
+      // NUMEROTAREA e EXCLUSIV server-side (callable issueInvoice / Admin SDK): clientul NU poate seta/schimba
+      // `number` (create cu number=''; update păstrează numberul existent), iar `series` se BLOCHEAZĂ după numerotare.
+      // Astfel secvența legală fără goluri nu poate fi falsificată din client.
       match /invoices/{id} {
         allow read: if signedInAs(uid) || isAdmin();
-        allow create, update: if isAdmin()
+        allow create: if isAdmin()
+          && request.resource.data.keys().hasOnly(['schema', 'kind', 'series', 'number', 'issuedAt', 'dueAt',
+             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt'])
           && request.resource.data.schema == 1
           && request.resource.data.kind in ['proforma', 'factura']
           && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled']
@@ -152,7 +157,27 @@ service cloud.firestore {
           && request.resource.data.vatRate >= 0 && request.resource.data.vatRate <= 100
           && request.resource.data.items is list && request.resource.data.items.size() <= 50
           && request.resource.data.seller is map && request.resource.data.buyer is map
-          && request.resource.data.currency is string && request.resource.data.currency.size() <= 8;
+          && request.resource.data.currency is string && request.resource.data.currency.size() <= 8
+          // seria = cheia contorului → doar [A-Za-z0-9_-] (bijecție serie↔contor, fără goluri).
+          && request.resource.data.series is string && request.resource.data.series.size() <= 20
+          && request.resource.data.series.matches('[A-Za-z0-9_-]*')
+          && request.resource.data.number == ''; // facturi noi = nenumerotate; numărul vine din callable
+        allow update: if isAdmin()
+          && request.resource.data.keys().hasOnly(['schema', 'kind', 'series', 'number', 'issuedAt', 'dueAt',
+             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt'])
+          && request.resource.data.schema == 1
+          && request.resource.data.kind in ['proforma', 'factura']
+          && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled']
+          && request.resource.data.vatRate is number
+          && request.resource.data.vatRate >= 0 && request.resource.data.vatRate <= 100
+          && request.resource.data.items is list && request.resource.data.items.size() <= 50
+          && request.resource.data.seller is map && request.resource.data.buyer is map
+          && request.resource.data.currency is string && request.resource.data.currency.size() <= 8
+          && request.resource.data.series is string && request.resource.data.series.size() <= 20
+          && request.resource.data.series.matches('[A-Za-z0-9_-]*')
+          && request.resource.data.number == resource.data.number // clientul nu schimbă NICIODATĂ numărul
+          && (resource.data.number == '' || request.resource.data.series == resource.data.series) // serie blocată după numerotare
+          && (resource.data.number == '' || request.resource.data.status != 'draft'); // numerotată ⇒ nu revine la draft
         allow delete: if isAdmin();
       }
 
@@ -299,7 +324,10 @@ service cloud.firestore {
           && request.resource.data.defaultVatRate is number
           && request.resource.data.defaultVatRate >= 0 && request.resource.data.defaultVatRate <= 100
           && request.resource.data.defaultSeries is string && request.resource.data.defaultSeries.size() <= 20
-          && request.resource.data.defaultCurrency is string && request.resource.data.defaultCurrency.size() <= 8)
+          && request.resource.data.defaultSeries.matches('[A-Za-z0-9_-]*')
+          && request.resource.data.defaultCurrency is string && request.resource.data.defaultCurrency.size() <= 8
+          && (!('startNumber' in request.resource.data) || (request.resource.data.startNumber is int
+            && request.resource.data.startNumber >= 0 && request.resource.data.startNumber <= 100000000)))
         // appConfig/selfMarketing = plafoane fair-share AI Self Marketing (pool entitled vs trial) + gate email-verificat.
         || (docId == 'selfMarketing'
           && request.resource.data.entitledDailyCap is int
@@ -308,6 +336,13 @@ service cloud.firestore {
           && request.resource.data.trialDailyCap >= 0 && request.resource.data.trialDailyCap <= 100000
           && request.resource.data.requireEmailVerified is bool)
       );
+    }
+
+    // Contoare de numerotare facturi (per serie, GLOBALE pe agenție). Scrise EXCLUSIV de callable-ul issueInvoice
+    // (Admin SDK, tranzacție atomică, fără goluri). Operatorul le poate CITI (vezi „următorul număr"); nimeni nu scrie din client.
+    match /invoiceCounters/{key} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ───────── Landing Pages (LP Studio) ─────────

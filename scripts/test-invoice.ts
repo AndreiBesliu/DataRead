@@ -1,6 +1,6 @@
 // Suite headless: Facturi/Proforme — coerce (schema/default/clamp) + calcul PUR al totalurilor + compunere HTML escapată.
 import {
-  coerceToInvoice, invoiceTotals, lineTotal, coerceToInvoiceConfig, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
+  coerceToInvoice, invoiceTotals, lineTotal, coerceToInvoiceConfig, safeSeries, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
 } from '../src/types/invoice';
 import { composeInvoiceHtml, type InvoiceLabels } from '../src/utils/invoiceDoc';
 
@@ -54,6 +54,20 @@ check('totaluri: fără articole → 0', (() => { const t = invoiceTotals(coerce
   check('config: null → schema 1 + seller gol + RON + vat 19', c.schema === 1 && c.seller.name === '' && c.defaultCurrency === 'RON' && c.defaultVatRate === INVOICE_DEFAULT_VAT);
   check('config: seller + serie păstrate', (() => { const x = coerceToInvoiceConfig({ seller: { name: 'DataRead SRL', cui: 'RO123' }, defaultSeries: 'DR' }); return x.seller.name === 'DataRead SRL' && x.seller.cui === 'RO123' && x.defaultSeries === 'DR'; })());
   check('config: vatRate clamp', coerceToInvoiceConfig({ defaultVatRate: 500 }).defaultVatRate === 100);
+  // startNumber (numerotare): absent → 1; păstrat; negativ → 1; fracție → floor; clamp la maxim.
+  check('config: startNumber absent → 1', coerceToInvoiceConfig({}).startNumber === 1);
+  check('config: startNumber păstrat', coerceToInvoiceConfig({ startNumber: 248 }).startNumber === 248);
+  check('config: startNumber negativ/0 → 1', coerceToInvoiceConfig({ startNumber: -5 }).startNumber === 1 && coerceToInvoiceConfig({ startNumber: 0 }).startNumber === 1);
+  check('config: startNumber fracție → floor', coerceToInvoiceConfig({ startNumber: 12.9 }).startNumber === 12);
+}
+
+// ── serie = cheia contorului → bijecție [A-Za-z0-9_-] (altfel serii distincte ar partaja contorul → goluri) ──
+{
+  check('safeSeries: păstrează caractere sigure', safeSeries('DR-2026_A') === 'DR-2026_A');
+  check('safeSeries: strip spații/slash/punct/diacritice', safeSeries('A/B 2026.ă') === 'AB2026');
+  check('safeSeries: non-string → gol', safeSeries(42) === '' && safeSeries(null) === '');
+  check('coerce factură: serie nesigură strip-uită', coerceToInvoice({ series: 'A/B.C' }).series === 'ABC');
+  check('coerce config: defaultSeries nesigură strip-uită', coerceToInvoiceConfig({ defaultSeries: 'D R' }).defaultSeries === 'DR');
 }
 
 console.log(`\ninvoice: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);
