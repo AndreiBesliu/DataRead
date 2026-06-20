@@ -704,6 +704,8 @@ const ro = {
       lbPlatform: 'Platformă (source)',
       lbMedium: 'Tip asset (medium)',
       lbCampaign: 'Campanie',
+      lbCampaignFree: '— campanie liberă —',
+      lbCampaignLinked: 'Legat de o campanie din Marketing Center',
       lbContent: 'Versiune (content)',
       lbTerm: 'Termen (opțional)',
       lbLabel: 'Etichetă internă',

@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, onSnapshot, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  buildLpUrl, cleanAttr, variantKey, hasAttr,
+  buildLpUrl, cleanAttr, variantKey, hasAttr, sanitizeVariantPart,
   coerceToLpVariant, variantConvRate, coerceKnownVariants,
   LP_MEDIA, LP_PLATFORMS, LP_KNOWN_VARIANTS_MAX, LP_LINK_LABEL_MAX, type LpVariant,
 } from '../types/lpAttribution';
@@ -23,8 +23,11 @@ interface SavedLink {
   medium: string;
   campaign: string;
   content: string;
+  campaignId: string;
   createdAtMs: number;
 }
+
+interface CampaignOpt { id: string; name: string; clientUid: string }
 
 function tsMs(v: unknown): number {
   const t = v as { toMillis?: () => number } | null;
@@ -34,6 +37,9 @@ function tsMs(v: unknown): number {
 export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: string }) {
   const { t } = useTranslation();
   const [knownCount, setKnownCount] = useState(0); // live din doc-ul LP (nu prop stale) — pt. plafon + etichetă
+  const [lpClientUid, setLpClientUid] = useState(''); // pt. a filtra campaniile la clientul LP-ului
+  const [campaignOpts, setCampaignOpts] = useState<CampaignOpt[]>([]);
+  const [campaignId, setCampaignId] = useState(''); // '' = campanie liberă (UTM tastat de mână)
   const [source, setSource] = useState('');
   const [medium, setMedium] = useState('');
   const [campaign, setCampaign] = useState('');
@@ -51,19 +57,31 @@ export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: 
   const key = useMemo(() => variantKey(attr), [attr]);
   const valid = hasAttr(cleanAttr(attr));
 
-  // Allowlist-ul LIVE de pe LP (reflectă salvările din sesiune) — pt. plafon corect + contor exact.
+  // Allowlist-ul LIVE de pe LP (reflectă salvările din sesiune) — pt. plafon corect + contor exact. + clientUid LP.
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'landingPages', slug), (snap) => {
-      setKnownCount(Object.keys(coerceKnownVariants(snap.data()?.knownVariants)).length);
+      const d = snap.data();
+      setKnownCount(Object.keys(coerceKnownVariants(d?.knownVariants)).length);
+      setLpClientUid(typeof d?.clientUid === 'string' ? d.clientUid : '');
     });
     return unsub;
   }, [slug]);
+
+  // Campaniile din Marketing Center (pt. dropdown). Dacă LP-ul e legat de un client, arătăm DOAR campaniile lui.
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'campaigns'), (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, name: String(d.data().name || d.id), clientUid: String(d.data().clientUid || '') }));
+      const list = lpClientUid ? all.filter((c) => c.clientUid === lpClientUid) : all;
+      setCampaignOpts(list.sort((a, b) => a.name.localeCompare(b.name, 'ro')));
+    }, () => setCampaignOpts([]));
+    return unsub;
+  }, [lpClientUid]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'landingPages', slug, 'links'), (snap) => {
       const next = snap.docs.map((d) => {
         const x = d.data();
-        return { id: d.id, label: String(x.label || ''), url: String(x.url || ''), variantKey: String(x.variantKey || ''), source: String(x.source || ''), medium: String(x.medium || ''), campaign: String(x.campaign || ''), content: String(x.content || ''), createdAtMs: tsMs(x.createdAt) };
+        return { id: d.id, label: String(x.label || ''), url: String(x.url || ''), variantKey: String(x.variantKey || ''), source: String(x.source || ''), medium: String(x.medium || ''), campaign: String(x.campaign || ''), content: String(x.content || ''), campaignId: String(x.campaignId || ''), createdAtMs: tsMs(x.createdAt) };
       });
       next.sort((a, b) => b.createdAtMs - a.createdAtMs);
       setLinks(next);
@@ -86,6 +104,15 @@ export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: 
     return () => { cancel = true; };
   }, [slug, links.length]);
 
+  // Alegerea unei campanii din dropdown → fixează campaignId + pre-completează UTM-ul campaign cu numele sanitizat.
+  function pickCampaign(id: string) {
+    setCampaignId(id);
+    if (id) {
+      const c = campaignOpts.find((x) => x.id === id);
+      if (c) setCampaign(sanitizeVariantPart(c.name));
+    }
+  }
+
   async function copy(text: string, id: string) {
     try { await navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(''), 1200); } catch { /* ignore */ }
   }
@@ -103,12 +130,12 @@ export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: 
         schema: 1,
         label: (label || `${a.source}/${a.medium}/${a.content}`).slice(0, LP_LINK_LABEL_MAX),
         source: a.source, medium: a.medium, campaign: a.campaign, content: a.content, term: a.term,
-        url, variantKey: key, createdAt: serverTimestamp(),
+        url, variantKey: key, campaignId, createdAt: serverTimestamp(),
       });
       // Allowlist pe LP: numai variantele cunoscute primesc contor dedicat (restul → __other).
       batch.update(doc(db, 'landingPages', slug), { [`knownVariants.${key}`]: true });
       await batch.commit();
-      setCampaign(''); setContent(''); setTerm(''); setLabel('');
+      setCampaign(''); setContent(''); setTerm(''); setLabel(''); setCampaignId('');
     } catch {
       setErr(t('admin.lpStudio.lbErrSave'));
     } finally {
@@ -150,7 +177,19 @@ export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: 
             {LP_MEDIA.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         ))}
-        {field(t('admin.lpStudio.lbCampaign'), <input style={inp} value={campaign} placeholder="lansare-iarna" onChange={(e) => setCampaign(e.target.value)} />)}
+        {field(t('admin.lpStudio.lbCampaign'), (
+          campaignOpts.length > 0 ? (
+            <>
+              <select style={{ ...inp, marginBottom: campaignId ? 0 : 6 }} value={campaignId} onChange={(e) => pickCampaign(e.target.value)}>
+                <option value="">{t('admin.lpStudio.lbCampaignFree')}</option>
+                {campaignOpts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {!campaignId && <input style={inp} value={campaign} placeholder="lansare-iarna" onChange={(e) => setCampaign(e.target.value)} />}
+            </>
+          ) : (
+            <input style={inp} value={campaign} placeholder="lansare-iarna" onChange={(e) => setCampaign(e.target.value)} />
+          )
+        ))}
         {field(t('admin.lpStudio.lbContent'), <input style={inp} value={content} placeholder="v2" onChange={(e) => setContent(e.target.value)} />)}
         {field(t('admin.lpStudio.lbTerm'), <input style={inp} value={term} placeholder="" onChange={(e) => setTerm(e.target.value)} />)}
         {field(t('admin.lpStudio.lbLabel'), <input style={inp} value={label} placeholder={t('admin.lpStudio.lbLabelPh')} onChange={(e) => setLabel(e.target.value)} />)}
@@ -186,7 +225,10 @@ export default function LpLinkBuilder({ slug, origin }: { slug: string; origin: 
                 return (
                   <tr key={l.id}>
                     <td style={td}>{l.label || <span style={{ color: 'var(--fg-1)' }}>—</span>}</td>
-                    <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--fg-1)' }}>{[l.source, l.medium, l.campaign, l.content].filter((x) => x && x !== '-').join(' · ')}</td>
+                    <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--fg-1)' }}>
+                      {l.campaignId ? <span title={t('admin.lpStudio.lbCampaignLinked')} style={{ marginRight: 4 }}>📊</span> : null}
+                      {[l.source, l.medium, l.campaign, l.content].filter((x) => x && x !== '-').join(' · ')}
+                    </td>
                     <td style={tdNum}>{v ? fmtN(v.visits) : '0'}</td>
                     <td style={tdNum}>{v ? fmtN(v.submissions) : '0'}</td>
                     <td style={{ ...tdNum, color: 'var(--fg-1)' }}>{v ? fmtPct(variantConvRate(v)) : '—'}</td>

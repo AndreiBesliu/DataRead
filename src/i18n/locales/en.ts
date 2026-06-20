@@ -697,6 +697,8 @@ const en: typeof ro = {
       lbPlatform: 'Platform (source)',
       lbMedium: 'Asset type (medium)',
       lbCampaign: 'Campaign',
+      lbCampaignFree: '— free campaign —',
+      lbCampaignLinked: 'Linked to a Marketing Center campaign',
       lbContent: 'Version (content)',
       lbTerm: 'Term (optional)',
       lbLabel: 'Internal label',

@@ -1593,6 +1593,20 @@ normaliser, secretele niciodată în chat/repo.
 > **Self Marketing = paritate funcțională cu AI Marketing Explorer pe flux:** Profil→Oportunități→Strategie→Detalii→Execuție,
 > cu export PDF/copy peste tot. Rămas (non-flux): S4 bibliotecă multi-firmă, S5 credite cumpărabile (Stripe).
 
+**2026-06-20 - Task Completed — B1: Link Builder pe campanie (legare link LP ↔ campanie)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: direcții noi B+E+D, „continuă" → B1 (din #55, planificat de mult). Primul pas al feature-ului
+> „campaign-aware Link Builder + termen de valabilitate" — legarea linkurilor LP de campaniile reale din Marketing Center.
+> - `src/admin/LpLinkBuilder.tsx`: dropdown nou „Campanie" cu campaniile din Marketing Center (filtrate la clientUid-ul
+>   LP-ului dacă e legat; altfel toate). Alegerea unei campanii fixează `campaignId` pe link + pre-completează UTM-ul
+>   `campaign` cu numele sanitizat (`sanitizeVariantPart`); „— campanie liberă —" revine la text liber. Linkurile legate
+>   primesc un marcaj 📊 în tabel.
+> - `firestore.rules`: `links/{id}` hasOnly += `campaignId` (opțional, string ≤128).
+> - i18n `admin.lpStudio.lbCampaignFree`/`lbCampaignLinked` ro+en.
+> Verificat: 15/15 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără functions).
+> **Rămas din #55 (B2):** termen de valabilitate pe campanie → `serveLp` comută pe pagină „ofertă expirată" + tracking
+> diferențiat (atinge serveLp + schema campaniei — felie separată). Apoi E1 (backstop orar automatizări) → E2 (split bundle).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
