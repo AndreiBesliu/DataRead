@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
   updateProfile,
   getAdditionalUserInfo,
   deleteUser,
@@ -38,6 +39,8 @@ export interface Profile {
   displayName: string | null;
   email: string | null;
   photoURL: string | null;
+  /** Din Firebase Auth — conturile Google sunt mereu true; email/parolă devin true după click-ul pe link. */
+  emailVerified: boolean;
 }
 
 interface AuthState {
@@ -60,6 +63,10 @@ interface AuthState {
   signInEmail: (email: string, password: string) => Promise<void>;
   signUpEmail: (email: string, password: string, displayName?: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  /** Retrimite emailul de verificare către utilizatorul curent (Self Marketing cere email verificat). */
+  resendVerification: () => Promise<void>;
+  /** Reîncarcă utilizatorul Firebase (după ce a dat click pe link) → actualizează emailVerified în store. */
+  refreshUser: () => Promise<void>;
   signOutUser: () => Promise<void>;
 }
 
@@ -143,10 +150,15 @@ export const useAuthStore = create<AuthState>((set) => ({
             displayName,
             email: cred.user.email,
             photoURL: cred.user.photoURL,
+            emailVerified: cred.user.emailVerified,
           },
         });
       }
+      // Trimite emailul de verificare la înregistrare (conturile email/parolă pornesc neverificate;
+      // Self Marketing AI cere email verificat). Eșecul nu blochează signup-ul.
+      try { if (cred.user && !cred.user.emailVerified) await sendEmailVerification(cred.user); } catch { /* best-effort */ }
       onAuthed(cred, 'password', true); // formularul de signup cere checkbox-ul de termeni
+      set({ info: 'auth.verifySent' });
     } catch (e) {
       set({ error: friendlyErrorKey(e) });
     } finally {
@@ -163,6 +175,37 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ error: friendlyErrorKey(e) });
     } finally {
       set({ busy: false });
+    }
+  },
+
+  resendVerification: async () => {
+    set({ busy: true, error: null, info: null });
+    try {
+      if (auth.currentUser && !auth.currentUser.emailVerified) {
+        await sendEmailVerification(auth.currentUser);
+        set({ info: 'auth.verifySent' });
+      }
+    } catch (e) {
+      set({ error: friendlyErrorKey(e) });
+    } finally {
+      set({ busy: false });
+    }
+  },
+
+  refreshUser: async () => {
+    try {
+      const u = auth.currentUser;
+      if (!u) return;
+      await u.reload();
+      // reload() actualizează User.emailVerified, dar NU mintează un token nou; gate-ul server citește
+      // claim-ul `email_verified` din ID token (cache ~1h). Forțăm un token proaspăt ca următorul callable
+      // să poarte starea verificată (același tipar ca entitlementStore.getIdToken(true)).
+      if (u.emailVerified) { try { await u.getIdToken(true); } catch { /* best-effort */ } }
+      set({
+        user: { uid: u.uid, displayName: u.displayName, email: u.email, photoURL: u.photoURL, emailVerified: u.emailVerified },
+      });
+    } catch (e) {
+      console.warn('refreshUser failed', e);
     }
   },
 

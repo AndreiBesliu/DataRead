@@ -598,6 +598,32 @@ console.log('\nQ2) paritate constante Self Marketing TS↔JS');
   ok(eq(C.STRATEGY_DIRECTION_LIMITS, fns.STRATEGY_DIRECTION_LIMITS), 'STRATEGY_DIRECTION_LIMITS identic TS↔JS');
   ok(eq(C.INDUSTRIES, fns.SELF_INDUSTRIES), 'INDUSTRIES (TS) === SELF_INDUSTRIES (JS allowlist)');
   ok(C.SELF_FREE_TOTAL === fns.SELF_FREE_TOTAL && C.SELF_DAILY_CAP === fns.SELF_DAILY_CAP, 'SELF_FREE_TOTAL/SELF_DAILY_CAP identice TS↔JS');
+  // Config fair-share: coerce + selectorul de coș trebuie să fie IDENTICE TS↔JS (altfel plafoanele/poolurile diverg).
+  ok(eq(C.SELF_MKT_CONFIG_DEFAULT, fns.SELF_MKT_CONFIG_DEFAULT), 'SELF_MKT_CONFIG_DEFAULT identic TS↔JS');
+  for (const raw of [null, {}, { entitledDailyCap: -5, trialDailyCap: 999999999, requireEmailVerified: false }, { trialDailyCap: 33.7 }, 'gunoi', { requireEmailVerified: 'x' }]) {
+    ok(eq(C.coerceToSelfMarketingConfig(raw), fns.coerceSelfMarketingConfigServer(raw)), `coerce config Self Marketing identic TS↔JS: ${JSON.stringify(raw)}`);
+  }
+  for (const cfg of [C.SELF_MKT_CONFIG_DEFAULT, { entitledDailyCap: 10, trialDailyCap: 3 }]) {
+    ok(eq(C.selfPoolFor(true, cfg), fns.selfPoolFor(true, cfg)) && eq(C.selfPoolFor(false, cfg), fns.selfPoolFor(false, cfg)), 'selfPoolFor identic TS↔JS (entitled + trial)');
+  }
+  ok(C.SELF_POOL_ENTITLED_DOC === fns.SELF_POOL_ENTITLED_DOC && C.SELF_POOL_TRIAL_DOC === fns.SELF_POOL_TRIAL_DOC, 'docId-uri coșuri identice TS↔JS');
+}
+
+// ── selfGlobalPoolFor: CITEȘTE clients/{uid}.entitlement și clasifică pe `active` (recalculat), NU pe `status` brut.
+// Acoperă bug-ul prins de review: un abonament expirat (status:'active' dar active:false) NU trebuie să cadă pe coșul
+// rezervat plătitorilor; un `trialing` valid (active:true) trebuie să cadă pe coșul entitled. ──
+console.log('\nR2) selfGlobalPoolFor (clasificare coș după entitlement.active)');
+{
+  const cfg = fns.SELF_MKT_CONFIG_DEFAULT;
+  const mkDb = (ent) => ({ collection: () => ({ doc: () => ({ async get() { return { exists: ent !== null, data: () => (ent === null ? {} : { entitlement: ent }) }; } }) }) });
+  const docOf = async (ent) => (await fns.selfGlobalPoolFor(mkDb(ent), 'u', cfg)).docId;
+  ok(await docOf({ active: true, status: 'active' }) === fns.SELF_POOL_ENTITLED_DOC, 'activ (active:true) → coș entitled');
+  ok(await docOf({ active: false, status: 'active' }) === fns.SELF_POOL_TRIAL_DOC, 'expirat (status:active dar active:false) → coș trial (NU înfometează plătitorii)');
+  ok(await docOf({ active: true, status: 'trialing' }) === fns.SELF_POOL_ENTITLED_DOC, 'trialing valid (active:true) → coș entitled');
+  ok(await docOf(null) === fns.SELF_POOL_TRIAL_DOC, 'fără entitlement → coș trial');
+  ok(await docOf({ status: 'active' }) === fns.SELF_POOL_TRIAL_DOC, 'active lipsă → coș trial (fail-safe)');
+  const errDb = { collection: () => ({ doc: () => ({ async get() { throw new Error('boom'); } }) }) };
+  ok((await fns.selfGlobalPoolFor(errDb, 'u', cfg)).docId === fns.SELF_POOL_TRIAL_DOC, 'eroare la citire → coș trial (fail-closed pe cost)');
 }
 
 // ── TEST R: quota/refund Self Marketing (tranzacții pe Firestore în memorie nested). Acoperă calea
@@ -606,7 +632,6 @@ console.log('\nR) consumeSelfQuota / consumeGlobalSelfQuota / refundSelfQuota (t
 {
   const TODAY = new Date().toISOString().slice(0, 10);
   const QPATH = 'clients/u1/selfMarketing/quota';
-  const GPATH = 'aiUsage/__selfGlobal';
   // Firestore în memorie cu căi nested (clients/{uid}/selfMarketing/quota) + runTransaction.
   function makeSelfStore(seed) {
     const store = new Map(Object.entries(seed || {}));
@@ -647,14 +672,25 @@ console.log('\nR) consumeSelfQuota / consumeGlobalSelfQuota / refundSelfQuota (t
     const q = store.get(QPATH);
     ok(q.total === 2 && q.dayCount === 1 && q.day === TODAY, 'consumeSelfQuota: zi nouă → dayCount resetat, total crește');
   }
-  // Plafon GLOBAL: la SELF_GLOBAL_DAILY_CAP pe ziua curentă → resource-exhausted; cont nou → count=1.
+  // Plafon GLOBAL fair-share: coșul TRIAL atins → resource-exhausted; cont nou → count=1; iar coșul ENTITLED
+  // e SEPARAT (un trial epuizat NU blochează un client plătitor — fix-ul de DoS din auditul de cost).
   {
-    const { db } = makeSelfStore({ [GPATH]: { day: TODAY, count: fns.SELF_GLOBAL_DAILY_CAP } });
-    const e = await grab(() => fns.consumeGlobalSelfQuota(db));
-    ok(e && /platformei a fost atinsă/.test(e.message || ''), 'consumeGlobalSelfQuota: plafon global atins → resource-exhausted');
+    const cfg = fns.SELF_MKT_CONFIG_DEFAULT;
+    const trialPool = fns.selfPoolFor(false, cfg);
+    const entitledPool = fns.selfPoolFor(true, cfg);
+    const TPATH = `aiUsage/${trialPool.docId}`;
+    const EPATH = `aiUsage/${entitledPool.docId}`;
+    ok(trialPool.docId !== entitledPool.docId, 'fair-share: coșuri distincte (trial ≠ entitled)');
+    const { db } = makeSelfStore({ [TPATH]: { day: TODAY, count: trialPool.cap } });
+    const e = await grab(() => fns.consumeGlobalSelfQuota(db, trialPool));
+    ok(e && /platformei a fost atinsă/.test(e.message || ''), 'consumeGlobalSelfQuota: coș trial atins → resource-exhausted');
     const { db: db2, store: s2 } = makeSelfStore();
-    await fns.consumeGlobalSelfQuota(db2);
-    ok(s2.get(GPATH).count === 1, 'consumeGlobalSelfQuota: ziua nouă → count = 1');
+    await fns.consumeGlobalSelfQuota(db2, trialPool);
+    ok(s2.get(TPATH).count === 1, 'consumeGlobalSelfQuota: ziua nouă (trial) → count = 1');
+    // Coșul trial plin, dar plătitorul consumă din coșul lui rezervat → trece.
+    const { db: db3, store: s3 } = makeSelfStore({ [TPATH]: { day: TODAY, count: trialPool.cap } });
+    await fns.consumeGlobalSelfQuota(db3, entitledPool);
+    ok(s3.get(EPATH).count === 1 && s3.get(TPATH).count === trialPool.cap, 'fair-share: trial plin → plătitorul (coș entitled) trece');
   }
   // refundSelfQuota: decrementează total+dayCount, niciodată sub 0; doc inexistent = no-op fără throw.
   {

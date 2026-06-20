@@ -300,6 +300,13 @@ service cloud.firestore {
           && request.resource.data.defaultVatRate >= 0 && request.resource.data.defaultVatRate <= 100
           && request.resource.data.defaultSeries is string && request.resource.data.defaultSeries.size() <= 20
           && request.resource.data.defaultCurrency is string && request.resource.data.defaultCurrency.size() <= 8)
+        // appConfig/selfMarketing = plafoane fair-share AI Self Marketing (pool entitled vs trial) + gate email-verificat.
+        || (docId == 'selfMarketing'
+          && request.resource.data.entitledDailyCap is int
+          && request.resource.data.entitledDailyCap >= 0 && request.resource.data.entitledDailyCap <= 100000
+          && request.resource.data.trialDailyCap is int
+          && request.resource.data.trialDailyCap >= 0 && request.resource.data.trialDailyCap <= 100000
+          && request.resource.data.requireEmailVerified is bool)
       );
     }
 

@@ -55,7 +55,7 @@ const IMPACT_COLOR: Record<SelfImpact, string> = { high: '#1e7e34', medium: '#b2
 
 export default function SelfMarketingFunnel() {
   const { t } = useTranslation();
-  const { user, initializing } = useAuthStore();
+  const { user, initializing, resendVerification, refreshUser, busy: authBusy, info: authInfo } = useAuthStore();
   const [step, setStep] = useState(STEP_PROFILE);
   const [data, setData] = useState<SelfCompanyProfile>(emptySelfProfile());
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -148,7 +148,11 @@ export default function SelfMarketingFunnel() {
 
   // Mapează codul de eroare al callable-ului pe o cheie i18n.
   const errKey = (e: unknown): string => {
-    const code = String((e as { code?: string }).code ?? '');
+    const ex = e as { code?: string; message?: string };
+    // Santinela din gate-ul server (permission-denied + 'EMAIL_NOT_VERIFIED') — verificată ÎNAINTE de cod,
+    // fiindcă permission-denied/failed-precondition au alte înțelesuri în funnel.
+    if (String(ex.message ?? '').includes('EMAIL_NOT_VERIFIED')) return 'selfMarketing.emailVerifyNeeded';
+    const code = String(ex.code ?? '');
     if (code.endsWith('resource-exhausted')) return 'selfMarketing.genQuota';
     if (code.endsWith('unauthenticated')) return 'selfMarketing.genAuth';
     if (code.endsWith('invalid-argument')) return 'selfMarketing.genInvalid';
@@ -255,7 +259,8 @@ export default function SelfMarketingFunnel() {
     } catch (e) {
       console.warn('requestSelfAudit failed:', e);
       setAuditState('idle');
-      setMsg({ kind: 'err', key: 'selfMarketing.genError' });
+      // Prin errKey → un cont neverificat vede nudge-ul de verificare (EMAIL_NOT_VERIFIED), nu o eroare generică.
+      setMsg({ kind: 'err', key: errKey(e) });
     }
   };
 
@@ -372,6 +377,20 @@ export default function SelfMarketingFunnel() {
       <p style={{ color: 'var(--fg-1)', fontSize: 14, margin: '0 0 16px' }}>{t('selfMarketing.funnelIntro')}</p>
 
       <SelfStepper steps={STEPS} current={step} onSelect={setStep} />
+
+      {/* Gate email-verificat (UX): nudge pentru conturile neverificate. Enforcement-ul real e pe server;
+          aici doar îndrumăm — clientul nu cunoaște configul, așa că nu blocăm hard, ci explicăm clar. */}
+      {user && !user.emailVerified && (
+        <div role="status" style={{ fontSize: 13, margin: '12px 0', color: '#8a5a00', background: '#fff7e6', border: '1px solid #f0d99b', borderRadius: 8, padding: '10px 12px' }}>
+          <strong>{t('selfMarketing.verifyTitle')}</strong>
+          <p style={{ margin: '4px 0 8px' }}>{t('selfMarketing.verifyBody')}</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn" disabled={authBusy} onClick={() => void resendVerification()}>{t('selfMarketing.verifyResend')}</button>
+            <button className="btn" onClick={() => void refreshUser()}>{t('selfMarketing.verifyRefresh')}</button>
+            {authInfo === 'auth.verifySent' && <span style={{ color: '#1e7e34' }}>{t('auth.verifySent')}</span>}
+          </div>
+        </div>
+      )}
 
       {msg && (
         <div role={msg.kind === 'err' ? 'alert' : 'status'} style={{ fontSize: 13, marginBottom: 12, color: msg.kind === 'err' ? '#c0392b' : '#1e7e34', background: msg.kind === 'err' ? '#fdf0ef' : '#e8f5ec', border: `1px solid ${msg.kind === 'err' ? '#f0c4c0' : '#b5dcc0'}`, borderRadius: 8, padding: '8px 12px' }}>

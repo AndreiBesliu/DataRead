@@ -1711,6 +1711,34 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 16/16 suites + build (typecheck + paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: hosting + rules
 >   (serveLp re-actualizat de rewrite). **RĂMAS pe Andrei (consolă GCP):** backup zilnic Firestore + PITR; alertă de buget.
 
+**2026-06-20 - Task Completed — Hardening cost/abuz AI Self Marketing: coșuri fair-share + gate email-verificat**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „continua" (ultracode). Am rulat un workflow multi-agent de UNDERSTAND+AUDIT pe suprafața AI expusă
+> clienților (Self Marketing). Auditul mi-a CORECTAT premisa: App Check e DEJA live în cod (enforceAppCheck pe toate
+> self-callable-urile + cheie reCAPTCHA reală în .env.local → inline în build-ul local de deploy; absent doar din .env.ci,
+> unde oricum App Check se auto-sare sub Playwright). Gaura reală de cost: plafonul global era UN SINGUR coș partajat
+> (80/zi) → un atacator care fermentează conturi îl putea goli și BLOCA clienții PLĂTITORI (DoS prin epuizare).
+> - **Coșuri fair-share (fix structural):** două contoare pe zi — `aiUsage/__selfGlobalTrial` (trial/gratuit, plafon
+>   `trialDailyCap`=40) și `aiUsage/__selfGlobalEntitled` (clienți cu abonament activ, plafon `entitledDailyCap`=200).
+>   Costul de ABUZ e acum mărginit DOAR de coșul trial, independent de plătitori; abuzul trial NU mai poate înfometa
+>   clienții plătitori. Clasificare pe `entitlement.active` (boolean recalculat, NU `status` brut). Plafoanele + gate-ul =
+>   `appConfig/selfMarketing` (coerce unic `src/types/selfMarketingConfig.ts` + port JS, paritate e2e), editabile din /admin.
+> - **Gate email-verificat:** toate self-callable-urile AI (strategy/opportunities/details/execution) + `requestSelfAudit`
+>   cer `token.email_verified` când `requireEmailVerified` (config, implicit ON) → `permission-denied`+'EMAIL_NOT_VERIFIED'
+>   (ÎNAINTE de consumul de quotă). Descurajează farm-area cu adrese inexistente. Client: `Profile.emailVerified` +
+>   `sendEmailVerification` la signup + buton retrimite/reîmprospătează (cu `getIdToken(true)`) + banner în funnel +
+>   mapare errKey la nudge-ul de verificare. Conturile Google = deja verificate.
+> - **Tab „Sănătate & limite":** card editabil (plafoane + checkbox gate, dirty-ref anti-clobber) + consum azi pe ambele
+>   coșuri. (Plafonul `__selfGlobal` vechi de 80 eliminat.)
+> - **Review adversarial multi-agent (3 dimensiuni → verificare per-finding):** 8 constatări confirmate, reparate 7
+>   (clasificare pe `.active` nu `status` [HIGH] + token forțat la refreshUser [MED] + errKey pe requestAudit + dirty-ref
+>   în HealthPanel + constanta moartă); a 8-a (banner nag când gate-ul e oprit) = acceptată by design (clientul nu citește
+>   configul). Test nou R2 acoperă `selfGlobalPoolFor` (citirea entitlement-ului — bug-ul HIGH ar fi fost prins).
+> Verificat: 16/16 suites + e2e (paritate config TS↔JS + fair-share + R2 clasificare) + build + build:site + boot.
+>   DEPLOYED: functions (toate self-callable-urile + gate + coșuri) + hosting + rules (appConfig/selfMarketing).
+>   **RĂMAS pe Andrei (config, nu cod):** confirmă că App Check ENFORCEMENT e pornit în consola Firebase pt. Cloud
+>   Functions; backup zilnic Firestore + PITR; alertă de buget GCP.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

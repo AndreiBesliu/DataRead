@@ -20,6 +20,13 @@ import {
   DETAILS_LIMITS,
   type SelfCompanyProfile,
 } from '../src/types/selfMarketing';
+import {
+  coerceToSelfMarketingConfig,
+  selfPoolFor,
+  SELF_MKT_CONFIG_DEFAULT,
+  SELF_POOL_ENTITLED_DOC,
+  SELF_POOL_TRIAL_DOC,
+} from '../src/types/selfMarketingConfig';
 import ro from '../src/i18n/locales/ro';
 
 let failures = 0;
@@ -130,6 +137,36 @@ check('i18n: selfMarketing.errors.required există', keyExists('selfMarketing.er
 check('i18n: selfMarketing.errors.tooLong există', keyExists('selfMarketing.errors.tooLong'));
 check('i18n: selfMarketing.step_strategy + cta există', keyExists('selfMarketing.step_strategy') && keyExists('selfMarketing.cta'));
 check('i18n: seo.selfMarketingTitle + nav.selfMarketing există', keyExists('seo.selfMarketingTitle') && keyExists('nav.selfMarketing'));
+
+// ── Config fair-share AI (plafoane trial vs entitled + gate email) ──
+check('config: null → default', (() => {
+  const c = coerceToSelfMarketingConfig(null);
+  return c.schema === 1 && c.entitledDailyCap === SELF_MKT_CONFIG_DEFAULT.entitledDailyCap
+    && c.trialDailyCap === SELF_MKT_CONFIG_DEFAULT.trialDailyCap && c.requireEmailVerified === true;
+})());
+check('config: gunoi nu aruncă → default', (() => {
+  const c = coerceToSelfMarketingConfig('xyz' as unknown);
+  return c.entitledDailyCap === SELF_MKT_CONFIG_DEFAULT.entitledDailyCap && c.requireEmailVerified === true;
+})());
+check('config: plafoane clamp-uite (negativ→0, uriaș→max, fracție→floor)', (() => {
+  const c = coerceToSelfMarketingConfig({ entitledDailyCap: -7, trialDailyCap: 9_999_999_999, requireEmailVerified: false });
+  return c.entitledDailyCap === 0 && c.trialDailyCap === 100000 && c.requireEmailVerified === false;
+})());
+check('config: requireEmailVerified implicit STRICT (doar false explicit dezactivează)', (() => {
+  return coerceToSelfMarketingConfig({ requireEmailVerified: 'da' as unknown }).requireEmailVerified === true
+    && coerceToSelfMarketingConfig({}).requireEmailVerified === true
+    && coerceToSelfMarketingConfig({ requireEmailVerified: false }).requireEmailVerified === false;
+})());
+check('pool: entitlement activ → coș entitled (rezervat); altfel → coș trial (separat)', (() => {
+  const cfg = coerceToSelfMarketingConfig({ entitledDailyCap: 120, trialDailyCap: 30 });
+  const e = selfPoolFor(true, cfg); const tr = selfPoolFor(false, cfg);
+  return e.docId === SELF_POOL_ENTITLED_DOC && e.cap === 120
+    && tr.docId === SELF_POOL_TRIAL_DOC && tr.cap === 30 && e.docId !== tr.docId;
+})());
+check('i18n: admin.health limite + selfMarketing.emailVerifyNeeded + auth.verifySent există', (() => {
+  return keyExists('admin.health.limitsTitle') && keyExists('admin.health.trialCap') && keyExists('admin.health.entitledCap')
+    && keyExists('selfMarketing.emailVerifyNeeded') && keyExists('selfMarketing.verifyResend') && keyExists('auth.verifySent');
+})());
 
 console.log(`\nself-marketing: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);
 if (failures) process.exit(1);

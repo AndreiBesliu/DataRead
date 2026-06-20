@@ -504,10 +504,8 @@ exports.CHANNELS_SCHEMA = CHANNELS_SCHEMA;
 // (paritate cu src/types/selfMarketing.ts; functions e JS netipizat → testat în e2e ca buildChannelsPrompt).
 const SELF_FREE_TOTAL = 5; // explorări gratuite lifetime per client (paritate cu TS SELF_FREE_TOTAL)
 const SELF_DAILY_CAP = 2; // generări pe zi per client (paritate cu TS SELF_DAILY_CAP)
-// Plafon GLOBAL pe zi (toate conturile la un loc) — backstop absolut de cost contra account-farming:
-// chiar dacă un atacator creează conturi la nesfârșit, generările gratuite/zi nu pot depăși acest plafon.
-// (App Check + email-verified sunt hardening suplimentar recomandat — vezi DEVLOG.)
-const SELF_GLOBAL_DAILY_CAP = 80;
+// Plafon GLOBAL pe zi: ÎNLOCUIT (20.06.2026) de coșurile fair-share trial/entitled din appConfig/selfMarketing
+// (vezi coerceSelfMarketingConfigServer / selfPoolFor). App Check + email-verified = hardening suplimentar (live).
 const SELF_PROFILE_LIMITS = { companyName: 120, industryOther: 80, productsServices: 2000, audience: 1000, area: 200, competitors: 1000, budget: 200, goals: 2000 };
 const STRATEGY_DIRECTION_LIMITS = { title: 140, positioningAngle: 600, targetSegment: 400, channelMix: 600, keyMessages: 800, campaignIdeas: 1000, kpis: 400 };
 // Allowlist de domenii — paritate cu INDUSTRIES din src/types/onboarding.ts (TS coerce mapează la '' orice altceva).
@@ -518,7 +516,6 @@ exports.STRATEGY_DIRECTION_LIMITS = STRATEGY_DIRECTION_LIMITS;
 exports.SELF_INDUSTRIES = SELF_INDUSTRIES;
 exports.SELF_FREE_TOTAL = SELF_FREE_TOTAL;
 exports.SELF_DAILY_CAP = SELF_DAILY_CAP;
-exports.SELF_GLOBAL_DAILY_CAP = SELF_GLOBAL_DAILY_CAP;
 
 // Sanitizează profilul venit de la client (hard-cap fiecare câmp). Paritate cu coerceToSelfCompanyProfile (TS).
 function coerceSelfProfileServer(raw) {
@@ -779,6 +776,9 @@ exports.requestSelfAudit = onCall({ region: REGION, enforceAppCheck: APP_CHECK_E
   assertAuth(request);
   const uid = request.auth.uid;
   const db = admin.firestore();
+  // Gate email-verificat: altfel un cont neverificat e cea mai ieftină cale de a inunda pipeline-ul cu lead-uri
+  // junk (contactEmail = email neconfirmat, controlat de atacator). Idempotent oricum (un lead/uid).
+  assertEmailVerified(request, await readSelfMarketingConfig(db));
   const leadRef = db.collection('leads').doc(`self-${uid}`);
   const existing = await leadRef.get();
   if (existing.exists) {
@@ -844,15 +844,17 @@ async function consumeSelfQuota(uid, db = admin.firestore()) {
 exports.consumeSelfQuota = consumeSelfQuota;
 
 /** Plafon GLOBAL pe zi pentru generările self-serve — backstop de cost contra account-farming (uid-urile
- *  sunt gratis de creat, deci quota per-client nu mărginește costul total). NU se restituie niciodată. */
-async function consumeGlobalSelfQuota(db = admin.firestore()) {
+ *  sunt gratis de creat, deci quota per-client nu mărginește costul total). NU se restituie niciodată.
+ *  FAIR-SHARE: `pool` = {docId, cap} ales de selfPoolFor() după abonament — coșul TRIAL e separat de cel
+ *  REZERVAT plătitorilor, deci abuzul trial nu mai poate înfometa clienții cu entitlement activ. */
+async function consumeGlobalSelfQuota(db, pool) {
   const day = new Date().toISOString().slice(0, 10);
-  const ref = db.collection('aiUsage').doc('__selfGlobal');
+  const ref = db.collection('aiUsage').doc(pool.docId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const data = snap.exists ? snap.data() : {};
     const count = data.day === day ? Number(data.count) || 0 : 0;
-    if (count >= SELF_GLOBAL_DAILY_CAP) {
+    if (count >= pool.cap) {
       throw new HttpsError('resource-exhausted', 'Limita zilnică de explorări gratuite a platformei a fost atinsă. Reîncearcă mâine.');
     }
     tx.set(ref, { day, count: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
@@ -879,6 +881,70 @@ async function refundSelfQuota(uid, db = admin.firestore()) {
   }
 }
 exports.refundSelfQuota = refundSelfQuota;
+
+// ── Config cost AI Self Marketing (port JS al src/types/selfMarketingConfig.ts; paritate verificată e2e). ──
+const SELF_MKT_CONFIG_DEFAULT = { schema: 1, entitledDailyCap: 200, trialDailyCap: 40, requireEmailVerified: true };
+const SELF_MKT_CAP_MAX = 100000;
+const SELF_POOL_ENTITLED_DOC = '__selfGlobalEntitled';
+const SELF_POOL_TRIAL_DOC = '__selfGlobalTrial';
+function clampSelfCap(v, fallback) {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : fallback;
+  return Math.max(0, Math.min(SELF_MKT_CAP_MAX, n));
+}
+/** Normaliser unic (doc lipsă/gunoi/parțial → config valid). Nu aruncă. Paritate cu coerceToSelfMarketingConfig (TS). */
+function coerceSelfMarketingConfigServer(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  return {
+    schema: 1,
+    entitledDailyCap: clampSelfCap(d.entitledDailyCap, SELF_MKT_CONFIG_DEFAULT.entitledDailyCap),
+    trialDailyCap: clampSelfCap(d.trialDailyCap, SELF_MKT_CONFIG_DEFAULT.trialDailyCap),
+    requireEmailVerified: d.requireEmailVerified !== false, // implicit STRICT
+  };
+}
+/** Pur: coșul (doc contor + plafon) după statutul de abonament. Paritate cu selfPoolFor (TS). */
+function selfPoolFor(entitlementActive, cfg) {
+  return entitlementActive
+    ? { docId: SELF_POOL_ENTITLED_DOC, cap: cfg.entitledDailyCap }
+    : { docId: SELF_POOL_TRIAL_DOC, cap: cfg.trialDailyCap };
+}
+exports.coerceSelfMarketingConfigServer = coerceSelfMarketingConfigServer;
+exports.selfPoolFor = selfPoolFor;
+exports.SELF_MKT_CONFIG_DEFAULT = SELF_MKT_CONFIG_DEFAULT;
+exports.SELF_POOL_ENTITLED_DOC = SELF_POOL_ENTITLED_DOC;
+exports.SELF_POOL_TRIAL_DOC = SELF_POOL_TRIAL_DOC;
+
+/** Citește appConfig/selfMarketing (Admin SDK); lipsă/eroare → default coerce-uit. */
+async function readSelfMarketingConfig(db) {
+  let raw = {};
+  try { const s = await db.collection('appConfig').doc('selfMarketing').get(); if (s.exists) raw = s.data() || {}; } catch (e) { /* default */ }
+  return coerceSelfMarketingConfigServer(raw);
+}
+
+/** Determină coșul fair-share pentru un client (entitlement activ → pool rezervat, altfel pool trial).
+ *  Folosim `entitlement.active` (boolean RECALCULAT de recomputeEntitlement: include periodEnd > now), NU
+ *  `status` brut din Stripe — altfel un abonament EXPIRAT cu status:'active' dar active:false ar nimeri în coșul
+ *  rezervat plătitorilor (exact înfometarea pe care o prevenim), iar un `trialing` valid ar cădea pe trial.
+ *  Aceeași sursă de adevăr ca restul codului (client.ts / entitlementStore / AdminHome). */
+async function selfGlobalPoolFor(db, uid, config) {
+  let entitlementActive = false;
+  try {
+    const cSnap = await db.collection('clients').doc(uid).get();
+    const ent = (cSnap.exists && cSnap.data() && cSnap.data().entitlement) || {};
+    entitlementActive = ent.active === true;
+  } catch (e) { /* tratat ca trial dacă citirea eșuează */ }
+  return selfPoolFor(entitlementActive, config);
+}
+exports.selfGlobalPoolFor = selfGlobalPoolFor;
+
+/** Gate email-verificat pentru suprafața AI a clienților. Cod `permission-denied` + mesaj-santinelă
+ *  'EMAIL_NOT_VERIFIED' (clientul îl mapează la un mesaj prietenos; NU refolosim failed-precondition,
+ *  care înseamnă deja „lipsește strategia" în funnel). Conturile Google au email_verified=true. */
+function assertEmailVerified(request, config) {
+  if (config && config.requireEmailVerified
+      && request.auth && request.auth.token && request.auth.token.email_verified !== true) {
+    throw new HttpsError('permission-denied', 'EMAIL_NOT_VERIFIED');
+  }
+}
 
 // ── Helpers AI partajate (anti-drift: un singur loc pentru gate + apelul model/refuz/parse/erori) ──
 function assertAuth(request) {
@@ -1330,10 +1396,12 @@ if (AI_ENABLED) {
       // Quotă ÎNAINTE de model (input deja validat). Întâi per-client (trial), apoi plafonul global de zi
       // (backstop de cost). La orice eșec ulterior (global atins / model / parse) restituim slotul clientului
       // (nu e vina lui); plafonul global rămâne consumat ca backstop de cost contra spam-ului de eșecuri.
+      const selfCfg = await readSelfMarketingConfig(admin.firestore());
+      assertEmailVerified(request, selfCfg);
       await consumeSelfQuota(uid);
       let result;
       try {
-        await consumeGlobalSelfQuota();
+        await consumeGlobalSelfQuota(admin.firestore(), await selfGlobalPoolFor(admin.firestore(), uid, selfCfg));
         result = await runAiJson({
           schema: STRATEGY_SCHEMA,
           maxTokens: 8000,
@@ -1389,10 +1457,12 @@ if (AI_ENABLED) {
       if (profile.industry === 'other' && !profile.industryOther.trim()) {
         throw new HttpsError('invalid-argument', 'Specifică domeniul de activitate.');
       }
+      const selfCfg = await readSelfMarketingConfig(admin.firestore());
+      assertEmailVerified(request, selfCfg);
       await consumeSelfQuota(uid);
       let result;
       try {
-        await consumeGlobalSelfQuota();
+        await consumeGlobalSelfQuota(admin.firestore(), await selfGlobalPoolFor(admin.firestore(), uid, selfCfg));
         result = await runAiJson({
           schema: OPPORTUNITIES_SCHEMA,
           maxTokens: 7000,
@@ -1449,10 +1519,12 @@ if (AI_ENABLED) {
       const direction = directions[directionIndex];
       if (!direction) throw new HttpsError('invalid-argument', 'Direcția aleasă nu există în strategie.');
 
+      const selfCfg = await readSelfMarketingConfig(db);
+      assertEmailVerified(request, selfCfg);
       await consumeSelfQuota(uid);
       let result;
       try {
-        await consumeGlobalSelfQuota();
+        await consumeGlobalSelfQuota(db, await selfGlobalPoolFor(db, uid, selfCfg));
         result = await runAiJson({
           schema: DETAILS_SCHEMA,
           maxTokens: 8000,
@@ -1512,10 +1584,12 @@ if (AI_ENABLED) {
       const direction = directions[directionIndex];
       if (!direction) throw new HttpsError('invalid-argument', 'Direcția aleasă nu există în strategie.');
 
+      const selfCfg = await readSelfMarketingConfig(db);
+      assertEmailVerified(request, selfCfg);
       await consumeSelfQuota(uid);
       let result;
       try {
-        await consumeGlobalSelfQuota();
+        await consumeGlobalSelfQuota(db, await selfGlobalPoolFor(db, uid, selfCfg));
         result = await runAiJson({
           schema: EXECUTION_SCHEMA,
           maxTokens: 8000,

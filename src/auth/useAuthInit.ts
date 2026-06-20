@@ -16,7 +16,7 @@ export function useAuthInit(): void {
     const off = onAuthStateChanged(auth, (u) => {
       setUser(
         u
-          ? { uid: u.uid, displayName: u.displayName, email: u.email, photoURL: u.photoURL }
+          ? { uid: u.uid, displayName: u.displayName, email: u.email, photoURL: u.photoURL, emailVerified: u.emailVerified }
           : null
       );
       setInitializing(false);

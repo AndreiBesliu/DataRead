@@ -250,8 +250,20 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   Obiective) scris de client la `clients/{uid}/selfMarketing/profile` (reguli: doar `profile`, whitelist + plafoane
   pe toate câmpurile; `strategy`/`quota` server-only, client-read). **Protecție cost (AI expus clienților):** quotă
   de trial per-client `consumeSelfQuota` (5 lifetime + 2/zi, `clients/{uid}/selfMarketing/quota`, SEPARAT de aiUsage)
-  + **plafon GLOBAL/zi** `SELF_GLOBAL_DAILY_CAP=80` (`aiUsage/__selfGlobal`, backstop absolut nerestituit) contra
-  account-farming; `refundSelfQuota` restituie slotul clientului la eșec de model (global rămâne backstop). Input
+  + **plafon GLOBAL/zi FAIR-SHARE (ACTIV 20.06.2026):** DOUĂ coșuri separate — `aiUsage/__selfGlobalTrial` (trial/gratuit,
+  `trialDailyCap`=40) și `aiUsage/__selfGlobalEntitled` (clienți cu abonament activ, `entitledDailyCap`=200). Costul de ABUZ
+  e mărginit DOAR de coșul trial, independent de plătitori → abuzul trial NU mai poate înfometa clienții plătitori (DoS prin
+  epuizarea coșului unic, vechiul `__selfGlobal`=80, eliminat). Clasificarea coșului = `entitlement.active` (boolean
+  RECALCULAT din `recomputeEntitlement`, NU `status` brut — sursă unică cu client.ts/entitlementStore), via
+  `selfGlobalPoolFor`→`selfPoolFor` (pur, paritate TS↔JS e2e R2). `refundSelfQuota` restituie slotul per-client la eșec de
+  model (coșul global rămâne backstop). **Gate email-verificat (ACTIV 20.06.2026):** toate self-callable-urile AI +
+  `requestSelfAudit` cer `token.email_verified` când `requireEmailVerified` (config, implicit ON) → `permission-denied`+
+  'EMAIL_NOT_VERIFIED' ÎNAINTE de consumul de quotă (descurajează farm-area cu adrese inexistente; Google = deja verificat;
+  clientul: `Profile.emailVerified` + `sendEmailVerification` la signup + retrimite/`getIdToken(true)` + banner funnel).
+  Plafoanele + gate-ul = `appConfig/selfMarketing` (`src/types/selfMarketingConfig.ts` coerce + port JS; reguli read+write
+  admin), editabile din tab-ul „Sănătate & limite". **App Check e DEJA live** (enforceAppCheck pe self-callable-uri + cheie
+  reCAPTCHA în .env.local → inline la deploy local). RĂMAS pe Andrei (config): confirmă App Check ENFORCEMENT pornit în
+  consola Firebase. Input
   hard-cap server-side + output schema-constrained + clamp. Coerce TS `src/types/selfMarketing.ts` (paritate plafoane/
   industry-allowlist cu JS). UI: tab public `/self-marketing` (explicativ) → funnel logat `/app/self-marketing`
   (`SelfMarketingFunnel` + `SelfStepper` + `SelfProfileFields`). **Țintă: paritate cu marketingexplorer.ro (AI Marketing
@@ -275,12 +287,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   campanii fără raport luna curentă. `SuggestionsPanel` (tab nou în AdminHome) listenează `leads`/`campaigns`
   (limit 200/300), randează lista sortată pe severitate cu „Deschide" → schimbă tabul. Notă: la livrarea
   RBAC tabul Administratori lipsea din nav array (inaccesibil) — reparat odată cu acest tab.
-- **Tab „Sănătate" — observabilitate read-only (ACTIV 20.06.2026):** `src/admin/HealthPanel.tsx` = complementul
-  în-aplicație al plafonului `maxInstances`. Arată consumul AI de AZI prin backstop-urile globale (`aiUsage/__selfGlobal`
-  + `aiUsage/__automationGlobal`, contoare pe zi) + ultimele 50 erori raportate din aplicație (`errorReports`, onSnapshot
-  orderBy at desc). PUR citire — nu scrie nimic, nu consumă AI. Reguli: `errorReports` = `read: if isAdmin()` (date fără
-  PII de client: name/message/stack/kind/version/build/userAgent/lang/at; create whitelist, update/delete false);
-  `aiUsage` = read admin. RĂMAS pe Andrei (consola GCP, nu cod): backup zilnic Firestore + PITR; alertă de buget GCP.
+- **Tab „Sănătate & limite" (ACTIV 20.06.2026):** `src/admin/HealthPanel.tsx` = control center de cost AI + observabilitate.
+  **Setări (scriere admin):** card editabil pentru plafoanele fair-share Self Marketing + gate-ul email-verificat
+  (`appConfig/selfMarketing`; dirty-ref ca un snapshot remote să nu piardă editări nesalvate). **Observabilitate (citire):**
+  consumul AI de AZI pe coșurile `aiUsage/__selfGlobalTrial` + `__selfGlobalEntitled` + `__automationGlobal` (contoare/zi) +
+  ultimele 50 erori (`errorReports`, onSnapshot orderBy at desc). Reguli: `errorReports` = `read: if isAdmin()` (date fără
+  PII: name/message/stack/kind/version/build/userAgent/lang/at; create whitelist, update/delete false); `aiUsage` = read
+  admin; `appConfig/selfMarketing` = read+write admin (ramură de validare în reguli). RĂMAS pe Andrei (consola GCP/Firebase,
+  nu cod): App Check enforcement pornit; backup zilnic Firestore + PITR; alertă de buget GCP.
 - **Ghid/Documentație — CONȚINUT COMPLET (ACTIV 20.06.2026; schelet din 16.06):** `src/help/helpContent.ts` — ghid
   SEPARAT operator/admin (`OPERATOR_HELP`, 10 module: leads/suggestions/requests/opportunities/marketing/**connectors**/
   **automation**/lp/admins/pdf) vs client (`CLIENT_HELP`, 5 module), randate în /admin tab „Ghid" respectiv /app „/app/ghid".
