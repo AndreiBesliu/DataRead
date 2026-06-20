@@ -218,6 +218,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `dispatchAutomationEvent` prin `automations/{id}/rate/{targetId}` (fereastră fixă count+windowStart, reset orar; read
   admin/write false) — oprește oscilația (stateHash diferit) pe aceeași țintă. Garanții complete: dedupe + anti-buclă +
   cap AI + backstop orar. NOTĂ: F5b/F5c din nota de mai sus = ANULATE (clientul NU face automatizări — vezi Self Marketing).
+- **Verticala 2 „Lansare Soft" — PORNITĂ (20.06.2026, modul `crm`): Facturi & Proforme.** Prima felie a verticalei a
+  doua. Model `src/types/invoice.ts` (`Invoice` schema:1 + `coerceToInvoice` + `invoiceTotals` pur: rotunjire 2 zecimale/
+  linie, apoi TVA pe subtotal). PDF: `src/utils/invoiceDoc.ts` (`composeInvoiceHtml` pur+escapat, reutilizează printDoc;
+  print-to-PDF, fără deps). Colecție `clients/{uid}/invoices/{id}` (read owner+admin, write admin — validat în reguli).
+  UI: tab „Facturi" în /admin (`InvoicesPanel`) — alegi client → listă + editor (părți/linii/TVA/status, totaluri live) +
+  PDF. Test `scripts/test-invoice.ts`. e-Factura ANAF + numerotare auto + portal client = felii viitoare. NU e gated încă
+  pe pachet (unealtă operator). Restul Verticalei 2 (CRM intern, comunicare, automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

@@ -1635,6 +1635,24 @@ normaliser, secretele niciodată în chat/repo.
 > Suspense la hidratare (HTML-ul prerendat trebuie să fie identic cu primul render client). RĂMAS (E, opțional): chunk-ul
 > `firebase` (692KB) e tot pe calea critică (auth init); lazy-firebase = mai invaziv, lăsat pt. mai târziu.
 
+**2026-06-20 - Task Completed — D (Verticala 2): Facturi & Proforme (prima felie)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: B+E+D, a ales D = Facturi/Proforme — PRIMA felie a Verticalei 2 „Lansare Soft" (modul `crm`).
+> Felie verticală completă, pe arhitectura modulară (fără refactor de nucleu):
+> - `src/types/invoice.ts`: model `Invoice` (schema:1: kind proforma|factura, serie/număr, date, monedă, seller/buyer
+>   {name,cui,regCom,address,iban}, items[], vatRate, status draft|sent|paid|cancelled) + `coerceToInvoice` (clamp/default)
+>   + `invoiceTotals` PUR (rotunjire 2 zecimale per linie, apoi TVA pe subtotal) + plafoane.
+> - `src/utils/invoiceDoc.ts`: `composeInvoiceHtml` PUR + escapat (reutilizează escapeHtml/printHtmlDoc din printDoc) →
+>   document A4 brandat; `printInvoice` (print-to-PDF). e-Factura ANAF = fază ulterioară.
+> - `firestore.rules`: `clients/{uid}/invoices/{id}` read owner+admin (clientul își va vedea facturile), write admin
+>   (validat: kind/status în set, vatRate 0-100, items listă ≤50, seller/buyer map, currency).
+> - `src/admin/InvoicesPanel.tsx` + tab „Facturi" în AdminHome (între Automatizări și Landing): alegi client → listă
+>   documente + creează/editează (părți, linii cu totaluri live, TVA, status) + tipărește PDF. i18n `admin.invoices.*` ro+en.
+> - Test `scripts/test-invoice.ts` (coerce + totaluri exacte 25.56/4.86/30.42 + escaping HTML anti-injecție).
+> Verificat: 16/16 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără functions).
+> **Verticala 2 a pornit.** Felii viitoare: numerotare automată serie/număr; persistă datele furnizorului (config); status
+> plătit↔încasări; expunere facturi în portalul clientului; eventual e-Factura.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

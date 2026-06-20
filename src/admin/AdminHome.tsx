@@ -28,6 +28,7 @@ import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
 import MarketingCenter from './MarketingCenter';
 import AutomationsPanel from './AutomationsPanel';
+import InvoicesPanel from './InvoicesPanel';
 import LandingStudio from './LandingStudio';
 import SiteAdminPanel from './SiteAdminPanel';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
@@ -37,13 +38,14 @@ import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeS
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'suggestions' | 'marketing' | 'automation' | 'landing' | 'site' | 'admins' | 'help';
+type AdminView = 'leads' | 'suggestions' | 'marketing' | 'automation' | 'invoices' | 'landing' | 'site' | 'admins' | 'help';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
   suggestions: 'admin.navSuggestions',
   marketing: 'admin.navMarketing',
   automation: 'admin.navAutomation',
+  invoices: 'admin.navInvoices',
   landing: 'admin.navLanding',
   site: 'admin.navSite',
   admins: 'admin.navAdmins',
@@ -509,7 +511,7 @@ export default function AdminHome() {
 
       {/* Taburi (6 — wrap pe ecrane înguste ca să nu se reverse pe orizontală). */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'suggestions', 'marketing', 'automation', 'landing', 'site', 'admins', 'help'] as const).map((v) => (
+        {(['leads', 'suggestions', 'marketing', 'automation', 'invoices', 'landing', 'site', 'admins', 'help'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -534,6 +536,7 @@ export default function AdminHome() {
       {view === 'help' && <div style={{ marginTop: 12 }}><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{t('help.title')}</h2><HelpView sections={OPERATOR_HELP} /></div>}
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'automation' && <AutomationsPanel />}
+      {view === 'invoices' && <InvoicesPanel />}
       {view === 'landing' && <LandingStudio adminUid={user.uid} />}
       {view === 'site' && <SiteAdminPanel adminUid={user.uid} />}
       {view === 'admins' && <AdminsPanel myUid={user.uid} isOwner={myRole === 'owner' || user.uid === BOOTSTRAP_ADMIN_UID} />}

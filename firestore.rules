@@ -141,6 +141,21 @@ service cloud.firestore {
           && request.resource.data.status in ['open', 'done'];
       }
 
+      // Facturi / Proforme (Verticala 2, modul crm) — create/editate de operatori; clientul le CITEȘTE (read owner).
+      match /invoices/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow create, update: if isAdmin()
+          && request.resource.data.schema == 1
+          && request.resource.data.kind in ['proforma', 'factura']
+          && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled']
+          && request.resource.data.vatRate is number
+          && request.resource.data.vatRate >= 0 && request.resource.data.vatRate <= 100
+          && request.resource.data.items is list && request.resource.data.items.size() <= 50
+          && request.resource.data.seller is map && request.resource.data.buyer is map
+          && request.resource.data.currency is string && request.resource.data.currency.size() <= 8;
+        allow delete: if isAdmin();
+      }
+
       match /onboarding/{docId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)
