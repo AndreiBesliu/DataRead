@@ -1,6 +1,6 @@
 // Suite headless: Facturi/Proforme — coerce (schema/default/clamp) + calcul PUR al totalurilor + compunere HTML escapată.
 import {
-  coerceToInvoice, invoiceTotals, lineTotal, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
+  coerceToInvoice, invoiceTotals, lineTotal, coerceToInvoiceConfig, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
 } from '../src/types/invoice';
 import { composeInvoiceHtml, type InvoiceLabels } from '../src/utils/invoiceDoc';
 
@@ -46,6 +46,14 @@ check('totaluri: fără articole → 0', (() => { const t = invoiceTotals(coerce
   check('html: descrierea periculoasă e ESCAPATĂ', !html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;'));
   check('html: numele cu & < e escapat', html.includes('Firma &amp; Co &lt;x&gt;'));
   check('html: total prezent (10.00 + TVA)', html.includes('11.90 RON'));
+}
+
+// ── config furnizor (appConfig/invoiceSeller) ──
+{
+  const c = coerceToInvoiceConfig(null);
+  check('config: null → schema 1 + seller gol + RON + vat 19', c.schema === 1 && c.seller.name === '' && c.defaultCurrency === 'RON' && c.defaultVatRate === INVOICE_DEFAULT_VAT);
+  check('config: seller + serie păstrate', (() => { const x = coerceToInvoiceConfig({ seller: { name: 'DataRead SRL', cui: 'RO123' }, defaultSeries: 'DR' }); return x.seller.name === 'DataRead SRL' && x.seller.cui === 'RO123' && x.defaultSeries === 'DR'; })());
+  check('config: vatRate clamp', coerceToInvoiceConfig({ defaultVatRate: 500 }).defaultVatRate === 100);
 }
 
 console.log(`\ninvoice: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);

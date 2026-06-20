@@ -8,9 +8,9 @@ import { useTranslation } from 'react-i18next';
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import {
-  coerceToInvoice, invoiceTotals, lineTotal, emptyParty,
-  INVOICE_KINDS, INVOICE_STATUSES, INVOICE_ITEMS_MAX, INVOICE_DEFAULT_VAT,
-  type Invoice, type InvoiceKind, type InvoiceStatus, type InvoiceParty,
+  coerceToInvoice, invoiceTotals, lineTotal, emptyParty, coerceToInvoiceConfig,
+  INVOICE_KINDS, INVOICE_STATUSES, INVOICE_ITEMS_MAX,
+  type Invoice, type InvoiceKind, type InvoiceStatus, type InvoiceParty, type InvoiceConfig,
 } from '../types/invoice';
 import { printInvoice, type InvoiceLabels } from '../utils/invoiceDoc';
 
@@ -25,8 +25,17 @@ export default function InvoicesPanel() {
   const [uid, setUid] = useState('');
   const [list, setList] = useState<Row[]>([]);
   const [draft, setDraft] = useState<Invoice | null>(null);
+  const [cfg, setCfg] = useState<InvoiceConfig>(() => coerceToInvoiceConfig(null));
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [cfgSaved, setCfgSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    return onSnapshot(doc(db, 'appConfig', 'invoiceSeller'), (snap) => {
+      setCfg(coerceToInvoiceConfig(snap.exists() ? snap.data() : null));
+    }, () => { /* default */ });
+  }, []);
 
   useEffect(() => {
     return onSnapshot(query(collection(db, 'leads'), limit(500)), (snap) => {
@@ -53,13 +62,28 @@ export default function InvoicesPanel() {
 
   const startNew = (kind: InvoiceKind) => {
     setErr('');
+    const seller = cfg.seller.name ? cfg.seller : { ...emptyParty(), name: 'DataRead' };
     setDraft(coerceToInvoice({
-      kind, issuedAt: todayStr(), currency: 'RON', vatRate: INVOICE_DEFAULT_VAT, status: 'draft',
-      seller: { ...emptyParty(), name: 'DataRead' },
+      kind, issuedAt: todayStr(), currency: cfg.defaultCurrency, vatRate: cfg.defaultVatRate, status: 'draft',
+      series: cfg.defaultSeries,
+      seller: { ...seller },
       buyer: { ...emptyParty(), name: clientLabel },
       items: [{ description: '', qty: 1, unitPrice: 0 }],
     }));
   };
+
+  const saveConfig = async () => {
+    setBusy(true); setErr(''); setCfgSaved(false);
+    try {
+      await setDoc(doc(db, 'appConfig', 'invoiceSeller'), {
+        schema: 1, seller: cfg.seller, defaultSeries: cfg.defaultSeries, defaultVatRate: cfg.defaultVatRate, defaultCurrency: cfg.defaultCurrency,
+        updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || '',
+      }, { merge: true });
+      setCfgSaved(true); setTimeout(() => setCfgSaved(false), 2500);
+    } catch (e) { console.warn('saveConfig failed:', e); setErr(t('admin.invoices.err')); }
+    finally { setBusy(false); }
+  };
+  const patchCfgSeller = (p: Partial<InvoiceParty>) => setCfg((c) => ({ ...c, seller: { ...c.seller, ...p } }));
   const patch = (p: Partial<Invoice>) => setDraft((d) => (d ? { ...d, ...p } : d));
   const patchParty = (which: 'seller' | 'buyer', p: Partial<InvoiceParty>) => setDraft((d) => (d ? { ...d, [which]: { ...d[which], ...p } } : d));
   const patchItem = (i: number, p: Partial<{ description: string; qty: number; unitPrice: number }>) =>
@@ -125,6 +149,36 @@ export default function InvoicesPanel() {
       </div>
 
       {err ? <p role="alert" style={{ color: '#c0392b', fontSize: 13 }}>{err}</p> : null}
+
+      {/* Setări furnizor — salvate o singură dată; pre-completează facturile noi (fără retastare). */}
+      {!draft && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="btn" style={{ padding: '5px 11px', fontSize: 12 }} onClick={() => setCfgOpen((o) => !o)}>{t('admin.invoices.sellerSettings')} {cfgOpen ? '▲' : '▼'}</button>
+          {cfgOpen && (
+            <div style={{ ...card, marginTop: 8 }}>
+              <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 8px', maxWidth: 560 }}>{t('admin.invoices.sellerHint')}</p>
+              <div style={{ display: 'grid', gap: 6, maxWidth: 520 }}>
+                <div><label style={lbl}>{t('admin.invoices.name')}</label><input style={inp} value={cfg.seller.name} onChange={(e) => patchCfgSeller({ name: e.target.value })} /></div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.cui')}</label><input style={inp} value={cfg.seller.cui} onChange={(e) => patchCfgSeller({ cui: e.target.value })} /></div>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.regCom')}</label><input style={inp} value={cfg.seller.regCom} onChange={(e) => patchCfgSeller({ regCom: e.target.value })} /></div>
+                </div>
+                <div><label style={lbl}>{t('admin.invoices.address')}</label><input style={inp} value={cfg.seller.address} onChange={(e) => patchCfgSeller({ address: e.target.value })} /></div>
+                <div><label style={lbl}>{t('admin.invoices.iban')}</label><input style={inp} value={cfg.seller.iban} onChange={(e) => patchCfgSeller({ iban: e.target.value })} /></div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.series')}</label><input style={inp} value={cfg.defaultSeries} onChange={(e) => setCfg((c) => ({ ...c, defaultSeries: e.target.value }))} /></div>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.vatRate')}</label><input type="number" min={0} max={100} style={inp} value={cfg.defaultVatRate} onChange={(e) => setCfg((c) => ({ ...c, defaultVatRate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))} /></div>
+                  <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.currency')}</label><input style={inp} value={cfg.defaultCurrency} onChange={(e) => setCfg((c) => ({ ...c, defaultCurrency: e.target.value }))} /></div>
+                </div>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 12 }} disabled={busy} onClick={() => void saveConfig()}>{t('admin.invoices.save')}</button>
+                {cfgSaved && <span style={{ fontSize: 12, color: '#1e7e34', fontWeight: 700 }}>✓</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {uid && !draft && (
         <>

@@ -1032,6 +1032,8 @@ const ro = {
       currency: 'Monedă',
       seller: 'Furnizor',
       buyer: 'Client',
+      sellerSettings: 'Setări furnizor',
+      sellerHint: 'Datele firmei tale (furnizor) + valori implicite — salvate o singură dată; se pre-completează la fiecare document nou.',
       name: 'Denumire',
       cui: 'CUI/CIF',
       regCom: 'Reg. Com.',

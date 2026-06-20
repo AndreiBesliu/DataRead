@@ -1653,6 +1653,19 @@ normaliser, secretele niciodată în chat/repo.
 > **Verticala 2 a pornit.** Felii viitoare: numerotare automată serie/număr; persistă datele furnizorului (config); status
 > plătit↔încasări; expunere facturi în portalul clientului; eventual e-Factura.
 
+**2026-06-20 - Task Completed — Facturi felia 2: date furnizor salvate (config) + pre-completare**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „continuă" → felia 2 a modulului Facturi. Operatorul nu mai retastează furnizorul la fiecare document.
+> - `src/types/invoice.ts`: `InvoiceConfig` (seller + defaultSeries/defaultVatRate/defaultCurrency) + `coerceToInvoiceConfig`.
+> - `firestore.rules`: `appConfig/{docId}` extins să accepte și `invoiceSeller` (seller map, defaultVatRate 0-100,
+>   defaultSeries/defaultCurrency string) pe lângă `automation`. Read+write admin.
+> - `src/admin/InvoicesPanel.tsx`: secțiune „Setări furnizor" (pliabilă) — editezi datele agenției + default-uri o singură
+>   dată; `startNew` pre-completează seller/serie/TVA/monedă din config. i18n `admin.invoices.sellerSettings/sellerHint` ro+en.
+> - Test `test-invoice.ts` += coerceToInvoiceConfig (default/păstrare/clamp).
+> Verificat: 16/16 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules.
+> RĂMAS pe Facturi: numerotare automată serie/număr (counter, gapless — fază cu grijă); status plătit↔încasări; facturi în
+> portalul clientului; e-Factura ANAF.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

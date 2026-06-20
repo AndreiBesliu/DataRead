@@ -1025,6 +1025,8 @@ const en: typeof ro = {
       currency: 'Currency',
       seller: 'Seller',
       buyer: 'Client',
+      sellerSettings: 'Seller settings',
+      sellerHint: 'Your company (seller) details + defaults — saved once; they pre-fill every new document.',
       name: 'Name',
       cui: 'Tax ID',
       regCom: 'Trade Reg.',

@@ -104,6 +104,28 @@ export function coerceToInvoice(raw: unknown): Invoice {
   };
 }
 
+// ── Config furnizor (appConfig/invoiceSeller) — datele agenției + default-uri, salvate o singură dată. ──
+export interface InvoiceConfig {
+  schema: number;
+  seller: InvoiceParty;
+  defaultSeries: string;
+  defaultVatRate: number;
+  defaultCurrency: string;
+}
+
+export function coerceToInvoiceConfig(raw: unknown): InvoiceConfig {
+  const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  let vat = num(d.defaultVatRate);
+  vat = Math.max(0, Math.min(100, vat));
+  return {
+    schema: INVOICE_SCHEMA,
+    seller: coerceParty(d.seller),
+    defaultSeries: s(d.defaultSeries, INVOICE_LIMITS.series),
+    defaultVatRate: d.defaultVatRate === undefined ? INVOICE_DEFAULT_VAT : vat,
+    defaultCurrency: s(d.defaultCurrency, INVOICE_LIMITS.currency) || 'RON',
+  };
+}
+
 export interface InvoiceTotals { subtotal: number; vat: number; total: number; }
 
 /** Calcul PUR al totalurilor: rotunjire la 2 zecimale per linie, apoi TVA pe subtotal. */
