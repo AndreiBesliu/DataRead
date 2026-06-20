@@ -275,6 +275,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   campanii fără raport luna curentă. `SuggestionsPanel` (tab nou în AdminHome) listenează `leads`/`campaigns`
   (limit 200/300), randează lista sortată pe severitate cu „Deschide" → schimbă tabul. Notă: la livrarea
   RBAC tabul Administratori lipsea din nav array (inaccesibil) — reparat odată cu acest tab.
+- **Tab „Sănătate" — observabilitate read-only (ACTIV 20.06.2026):** `src/admin/HealthPanel.tsx` = complementul
+  în-aplicație al plafonului `maxInstances`. Arată consumul AI de AZI prin backstop-urile globale (`aiUsage/__selfGlobal`
+  + `aiUsage/__automationGlobal`, contoare pe zi) + ultimele 50 erori raportate din aplicație (`errorReports`, onSnapshot
+  orderBy at desc). PUR citire — nu scrie nimic, nu consumă AI. Reguli: `errorReports` = `read: if isAdmin()` (date fără
+  PII de client: name/message/stack/kind/version/build/userAgent/lang/at; create whitelist, update/delete false);
+  `aiUsage` = read admin. RĂMAS pe Andrei (consola GCP, nu cod): backup zilnic Firestore + PITR; alertă de buget GCP.
 - **Ghid/Documentație — CONȚINUT COMPLET (ACTIV 20.06.2026; schelet din 16.06):** `src/help/helpContent.ts` — ghid
   SEPARAT operator/admin (`OPERATOR_HELP`, 10 module: leads/suggestions/requests/opportunities/marketing/**connectors**/
   **automation**/lp/admins/pdf) vs client (`CLIENT_HELP`, 5 module), randate în /admin tab „Ghid" respectiv /app „/app/ghid".

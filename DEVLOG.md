@@ -1694,6 +1694,23 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 16/16 suites (acoperire chei: toate corpurile există în ro) + build (paritate i18n en:typeof ro) + build:site
 > + boot. DEPLOYED: hosting (doar conținut UI/i18n).
 
+**2026-06-20 - Task Completed — Tab „Sănătate" în /admin (observabilitate read-only: consum AI + erori)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „ok, acum nu pot să mă ocup eu, continuă cu ce poți tu" (nu poate face pașii din consola GCP —
+> backup Firestore + alerta de buget). Am construit complementul ÎN-aplicație al plafonului `maxInstances`: un tab
+> „Sănătate" în `/admin` (`src/admin/HealthPanel.tsx`), pur read-only, care arată: (1) consumul AI de AZI prin
+> backstop-urile globale (`aiUsage/__selfGlobal` Self Marketing + `aiUsage/__automationGlobal` Automatizări — contoare
+> pe zi, afișează 0 dacă fereastra s-a resetat) și (2) ultimele 50 de erori raportate din aplicație
+> (`errorReports`, onSnapshot orderBy at desc). Operatorul vede dintr-o privire dacă plafoanele se apropie sau dacă
+> apar crash-uri, fără să intre în consola Firebase.
+> - **Reguli:** `errorReports` trecut de la `read:false` la `allow read: if isAdmin()` (datele = name/message/stack/
+>   kind/version/build/userAgent/lang/at — FĂRĂ PII de client; create rămâne whitelist, update/delete false).
+>   `aiUsage` era deja `read: if isAdmin()`.
+> - Wire: tab `health` în `AdminHome` (union + VIEW_LABEL_KEY + nav array + render + import). i18n `admin.navHealth` +
+>   `admin.health.*` ro+en. Nu scrie nimic; nu consumă AI.
+> Verificat: 16/16 suites + build (typecheck + paritate i18n) + build:site (16 pagini) + boot. DEPLOYED: hosting + rules
+>   (serveLp re-actualizat de rewrite). **RĂMAS pe Andrei (consolă GCP):** backup zilnic Firestore + PITR; alertă de buget.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

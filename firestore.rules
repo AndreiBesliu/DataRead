@@ -436,7 +436,9 @@ service cloud.firestore {
     // Rapoarte de crash (consent-gated, trimise de client): create-only, validate strict —
     // nimeni nu le poate citi/modifica din client (se citesc doar din consolă/Admin SDK).
     match /errorReports/{id} {
-      allow read, update, delete: if false;
+      // Admin poate CITI rapoartele de crash (tab „Sănătate") — conțin doar nume/mesaj/stack/build, fără date de client.
+      allow read: if isAdmin();
+      allow update, delete: if false;
       allow create: if request.resource.data.keys().hasOnly(
           ['name', 'message', 'stack', 'kind', 'version', 'build', 'userAgent', 'lang', 'at']
         )
