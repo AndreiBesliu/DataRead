@@ -1427,6 +1427,25 @@ normaliser, secretele niciodată în chat/repo.
 > **Felii următoare:** F1 optimizare pe datele conectori (onMetricWrite → praguri/insight → notificare + recomandare AI,
 > flip flag); F2 builder UI (`AutomationsPanel`); F3 workflows lead; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii.
 
+**2026-06-20 - Task Completed — Motor de automatizare, Felia 1 (management reguli: callable-uri + builder UI)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt: „continuă" → Felia 1 din planul de automatizare. Dependență logică rezolvată: regulile trebuie să poată fi
+> CREATE înainte ca motorul să aibă ce executa, deci întâi management-ul.
+> - `functions/index.js`: 3 callable-uri admin-gated (fără secrete, se exportă mereu — flag-ul gate-ază DOAR execuția
+>   motorului, nu construirea regulilor): `saveAutomation` (coerce server-side + refuză acțiunile neimplementate încă —
+>   email/sms/publish/webhook nu sunt în `AUTOMATION_ACTIONS_V1` — + cere clientUid la scope client; păstrează
+>   createdBy/runCount/lastRunAt la editare), `deleteAutomation` (curăță și subcolecția `runs`, plafonat), `setAutomationEnabled`.
+> - `src/admin/AutomationsPanel.tsx`: builder „dacă … atunci …" — nume + declanșator + scope(+clientUid) + condiții (field/op/
+>   value, datalist sugestii) + acțiuni (tip din V1 + config minimal per tip: mesaj/status/titlu) + comutator activă; listă
+>   cu toggle PORNITĂ/OPRITĂ + editează/șterge + #condiții/#acțiuni/#rulări. Mutații prin callable (automations e write:false).
+> - `AdminHome.tsx`: tab nou „Automatizări" între Marketing și Landing — adăugat în AMBELE locuri (union + array nav, ca să
+>   nu repet bug-ul „tab lipsă din nav"). i18n `admin.navAutomation` + `admin.automation.*` (trig/ops/act/cfg) ro+en paritate.
+> Motorul rămâne dormant (`AUTOMATION_ENABLED=false`); regulile create acum vor începe să ruleze la flip-ul din Felia 2.
+> Verificat: 15/15 suites + e2e (TEST X paritate) + build (typecheck panou + paritate i18n) + build:site + boot — toate verzi.
+> DEPLOYED: functions (saveAutomation/deleteAutomation/setAutomationEnabled create) + hosting (tab) + rules.
+> **Felia 2 (următoarea):** trigger `onMetricWrite` → eveniment campaign.metric_threshold/insight → executeAction
+> (notify.operator + report.generate/campaign.recommend cu cotă) + dedupe `runs/{key}` + flip `AUTOMATION_ENABLED=true`.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

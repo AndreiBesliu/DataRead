@@ -2442,6 +2442,9 @@ const AUTOMATION_ACTIONS = [
   'notify.operator', 'lead.set_status', 'task.create', 'report.generate', 'campaign.recommend',
   'email.send', 'sms.send', 'campaign.pause', 'campaign.publish', 'webhook.call',
 ];
+// Acțiunile implementabile acum (fără cost extern / fără scope nou). Restul (email/sms/publish/webhook) sunt
+// respinse la salvare cât timp feliile lor nu sunt active — ca operatorii să nu construiască reguli care nu rulează.
+const AUTOMATION_ACTIONS_V1 = ['notify.operator', 'lead.set_status', 'task.create', 'report.generate', 'campaign.recommend'];
 const AUTOMATION_SCOPES = ['agency', 'client'];
 const AUTOMATION_MAX_CONDITIONS = 10;
 const AUTOMATION_MAX_ACTIONS = 8;
@@ -2573,6 +2576,54 @@ exports.buildIdempotencyKey = buildIdempotencyKey;
 exports.planActions = planActions;
 exports.selectMatching = selectMatching;
 exports.AUTOMATION_ENABLED = AUTOMATION_ENABLED;
+
+// ── Callable-uri de management (Felia 1) — admin-gated, fără secrete (se exportă mereu; flag-ul gate-ază DOAR
+//    execuția motorului, nu construirea regulilor). Mutațiile trec prin Admin SDK ⇒ rules automations write:false. ──
+exports.saveAutomation = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  assertAdmin(request);
+  const a = coerceToAutomation(request.data);
+  if (!a.name) throw new HttpsError('invalid-argument', 'Numele regulii e obligatoriu.');
+  if (!a.actions.length) throw new HttpsError('invalid-argument', 'Adaugă cel puțin o acțiune.');
+  const bad = a.actions.find((x) => !AUTOMATION_ACTIONS_V1.includes(x.type));
+  if (bad) throw new HttpsError('invalid-argument', `Acțiune indisponibilă încă: ${bad.type}`);
+  if (a.scope === 'client' && !a.clientUid) throw new HttpsError('invalid-argument', 'Regula de client are nevoie de clientUid.');
+  const col = admin.firestore().collection('automations');
+  const reqId = (request.data && typeof request.data.id === 'string') ? request.data.id.slice(0, 128) : '';
+  const id = reqId || col.doc().id;
+  const ref = col.doc(id);
+  const snap = await ref.get();
+  const prev = snap.exists ? (snap.data() || {}) : null;
+  await ref.set({
+    schema: 1, name: a.name, enabled: a.enabled, scope: a.scope, clientUid: a.clientUid, module: a.module,
+    trigger: a.trigger, conditions: a.conditions, actions: a.actions,
+    createdBy: (prev && prev.createdBy) || request.auth.uid,
+    runCount: (prev && typeof prev.runCount === 'number') ? prev.runCount : 0,
+    lastRunAt: (prev && typeof prev.lastRunAt === 'number') ? prev.lastRunAt : 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true, id };
+});
+
+exports.deleteAutomation = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  assertAdmin(request);
+  const id = String((request.data && request.data.id) || '').slice(0, 128);
+  if (!id) throw new HttpsError('invalid-argument', 'id lipsă');
+  const ref = admin.firestore().collection('automations').doc(id);
+  // Curăță subcolecția runs (nu cade la ștergerea doc-ului) — plafonat la o tură de batch.
+  const runs = await ref.collection('runs').limit(450).get();
+  if (!runs.empty) { const b = admin.firestore().batch(); runs.docs.forEach((d) => b.delete(d.ref)); await b.commit(); }
+  await ref.delete();
+  return { ok: true };
+});
+
+exports.setAutomationEnabled = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  assertAdmin(request);
+  const id = String((request.data && request.data.id) || '').slice(0, 128);
+  if (!id) throw new HttpsError('invalid-argument', 'id lipsă');
+  await admin.firestore().collection('automations').doc(id)
+    .set({ enabled: (request.data && request.data.enabled) === true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  return { ok: true };
+});
 
 const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;
 if (CONNECTORS_ANY) {

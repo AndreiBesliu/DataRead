@@ -182,8 +182,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   **Garanții (din start):** anti-buclă (`origin:'automation'` ignorat + `buildIdempotencyKey` + backstop
   `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR`), at-least-once dedupe (`runs/{key}` creat tranzacțional), cost AI mărginit de cotă,
   izolare multi-tenant pe clientUid, **deploy-safe** (`AUTOMATION_ENABLED=false`; triggere/UI/email NU se exportă încă).
-  Felii: F1 optimizare pe datele conectori (`onMetricWrite`→praguri/insight→notificare+recomandare AI, flip flag); F2 builder
-  UI; F3 workflows lead lifecycle; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
+  **Felia 1 ACTIV 20.06.2026 (management reguli):** callable-uri admin-gated `saveAutomation`/`deleteAutomation`/
+  `setAutomationEnabled` (fără secrete, exportate mereu; `saveAutomation` refuză acțiunile din afara `AUTOMATION_ACTIONS_V1`)
+  + builder UI `src/admin/AutomationsPanel.tsx` (tab „Automatizări" în /admin, între Marketing și Landing) — operatorul
+  construiește reguli; motorul rămâne dormant (rulează la flip-ul din F2). Felii rămase: **F2 = wire `onMetricWrite`
+  → eveniment → executeAction (notify.operator + report.generate/campaign.recommend cu cotă) + dedupe `runs/{key}` + flip
+  `AUTOMATION_ENABLED=true`**; F3 workflows lead lifecycle; F4 email/SMS; F5 CRM client-scope; F6 publicare campanii (ads_management).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
