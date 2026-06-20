@@ -8,7 +8,7 @@ import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } f
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
 import { toCsv } from '../utils/csv';
-import { coerceToInvoice, invoiceTotals, type Invoice, type InvoiceKind } from '../types/invoice';
+import { coerceToInvoice, invoiceTotals, type Invoice } from '../types/invoice';
 import { printInvoice, type InvoiceLabels } from '../utils/invoiceDoc';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import i18n from '../i18n';
@@ -581,12 +581,13 @@ function InvoicesPortal({ uid }: { uid: string }) {
     return off;
   }, [uid]);
   if (list.length === 0) return null;
-  const pdfLabels = (kind: InvoiceKind): InvoiceLabels => ({
-    docTitle: t(kind === 'factura' ? 'admin.invoices.factura' : 'admin.invoices.proforma').toUpperCase(),
+  const pdfLabels = (inv: Invoice): InvoiceLabels => ({
+    docTitle: inv.stornoOf ? t('admin.invoices.stornoTitle').toUpperCase() : t(inv.kind === 'factura' ? 'admin.invoices.factura' : 'admin.invoices.proforma').toUpperCase(),
     seller: t('admin.invoices.seller'), buyer: t('admin.invoices.buyer'), cui: t('admin.invoices.cui'), regCom: t('admin.invoices.regCom'), iban: t('admin.invoices.iban'),
     issued: t('admin.invoices.issued'), due: t('admin.invoices.due'), nr: t('admin.invoices.nr'),
     colItem: t('admin.invoices.itemDesc'), colQty: t('admin.invoices.qty'), colPrice: t('admin.invoices.unitPrice'), colTotal: t('admin.invoices.lineTotal'),
     subtotal: t('admin.invoices.subtotal'), vat: t('admin.invoices.vat'), total: t('admin.invoices.total'),
+    stornoNote: t('admin.invoices.stornoNote'),
   });
   const th: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', fontSize: 12 };
   return (
@@ -607,13 +608,16 @@ function InvoicesPortal({ uid }: { uid: string }) {
               const tt = invoiceTotals(r);
               return (
                 <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.${r.kind}`)}</td>
-                  <td style={{ padding: '6px 8px' }}>{[r.series, r.number].filter(Boolean).join(' ') || '—'}</td>
+                  <td style={{ padding: '6px 8px' }}>{r.stornoOf ? t('admin.invoices.stornoTitle') : t(`admin.invoices.${r.kind}`)}</td>
+                  <td style={{ padding: '6px 8px' }}>
+                    {[r.series, r.number].filter(Boolean).join(' ') || '—'}
+                    {r.stornoOf && <span style={{ display: 'block', fontSize: 11, color: 'var(--fg-1)' }}>↩ {[r.stornoOf.series, r.stornoOf.number].filter(Boolean).join(' ')}</span>}
+                  </td>
                   <td style={{ padding: '6px 8px' }}>{r.issuedAt || '—'}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tt.total.toFixed(2)} {r.currency}</td>
                   <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.status_${r.status}`)}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn" style={{ padding: '3px 9px', fontSize: 12 }} onClick={() => printInvoice(r, pdfLabels(r.kind))}>📄 {t('appHome.invoices.download')}</button>
+                    <button className="btn" style={{ padding: '3px 9px', fontSize: 12 }} onClick={() => printInvoice(r, pdfLabels(r))}>📄 {t('appHome.invoices.download')}</button>
                   </td>
                 </tr>
               );

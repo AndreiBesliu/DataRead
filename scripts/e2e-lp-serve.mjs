@@ -1130,7 +1130,7 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
   }
   // 2) a doua factură DR (contor la 2) → număr 2, fără goluri
   {
-    const { db, store } = makeInvStore({ 'clients/u1/invoices/i2': { series: 'DR', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR', next: 2 } });
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i2': { series: 'DR', number: '', status: 'draft', kind: 'factura' }, 'invoiceCounters/DR': { series: 'DR', next: 2 } });
     const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i2' }));
     ok(res.number === '2' && store.get('invoiceCounters/DR').next === 3, 'emitere: a doua factură DR → număr 2 (fără goluri)');
   }
@@ -1142,13 +1142,13 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
   }
   // 4) serie nouă seed din config.startNumber
   {
-    const { db, store } = makeInvStore({ 'clients/u1/invoices/i4': { series: 'AA', number: '', status: 'draft' }, 'appConfig/invoiceSeller': { startNumber: 248 } });
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i4': { series: 'AA', number: '', status: 'draft', kind: 'factura' }, 'appConfig/invoiceSeller': { startNumber: 248 } });
     const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i4' }));
     ok(res.number === '248' && store.get('invoiceCounters/AA').next === 249, 'emitere: serie nouă AA seed din startNumber=248');
   }
   // 5) serie lipsă → failed-precondition NO_SERIES
   {
-    const { db } = makeInvStore({ 'clients/u1/invoices/i5': { series: '', number: '', status: 'draft' } });
+    const { db } = makeInvStore({ 'clients/u1/invoices/i5': { series: '', number: '', status: 'draft', kind: 'factura' } });
     const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i5' }));
     ok(err && /NO_SERIES/.test(err.message || ''), 'serie lipsă → failed-precondition NO_SERIES');
   }
@@ -1160,20 +1160,20 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
   }
   // 7) serii independente: AA pornește la 1, DR neatins
   {
-    const { db, store } = makeInvStore({ 'clients/u1/invoices/iA': { series: 'AA', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR', next: 50 } });
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/iA': { series: 'AA', number: '', status: 'draft', kind: 'factura' }, 'invoiceCounters/DR': { series: 'DR', next: 50 } });
     const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'iA' }));
     ok(res.number === '1' && store.get('invoiceCounters/DR').next === 50, 'serii independente: AA → 1, contorul DR neatins');
   }
   // 8) contor corupt (există dar fără `next` valid) → ABORTĂ (nu reseta la 1 → ar duplica numere legale)
   {
-    const { db, store } = makeInvStore({ 'clients/u1/invoices/i8': { series: 'DR', number: '', status: 'draft' }, 'invoiceCounters/DR': { series: 'DR' } });
+    const { db, store } = makeInvStore({ 'clients/u1/invoices/i8': { series: 'DR', number: '', status: 'draft', kind: 'factura' }, 'invoiceCounters/DR': { series: 'DR' } });
     const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i8' }));
     ok(err && /CORRUPT_COUNTER/.test(err.message || ''), 'contor corupt → failed-precondition CORRUPT_COUNTER');
     ok(store.get('clients/u1/invoices/i8').number === '', 'contor corupt → factura rămâne nenumerotată (fără scriere)');
   }
   // 9) serie cu caractere nesigure (s-ar coliziona pe contor) → BAD_SERIES
   {
-    const { db } = makeInvStore({ 'clients/u1/invoices/i9': { series: 'A/B', number: '', status: 'draft' } });
+    const { db } = makeInvStore({ 'clients/u1/invoices/i9': { series: 'A/B', number: '', status: 'draft', kind: 'factura' } });
     const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'i9' }));
     ok(err && /BAD_SERIES/.test(err.message || ''), 'serie cu caractere nesigure → failed-precondition BAD_SERIES (anti-coliziune contor)');
   }
@@ -1192,6 +1192,46 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
     await fns.writeInvoiceNotification(db, 'u1', 'i1', { series: 'DR', number: '5', kind: 'factura' }, 'ro');
     const n = store.get('clients/u1/notifications/invoice-i1');
     ok(n && n.source === 'invoice' && n.text === 'Factura DR 5 a fost emisă.' && n.read === false && typeof n.createdAt === 'number', 'notificare factură scrisă în feed (text RO + createdAt millis)');
+  }
+  // 12) proformă → NU consumă secvența fiscală (PROFORMA_NO_ISSUE)
+  {
+    const { db } = makeInvStore({ 'clients/u1/invoices/p1': { series: 'PF', number: '', status: 'draft', kind: 'proforma' } });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'p1' }));
+    ok(err && /PROFORMA_NO_ISSUE/.test(err.message || ''), 'proformă → PROFORMA_NO_ISSUE (nu consumă numere de factură)');
+  }
+  // 13) STORNARE validă: original emis → storno primește număr + originalul e marcat stornedBy (anti dublă-stornare)
+  {
+    const { db, store } = makeInvStore({
+      'clients/u1/invoices/orig': { series: 'DR', number: '7', status: 'sent', kind: 'factura' },
+      'clients/u1/invoices/st': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: 'orig' } },
+      'invoiceCounters/DR': { series: 'DR', next: 8 },
+    });
+    const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'st' }));
+    ok(res && res.number === '8', 'storno valid → primește numărul următor (8)');
+    ok(store.get('clients/u1/invoices/orig').stornoedBy === '8', 'originalul e marcat stornedBy=8');
+    // a doua stornare a aceluiași original → ALREADY_STORNOED
+    store.set('clients/u1/invoices/st2', { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: 'orig' } });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'st2' }));
+    ok(err && /ALREADY_STORNOED/.test(err.message || ''), 'a doua stornare a aceluiași original → ALREADY_STORNOED');
+  }
+  // 14) storno fără id / original inexistent / original neemis / storno-de-storno → respinse
+  {
+    const seed = {
+      'clients/u1/invoices/sNoId': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: '' } },
+      'clients/u1/invoices/sGhost': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: 'ghost' } },
+      'clients/u1/invoices/draftOrig': { series: 'DR', number: '', status: 'draft', kind: 'factura' },
+      'clients/u1/invoices/sOfDraft': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '', id: 'draftOrig' } },
+      'clients/u1/invoices/realStorno': { series: 'DR', number: '9', status: 'sent', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: 'orig' } },
+      'clients/u1/invoices/sOfStorno': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '9', id: 'realStorno' } },
+    };
+    const e1 = (await grab(() => fns.performIssueInvoice(makeInvStore(seed).db, { clientUid: 'u1', invoiceId: 'sNoId' }))).err;
+    ok(e1 && /STORNO_NO_ORIGINAL/.test(e1.message || ''), 'storno fără id original → STORNO_NO_ORIGINAL');
+    const e2 = (await grab(() => fns.performIssueInvoice(makeInvStore(seed).db, { clientUid: 'u1', invoiceId: 'sGhost' }))).err;
+    ok(e2 && /STORNO_ORIGINAL_NOT_FOUND/.test(e2.message || ''), 'storno cu original inexistent → STORNO_ORIGINAL_NOT_FOUND');
+    const e3 = (await grab(() => fns.performIssueInvoice(makeInvStore(seed).db, { clientUid: 'u1', invoiceId: 'sOfDraft' }))).err;
+    ok(e3 && /STORNO_ORIGINAL_NOT_ISSUED/.test(e3.message || ''), 'storno al unui original neemis → STORNO_ORIGINAL_NOT_ISSUED');
+    const e4 = (await grab(() => fns.performIssueInvoice(makeInvStore(seed).db, { clientUid: 'u1', invoiceId: 'sOfStorno' }))).err;
+    ok(e4 && /STORNO_OF_STORNO/.test(e4.message || ''), 'storno al unei stornări → STORNO_OF_STORNO');
   }
 }
 

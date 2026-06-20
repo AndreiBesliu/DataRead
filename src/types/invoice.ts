@@ -32,6 +32,14 @@ export interface InvoiceParty {
   iban: string;
 }
 
+/** Referință la factura originală pe care o stornează acest document (factură de stornare / corecție).
+ *  `id` = doc id-ul originalului (clients/{uid}/invoices/{id}) → server-ul validează originalul direct (fără query). */
+export interface StornoRef {
+  series: string;
+  number: string;
+  id: string;
+}
+
 export interface Invoice {
   schema: number;
   id?: string;
@@ -47,6 +55,10 @@ export interface Invoice {
   vatRate: number;  // %
   notes: string;
   status: InvoiceStatus;
+  /** Prezent DOAR pe facturile de stornare — referința la factura originală reversată (sume negative). */
+  stornoOf?: StornoRef;
+  /** Pe ORIGINAL: numărul facturii de stornare care a reversat-o (marcaj anti dublă-stornare, pus de server). */
+  stornoedBy?: string;
   createdBy: string;
   updatedAt: number;
 }
@@ -63,7 +75,10 @@ function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }
 function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+  // SIMETRIC (round-half-away-from-zero) ⇒ round2(-x) === -round2(x), ca o factură de stornare să anuleze EXACT
+  // originalul la cent (altfel prețurile cu jumătate de ban lasă reziduu). EPSILON corectează erori binare (1.005*100=100.4999…).
+  const r = Math.round((Math.abs(n) + Number.EPSILON) * 100) / 100;
+  return n < 0 ? -r : r;
 }
 
 export function emptyParty(): InvoiceParty {
@@ -81,18 +96,22 @@ function coerceParty(raw: unknown): InvoiceParty {
 export function coerceToInvoice(raw: unknown): Invoice {
   const d = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const L = INVOICE_LIMITS;
+  const so = (d.stornoOf && typeof d.stornoOf === 'object') ? (d.stornoOf as Record<string, unknown>) : null;
   const items = (Array.isArray(d.items) ? d.items : [])
     .slice(0, INVOICE_ITEMS_MAX)
     .map((it) => {
       const x = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>;
-      return { description: s(x.description, L.description), qty: Math.max(0, num(x.qty)), unitPrice: Math.max(0, num(x.unitPrice)) };
+      // qty negativ DOAR pe stornări (reprezentarea standard RO); pe documentele normale se clampază ≥ 0 (anti-typo). Preț ≥ 0.
+      return { description: s(x.description, L.description), qty: so ? num(x.qty) : Math.max(0, num(x.qty)), unitPrice: Math.max(0, num(x.unitPrice)) };
     });
   let vatRate = num(d.vatRate);
   vatRate = Math.max(0, Math.min(100, vatRate));
+  const stornoedBy = s(d.stornoedBy, L.number);
   return {
     schema: INVOICE_SCHEMA,
     id: typeof d.id === 'string' ? d.id : undefined,
-    kind: INVOICE_KINDS.includes(d.kind as InvoiceKind) ? (d.kind as InvoiceKind) : 'proforma',
+    // Invariant: o stornare e MEREU factură (document fiscal) — normalizat aici pe toate căile de load/save.
+    kind: so ? 'factura' : (INVOICE_KINDS.includes(d.kind as InvoiceKind) ? (d.kind as InvoiceKind) : 'proforma'),
     series: safeSeries(d.series),
     number: s(d.number, L.number),
     issuedAt: s(d.issuedAt, 10),
@@ -104,6 +123,9 @@ export function coerceToInvoice(raw: unknown): Invoice {
     vatRate: d.vatRate === undefined ? INVOICE_DEFAULT_VAT : vatRate,
     notes: s(d.notes, L.notes),
     status: INVOICE_STATUSES.includes(d.status as InvoiceStatus) ? (d.status as InvoiceStatus) : 'draft',
+    // Cheile se includ DOAR când există (evită scrierea unui `undefined` în Firestore + ține hasOnly curat).
+    ...(so ? { stornoOf: { series: safeSeries(so.series), number: s(so.number, L.number), id: s(so.id, 128) } } : {}),
+    ...(stornoedBy ? { stornoedBy } : {}),
     createdBy: s(d.createdBy, 128),
     updatedAt: num(d.updatedAt),
   };
@@ -148,4 +170,23 @@ export function invoiceTotals(inv: Pick<Invoice, 'items' | 'vatRate'>): InvoiceT
 
 export function lineTotal(it: Pick<InvoiceItem, 'qty' | 'unitPrice'>): number {
   return round2((Number(it.qty) || 0) * (Number(it.unitPrice) || 0));
+}
+
+/** Pur: construiește ciorna unei facturi de STORNARE pornind de la originalul EMIS — copiază părțile/TVA/moneda,
+ *  NEAGĂ cantitățile (sume negative = reversare), păstrează aceeași serie (numerotare continuă), referă originalul.
+ *  Primește număr abia la emitere (issueInvoice), ca orice factură. `issuedAt` se dă din UI (pur = fără Date.now). */
+export function makeStornoDraft(orig: Invoice, issuedAt = ''): Invoice {
+  return coerceToInvoice({
+    kind: 'factura',
+    series: orig.series,
+    number: '',
+    issuedAt,
+    currency: orig.currency,
+    seller: orig.seller,
+    buyer: orig.buyer,
+    items: (orig.items || []).map((it) => ({ description: it.description, qty: -Math.abs(Number(it.qty) || 0), unitPrice: Math.abs(Number(it.unitPrice) || 0) })),
+    vatRate: orig.vatRate,
+    status: 'draft',
+    stornoOf: { series: orig.series, number: orig.number, id: orig.id || '' },
+  });
 }

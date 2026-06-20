@@ -1,6 +1,6 @@
 // Suite headless: Facturi/Proforme — coerce (schema/default/clamp) + calcul PUR al totalurilor + compunere HTML escapată.
 import {
-  coerceToInvoice, invoiceTotals, lineTotal, coerceToInvoiceConfig, safeSeries, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
+  coerceToInvoice, invoiceTotals, lineTotal, coerceToInvoiceConfig, safeSeries, makeStornoDraft, INVOICE_DEFAULT_VAT, INVOICE_ITEMS_MAX,
 } from '../src/types/invoice';
 import { composeInvoiceHtml, type InvoiceLabels } from '../src/utils/invoiceDoc';
 
@@ -23,7 +23,8 @@ check('coerce: gunoi nu aruncă', !!coerceToInvoice({ kind: 7, items: 'x', vatRa
 check('coerce: kind/status invalid → default', (() => { const a = coerceToInvoice({ kind: 'zzz', status: 'hacked' }); return a.kind === 'proforma' && a.status === 'draft'; })());
 check('coerce: vatRate peste 100 → clamp', coerceToInvoice({ vatRate: 999 }).vatRate === 100);
 check('coerce: vatRate negativ → 0', coerceToInvoice({ vatRate: -5 }).vatRate === 0);
-check('coerce: qty/preț negativ → 0', (() => { const a = coerceToInvoice({ items: [{ description: 'x', qty: -2, unitPrice: -9 }] }); return a.items[0].qty === 0 && a.items[0].unitPrice === 0; })());
+check('coerce: qty negativ pe document NORMAL → 0 (anti-typo), preț negativ → 0', (() => { const a = coerceToInvoice({ items: [{ description: 'x', qty: -2, unitPrice: -9 }] }); return a.items[0].qty === 0 && a.items[0].unitPrice === 0; })());
+check('coerce: qty negativ PĂSTRAT doar pe stornare (stornoOf prezent)', (() => { const a = coerceToInvoice({ stornoOf: { series: 'DR', number: '5', id: 'x' }, items: [{ description: 'x', qty: -2, unitPrice: 9 }] }); return a.items[0].qty === -2 && a.items[0].unitPrice === 9; })());
 check('coerce: plafon articole', coerceToInvoice({ items: Array.from({ length: 80 }, () => ({ description: 'x', qty: 1, unitPrice: 1 })) }).items.length === INVOICE_ITEMS_MAX);
 
 // ── totaluri (rotunjire la 2 zecimale per linie, apoi TVA pe subtotal) ──
@@ -68,6 +69,45 @@ check('totaluri: fără articole → 0', (() => { const t = invoiceTotals(coerce
   check('safeSeries: non-string → gol', safeSeries(42) === '' && safeSeries(null) === '');
   check('coerce factură: serie nesigură strip-uită', coerceToInvoice({ series: 'A/B.C' }).series === 'ABC');
   check('coerce config: defaultSeries nesigură strip-uită', coerceToInvoiceConfig({ defaultSeries: 'D R' }).defaultSeries === 'DR');
+}
+
+// ── stornoOf + makeStornoDraft (factură de stornare = sume negative, referă originalul) ──
+{
+  check('coerce: stornoOf păstrat (map cu serie sigură + număr)', (() => {
+    const a = coerceToInvoice({ stornoOf: { series: 'D R', number: '5' } });
+    return !!a.stornoOf && a.stornoOf.series === 'DR' && a.stornoOf.number === '5';
+  })());
+  check('coerce: fără stornoOf → cheia absentă (nu undefined în Firestore)', (() => {
+    const a = coerceToInvoice({});
+    return !('stornoOf' in a);
+  })());
+
+  check('coerce: stornoOf.id păstrat (referință la doc-ul original)', coerceToInvoice({ stornoOf: { series: 'DR', number: '5', id: 'abc123' } }).stornoOf?.id === 'abc123');
+  check('coerce: kind FORȚAT factura când stornoOf prezent (chiar dacă vine proforma)', coerceToInvoice({ kind: 'proforma', stornoOf: { series: 'DR', number: '5', id: 'x' } }).kind === 'factura');
+
+  const orig = coerceToInvoice({
+    id: 'orig-doc-1', kind: 'factura', series: 'DR', number: '7', currency: 'RON', vatRate: 19,
+    seller: { name: 'Agenția SRL' }, buyer: { name: 'Client SRL' },
+    items: [{ description: 'Serviciu', qty: 2, unitPrice: 100 }, { description: 'Setup', qty: 1, unitPrice: 50 }],
+    status: 'sent',
+  });
+  const st = makeStornoDraft(orig, '2026-06-21');
+  check('storno: factura, draft, fără număr, referă originalul (serie+număr+id)', st.kind === 'factura' && st.status === 'draft' && st.number === '' && !!st.stornoOf && st.stornoOf.series === 'DR' && st.stornoOf.number === '7' && st.stornoOf.id === 'orig-doc-1');
+  check('storno: aceeași serie (numerotare continuă) + dată dată din UI', st.series === 'DR' && st.issuedAt === '2026-06-21');
+  check('storno: cantități NEGATE, preț pozitiv', st.items[0].qty === -2 && st.items[0].unitPrice === 100 && st.items[1].qty === -1);
+  check('storno: copiază părțile/TVA/moneda', st.seller.name === 'Agenția SRL' && st.buyer.name === 'Client SRL' && st.vatRate === 19 && st.currency === 'RON');
+  check('storno: total NEGATIV = reversarea originalului', (() => {
+    const o = invoiceTotals(orig); const s = invoiceTotals(st);
+    return o.total === 297.5 && s.total === -297.5;
+  })());
+  // round2 SIMETRIC: prețuri cu jumătate de ban (.xx5) → stornarea anulează EXACT originalul la cent (subtotal+TVA+total).
+  check('storno: reversare EXACTĂ și la prețuri .xx5 (round2 simetric)', (() => {
+    const o2 = coerceToInvoice({ id: 'o2', kind: 'factura', series: 'DR', number: '8', vatRate: 19, items: [{ description: 'a', qty: 1, unitPrice: 5.555 }, { description: 'b', qty: 3, unitPrice: 33.335 }], status: 'sent' });
+    const s2 = makeStornoDraft(o2, '2026-06-21');
+    const ot = invoiceTotals(o2); const stt = invoiceTotals(s2);
+    return stt.subtotal === -ot.subtotal && stt.vat === -ot.vat && stt.total === -ot.total;
+  })());
+  check('round2 simetric: round2(-x) === -round2(x) pe .xx5', lineTotal({ qty: -1, unitPrice: 5.555 }) === -lineTotal({ qty: 1, unitPrice: 5.555 }));
 }
 
 console.log(`\ninvoice: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);

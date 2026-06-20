@@ -7,11 +7,12 @@ import { escapeHtml, printHtmlDoc } from './printDoc';
 import { invoiceTotals, lineTotal, type Invoice, type InvoiceParty } from '../types/invoice';
 
 export interface InvoiceLabels {
-  docTitle: string; // „PROFORMĂ" / „FACTURĂ"
+  docTitle: string; // „PROFORMĂ" / „FACTURĂ" / „FACTURĂ STORNO"
   seller: string; buyer: string; cui: string; regCom: string; iban: string;
   issued: string; due: string; nr: string;
   colItem: string; colQty: string; colPrice: string; colTotal: string;
   subtotal: string; vat: string; total: string;
+  stornoNote?: string; // prefix „Stornare a facturii" — randat doar dacă inv.stornoOf există
 }
 
 function money(n: number, currency: string): string {
@@ -29,6 +30,9 @@ export function composeInvoiceHtml(inv: Invoice, L: InvoiceLabels): string {
   const t = invoiceTotals(inv);
   const e = escapeHtml;
   const docNo = [inv.series, inv.number].filter(Boolean).map((x) => e(x)).join(' ') || '—';
+  const stornoRef = inv.stornoOf
+    ? `<div class="muted">${e(L.stornoNote || 'Stornare a facturii')}: <strong>${e([inv.stornoOf.series, inv.stornoOf.number].filter(Boolean).join(' ')) || '—'}</strong></div>`
+    : '';
   const rows = inv.items.map((it) =>
     `<tr><td>${e(it.description) || '—'}</td><td class="r">${Number(it.qty) || 0}</td><td class="r">${money(it.unitPrice, inv.currency)}</td><td class="r">${money(lineTotal(it), inv.currency)}</td></tr>`).join('');
   return `<!doctype html><html lang="ro"><head><meta charset="utf-8"><title>${e(L.docTitle)} ${docNo}</title>
@@ -45,7 +49,7 @@ export function composeInvoiceHtml(inv: Invoice, L: InvoiceLabels): string {
   .notes{margin-top:18px;color:#444;white-space:pre-wrap}
 </style></head><body><div class="doc">
   <div class="head">
-    <div><h1>${e(L.docTitle)}</h1><div class="muted">${e(L.nr)}: <strong>${docNo}</strong></div></div>
+    <div><h1>${e(L.docTitle)}</h1><div class="muted">${e(L.nr)}: <strong>${docNo}</strong></div>${stornoRef}</div>
     <div class="muted" style="text-align:right">${e(L.issued)}: ${e(inv.issuedAt) || '—'}${inv.dueAt ? `<br>${e(L.due)}: ${e(inv.dueAt)}` : ''}</div>
   </div>
   <div class="parties">

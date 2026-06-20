@@ -845,6 +845,23 @@ async function performIssueInvoice(db, data) {
     if (inv.number && String(inv.number).trim()) {
       return { series: String(inv.series || ''), number: String(inv.number), kind: inv.kind || 'proforma', already: true };
     }
+    // DOAR documentele fiscale (factură + stornare, care e tot kind:'factura') consumă secvența. Proformele NU —
+    // altfel ar lăsa goluri în secvența legală de facturi. (Proforma rămâne ciornă; numerotarea ei = backlog.)
+    if (inv.kind !== 'factura') throw new HttpsError('failed-precondition', 'PROFORMA_NO_ISSUE');
+    // STORNARE: validează originalul SERVER-side (nu doar UI) — trebuie să fie o factură EMISĂ, nu o stornare,
+    // și încă nestornată (anti dublă-stornare). Citim originalul DUPĂ id (fără query, merge în stub-ul de test).
+    let origRef = null;
+    if (inv.stornoOf && typeof inv.stornoOf === 'object') {
+      const origId = String(inv.stornoOf.id || '');
+      if (!origId) throw new HttpsError('failed-precondition', 'STORNO_NO_ORIGINAL');
+      origRef = db.collection('clients').doc(clientUid).collection('invoices').doc(origId);
+      const origSnap = await tx.get(origRef); // citire ÎNAINTE de scrieri
+      if (!origSnap.exists) throw new HttpsError('failed-precondition', 'STORNO_ORIGINAL_NOT_FOUND');
+      const orig = origSnap.data() || {};
+      if (orig.kind !== 'factura' || !String(orig.number || '').trim()) throw new HttpsError('failed-precondition', 'STORNO_ORIGINAL_NOT_ISSUED');
+      if (orig.stornoOf) throw new HttpsError('failed-precondition', 'STORNO_OF_STORNO');
+      if (orig.stornoedBy) throw new HttpsError('failed-precondition', 'ALREADY_STORNOED');
+    }
     const series = String(inv.series || '').trim().slice(0, 20);
     if (!series) throw new HttpsError('failed-precondition', 'NO_SERIES');
     // Bijecție serie↔cheie contor: o serie cu caractere în afara [A-Za-z0-9_-] ar coliziona cu alta pe ACELAȘI
@@ -863,6 +880,8 @@ async function performIssueInvoice(db, data) {
     // Emitere = atribuie număr + mută draft→sent + marchează momentul; număr+serie devin imuabile (vezi reguli).
     tx.set(invRef, { number, series, status: inv.status === 'draft' ? 'sent' : (inv.status || 'sent'), issuedNumberAt: ts, updatedAt: ts }, { merge: true });
     tx.set(counterRef, { series, next: next + 1, updatedAt: ts }, { merge: true });
+    // Marchează originalul ca stornat (anti dublă-stornare) — în aceeași tranzacție.
+    if (origRef) tx.set(origRef, { stornoedBy: number, updatedAt: ts }, { merge: true });
     return { series, number, kind: inv.kind || 'proforma', already: false };
   });
 }

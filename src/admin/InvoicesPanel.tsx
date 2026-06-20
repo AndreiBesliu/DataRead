@@ -9,7 +9,7 @@ import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTi
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '../firebase';
 import {
-  coerceToInvoice, invoiceTotals, lineTotal, emptyParty, coerceToInvoiceConfig,
+  coerceToInvoice, invoiceTotals, lineTotal, emptyParty, coerceToInvoiceConfig, makeStornoDraft,
   INVOICE_KINDS, INVOICE_STATUSES, INVOICE_ITEMS_MAX,
   type Invoice, type InvoiceKind, type InvoiceStatus, type InvoiceParty, type InvoiceConfig,
 } from '../types/invoice';
@@ -120,16 +120,28 @@ export default function InvoicesPanel() {
       const msg = String((e as { message?: string }).message ?? '');
       setErr(msg.includes('NO_SERIES') ? t('admin.invoices.errSeries')
         : msg.includes('BAD_SERIES') ? t('admin.invoices.errSeriesChars')
+        : msg.includes('PROFORMA_NO_ISSUE') ? t('admin.invoices.errProformaIssue')
+        : msg.includes('ALREADY_STORNOED') ? t('admin.invoices.errStornoTwice')
+        : msg.includes('STORNO_') ? t('admin.invoices.errStorno')
         : t('admin.invoices.errIssue'));
     } finally { setBusy(false); }
   };
 
-  const pdfLabels = (kind: InvoiceKind): InvoiceLabels => ({
-    docTitle: t(kind === 'factura' ? 'admin.invoices.factura' : 'admin.invoices.proforma').toUpperCase(),
+  // Stornare: deschide în editor o ciornă de stornare a unei facturi EMISE (sume negative, referă originalul).
+  // Primește număr la „Emite" (același mecanism atomic, fără goluri).
+  const stornoStart = (r: Row) => {
+    setErr('');
+    if (!window.confirm(t('admin.invoices.stornoConfirm', { nr: [r.series, r.number].filter(Boolean).join(' ') }))) return;
+    setDraft(makeStornoDraft(coerceToInvoice(r), todayStr()));
+  };
+
+  const pdfLabels = (inv: Invoice): InvoiceLabels => ({
+    docTitle: inv.stornoOf ? t('admin.invoices.stornoTitle').toUpperCase() : t(inv.kind === 'factura' ? 'admin.invoices.factura' : 'admin.invoices.proforma').toUpperCase(),
     seller: t('admin.invoices.seller'), buyer: t('admin.invoices.buyer'), cui: t('admin.invoices.cui'), regCom: t('admin.invoices.regCom'), iban: t('admin.invoices.iban'),
     issued: t('admin.invoices.issued'), due: t('admin.invoices.due'), nr: t('admin.invoices.nr'),
     colItem: t('admin.invoices.itemDesc'), colQty: t('admin.invoices.qty'), colPrice: t('admin.invoices.unitPrice'), colTotal: t('admin.invoices.lineTotal'),
     subtotal: t('admin.invoices.subtotal'), vat: t('admin.invoices.vat'), total: t('admin.invoices.total'),
+    stornoNote: t('admin.invoices.stornoNote'),
   });
 
   const inp: CSSProperties = { padding: '7px 9px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, background: 'var(--bg-1)', color: 'var(--fg-0)', width: '100%', boxSizing: 'border-box' };
@@ -222,17 +234,25 @@ export default function InvoicesPanel() {
                     const tt = invoiceTotals(r);
                     return (
                       <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.${r.kind}`)}</td>
-                        <td style={{ padding: '6px 8px' }}>{[r.series, r.number].filter(Boolean).join(' ') || '—'}</td>
+                        <td style={{ padding: '6px 8px' }}>{r.stornoOf ? t('admin.invoices.stornoTitle') : t(`admin.invoices.${r.kind}`)}</td>
+                        <td style={{ padding: '6px 8px' }}>
+                          {[r.series, r.number].filter(Boolean).join(' ') || '—'}
+                          {r.stornoOf && <span style={{ display: 'block', fontSize: 11, color: 'var(--fg-1)' }}>↩ {[r.stornoOf.series, r.stornoOf.number].filter(Boolean).join(' ')}</span>}
+                        </td>
                         <td style={{ padding: '6px 8px' }}>{r.issuedAt || '—'}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{tt.total.toFixed(2)} {r.currency}</td>
                         <td style={{ padding: '6px 8px' }}>{t(`admin.invoices.status_${r.status}`)}</td>
                         <td style={{ padding: '6px 8px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                          {!String(r.number || '').trim() && (
+                          {/* Numerotare DOAR pentru facturi (proformele nu consumă secvența fiscală). */}
+                          {r.kind === 'factura' && !String(r.number || '').trim() && (
                             <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} disabled={busy} onClick={() => void issue(r)} title={t('admin.invoices.issueTitle')}>{t('admin.invoices.issue')}</button>
                           )}
+                          {/* Stornare doar pe FACTURI emise, care nu sunt stornări și nu au fost DEJA stornate. */}
+                          {r.kind === 'factura' && String(r.number || '').trim() && !r.stornoOf && !r.stornoedBy && !list.some((x) => x.stornoOf && x.stornoOf.id === r.id) && (
+                            <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => stornoStart(r)} title={t('admin.invoices.stornoTitle')}>{t('admin.invoices.storno')}</button>
+                          )}
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => { setErr(''); setDraft(coerceToInvoice(r)); }}>{t('admin.invoices.edit')}</button>
-                          <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => printInvoice(coerceToInvoice(r), pdfLabels(r.kind))}>📄 {t('admin.invoices.print')}</button>
+                          <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => printInvoice(coerceToInvoice(r), pdfLabels(coerceToInvoice(r)))}>📄 {t('admin.invoices.print')}</button>
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r)}>{t('admin.invoices.delete')}</button>
                         </td>
                       </tr>
@@ -248,9 +268,15 @@ export default function InvoicesPanel() {
       {/* Editor */}
       {draft && (
         <div style={{ ...card, borderColor: 'var(--accent)' }}>
+          {draft.stornoOf && (
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', marginBottom: 8 }}>
+              {t('admin.invoices.stornoTitle')} — {t('admin.invoices.stornoNote')}: {[draft.stornoOf.series, draft.stornoOf.number].filter(Boolean).join(' ')}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 8 }}>
             <div><label style={lbl}>{t('admin.invoices.kind')}</label>
-              <select style={inp} value={draft.kind} onChange={(e) => patch({ kind: e.target.value as InvoiceKind })}>
+              {/* O stornare e mereu factură → blocăm comutarea tipului. */}
+              <select style={{ ...inp, ...(draft.stornoOf ? { opacity: 0.6 } : {}) }} value={draft.kind} disabled={!!draft.stornoOf} onChange={(e) => patch({ kind: e.target.value as InvoiceKind })}>
                 {INVOICE_KINDS.map((k) => <option key={k} value={k}>{t(`admin.invoices.${k}`)}</option>)}
               </select>
             </div>
@@ -299,7 +325,7 @@ export default function InvoicesPanel() {
           <div style={{ marginTop: 10 }}><label style={lbl}>{t('admin.invoices.notes')}</label><textarea style={{ ...inp, minHeight: 50 }} value={draft.notes} onChange={(e) => patch({ notes: e.target.value })} /></div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button className="btn" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => printInvoice(draft, pdfLabels(draft.kind))}>📄 {t('admin.invoices.print')}</button>
+            <button className="btn" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => printInvoice(draft, pdfLabels(draft))}>📄 {t('admin.invoices.print')}</button>
             <div style={{ flex: 1 }} />
             <button className="btn" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy} onClick={() => setDraft(null)}>{t('admin.invoices.cancel')}</button>
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13 }} disabled={busy} onClick={() => void save()}>{busy ? t('admin.invoices.saving') : t('admin.invoices.save')}</button>

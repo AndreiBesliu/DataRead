@@ -234,7 +234,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `hasOnly` whitelist. **Contorul depinde de backup/PITR** (responsabilitate Andrei — vezi mai jos). **Portal client (ACTIV
   21.06.2026):** clientul logat în /app vede DOAR facturile EMISE (`InvoicesPortal` în AppHome; `where('number','!=','')`,
   read-only + descărcare PDF prin composer-ul pur; sortare cu fallback pe `issuedNumberAt`); regula de read e strânsă la
-  `isAdmin() || (signedInAs(uid) && number != '')` (ciornele rămân admin-only). **Notificare la emitere (ACTIV 21.06.2026):**
+  `isAdmin() || (signedInAs(uid) && number != '')` (ciornele rămân admin-only). **Stornare/corecție (ACTIV 21.06.2026):**
+  corecția unei facturi emise = NOU document fiscal `stornoOf:{series,number,id}` cu sume NEGATIVE (qty negate), aceeași
+  serie (număr secvențial via issueInvoice). `makeStornoDraft` pur; `round2` SIMETRIC (round-half-away-from-zero) ⇒
+  stornarea anulează exact originalul la cent. Garduri SERVER (performIssueInvoice): originalul trebuie factură EMISĂ
+  (nu proformă/draft/storno), marcat `stornoedBy` la prima stornare (anti dublă-stornare); proformele NU consumă secvența
+  (`PROFORMA_NO_ISSUE`). qty negativ permis DOAR pe stornări (coerce); reguli: `kind`+`stornoOf` imuabile după numerotare,
+  `stornoOf` validat (hasOnly series/number/id). **Notificare la emitere (ACTIV 21.06.2026):**
   `issueInvoice` scrie `clients/{uid}/notifications/invoice-{id}` (id determinist, best-effort, doar la prima emitere) prin
   `writeInvoiceNotification`; text localizat `invoiceNotifText` (ro/en după `clients/{uid}.locale`) — apare în feed-ul existent
   `ClientAutomationFeed` (zero cod frontend nou). e-Factura ANAF + storno/corecții + reset anual = felii viitoare. NU e gated

@@ -1795,6 +1795,28 @@ normaliser, secretele niciodată în chat/repo.
 >   16/16 suites + build. DEPLOYED: functions (issueInvoice). Fără rules/hosting (notificarea apare în feed-ul existent).
 >   Backlog: localizare completă a tuturor notificărilor (azi doar cea de factură e bilingvă).
 
+**2026-06-21 - Task Completed — Facturi de STORNARE (corecție/reversare) + hardening din review**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). Cum corectezi în RO o factură deja emisă: emiți un NOU document fiscal
+> (factură de stornare) care referă originalul, cu sume NEGATIVE, primind propriul număr secvențial (refolosește
+> issueInvoice). Model: `Invoice.stornoOf:{series,number,id}` + `makeStornoDraft` pur (copiază părți/TVA/monedă, NEAGĂ
+> cantitățile, aceeași serie, draft). UI: buton „Stornează" pe facturile emise → editor → Emite (număr atomic); badge
+> „↩ original"; PDF „FACTURĂ STORNO" + referința. Client portal: vede stornările (total negativ). Ghid client neschimbat
+> (stornarea = unealtă operator).
+> - **Review adversarial multi-agent (2 dim → verificare per-finding): 8 constatări confirmate, TOATE reparate:**
+>   (HIGH) `round2` rotunjea asimetric → stornarea NU anula exact originalul la prețuri .xx5 → FIX round2 simetric
+>   (round-half-away-from-zero) ⇒ `round2(-x)===-round2(x)`; (HIGH) lipsea garda de date că stornarea referă o factură
+>   emisă + dublă-stornare → FIX validare server în `performIssueInvoice` (citește originalul după `stornoOf.id`, respinge
+>   nonexistent/neemis/proformă/storno-de-storno; marchează originalul `stornoedBy` → anti dublă-stornare) + UI ascunde
+>   butonul dacă deja stornată; (HIGH) regulile nu fixau `kind`/`stornoOf` după numerotare → FIX pin în reguli; (MED)
+>   relaxarea qty negativ era globală → FIX scoped DOAR pe stornări (coerce: qty≥0 fără stornoOf); (MED) proforma consuma
+>   secvența fiscală → FIX gate `PROFORMA_NO_ISSUE` (UI + server); (LOW) drift kind↔storno → FIX coerce forțează
+>   kind=factura când stornoOf + select dezactivat; (LOW) stornoOf nevalidat în reguli → FIX `hasOnly(['series','number','id'])`
+>   + tipuri/dimensiuni. Reguli: hasOnly += stornoOf/stornoedBy.
+> Verificat: 16/16 suites (storno: reversare exactă .xx5, round2 simetric) + e2e (PROFORMA_NO_ISSUE, storno valid +
+>   stornedBy, ALREADY_STORNOED, STORNO_NO_ORIGINAL/NOT_FOUND/NOT_ISSUED/OF_STORNO) + build + build:site + boot. DEPLOYED:
+>   functions + hosting + rules. Backlog: e-Factura ANAF; numerotare proforme (serie separată); reset anual.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

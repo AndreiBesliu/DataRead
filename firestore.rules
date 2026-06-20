@@ -150,7 +150,7 @@ service cloud.firestore {
         allow read: if isAdmin() || (signedInAs(uid) && resource.data.number != '');
         allow create: if isAdmin()
           && request.resource.data.keys().hasOnly(['schema', 'kind', 'series', 'number', 'issuedAt', 'dueAt',
-             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt'])
+             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt', 'stornoOf', 'stornoedBy'])
           && request.resource.data.schema == 1
           && request.resource.data.kind in ['proforma', 'factura']
           && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled']
@@ -162,10 +162,14 @@ service cloud.firestore {
           // seria = cheia contorului → doar [A-Za-z0-9_-] (bijecție serie↔contor, fără goluri).
           && request.resource.data.series is string && request.resource.data.series.size() <= 20
           && request.resource.data.series.matches('[A-Za-z0-9_-]*')
+          && (!('stornoOf' in request.resource.data) || (request.resource.data.stornoOf.keys().hasOnly(['series', 'number', 'id'])
+            && request.resource.data.stornoOf.series is string && request.resource.data.stornoOf.series.size() <= 20
+            && request.resource.data.stornoOf.number is string && request.resource.data.stornoOf.number.size() <= 20
+            && request.resource.data.stornoOf.id is string && request.resource.data.stornoOf.id.size() <= 200))
           && request.resource.data.number == ''; // facturi noi = nenumerotate; numărul vine din callable
         allow update: if isAdmin()
           && request.resource.data.keys().hasOnly(['schema', 'kind', 'series', 'number', 'issuedAt', 'dueAt',
-             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt'])
+             'currency', 'seller', 'buyer', 'items', 'vatRate', 'notes', 'status', 'createdBy', 'updatedAt', 'issuedNumberAt', 'stornoOf', 'stornoedBy'])
           && request.resource.data.schema == 1
           && request.resource.data.kind in ['proforma', 'factura']
           && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled']
@@ -178,6 +182,12 @@ service cloud.firestore {
           && request.resource.data.series.matches('[A-Za-z0-9_-]*')
           && request.resource.data.number == resource.data.number // clientul nu schimbă NICIODATĂ numărul
           && (resource.data.number == '' || request.resource.data.series == resource.data.series) // serie blocată după numerotare
+          && (!('stornoOf' in request.resource.data) || (request.resource.data.stornoOf.keys().hasOnly(['series', 'number', 'id'])
+            && request.resource.data.stornoOf.series is string && request.resource.data.stornoOf.series.size() <= 20
+            && request.resource.data.stornoOf.number is string && request.resource.data.stornoOf.number.size() <= 20
+            && request.resource.data.stornoOf.id is string && request.resource.data.stornoOf.id.size() <= 200))
+          && (resource.data.number == '' || request.resource.data.kind == resource.data.kind) // natura fiscală blocată după numerotare
+          && (resource.data.number == '' || (('stornoOf' in request.resource.data) == ('stornoOf' in resource.data))) // storno/non-storno blocat după numerotare
           && (resource.data.number == '' || request.resource.data.status != 'draft'); // numerotată ⇒ nu revine la draft
         allow delete: if isAdmin();
       }
