@@ -19,6 +19,7 @@ import {
   coerceToSelfProfileDraft,
   coerceToSelfStrategy,
   coerceToSelfDetails,
+  coerceToSelfOpportunities,
   coerceToSelfQuota,
   emptySelfProfile,
   selfFreeRemaining,
@@ -26,6 +27,8 @@ import {
   type SelfCompanyProfile,
   type SelfStrategy,
   type SelfDetails,
+  type SelfOpportunities,
+  type SelfImpact,
   type SelfQuota,
 } from '../types/selfMarketing';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
@@ -35,14 +38,17 @@ import AuthPanel from './AuthPanel';
 
 const STEPS: SelfStep[] = [
   { key: 'profile', labelKey: 'selfMarketing.step_profile', available: true },
-  { key: 'opportunities', labelKey: 'selfMarketing.step_opportunities', available: false },
+  { key: 'opportunities', labelKey: 'selfMarketing.step_opportunities', available: true },
   { key: 'strategy', labelKey: 'selfMarketing.step_strategy', available: true },
   { key: 'details', labelKey: 'selfMarketing.step_details', available: true },
   { key: 'execution', labelKey: 'selfMarketing.step_execution', available: false },
 ];
 const STEP_PROFILE = 0;
+const STEP_OPPORTUNITIES = 1;
 const STEP_STRATEGY = 2;
 const STEP_DETAILS = 3;
+
+const IMPACT_COLOR: Record<SelfImpact, string> = { high: '#1e7e34', medium: '#b25e09', low: '#6b7280' };
 
 export default function SelfMarketingFunnel() {
   const { t } = useTranslation();
@@ -52,6 +58,7 @@ export default function SelfMarketingFunnel() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [strategy, setStrategy] = useState<SelfStrategy | null>(null);
+  const [opportunities, setOpportunities] = useState<SelfOpportunities | null>(null);
   const [details, setDetails] = useState<SelfDetails | null>(null);
   const [quota, setQuota] = useState<SelfQuota | null>(null);
   const [selectedDir, setSelectedDir] = useState(0);
@@ -95,9 +102,10 @@ export default function SelfMarketingFunnel() {
     if (!user) return;
     const base = (id: string) => doc(db, 'clients', user.uid, 'selfMarketing', id);
     const offS = onSnapshot(base('strategy'), (snap) => setStrategy(snap.exists() ? coerceToSelfStrategy(snap.data()) : null), () => setStrategy(null));
+    const offO = onSnapshot(base('opportunities'), (snap) => setOpportunities(snap.exists() ? coerceToSelfOpportunities(snap.data()) : null), () => setOpportunities(null));
     const offD = onSnapshot(base('details'), (snap) => setDetails(snap.exists() ? coerceToSelfDetails(snap.data()) : null), () => setDetails(null));
     const offQ = onSnapshot(base('quota'), (snap) => setQuota(snap.exists() ? coerceToSelfQuota(snap.data()) : null), () => setQuota(null));
-    return () => { offS(); offD(); offQ(); };
+    return () => { offS(); offO(); offD(); offQ(); };
   }, [user]);
 
   // Autosave draft local (după încărcare, ca să nu suprascriem cu gol).
@@ -176,6 +184,32 @@ export default function SelfMarketingFunnel() {
     }
   };
 
+  const generateOpportunities = async () => {
+    const v = validateSelfProfile(data);
+    setErrors(v.errors);
+    if (!v.ok) { setStep(STEP_PROFILE); return; }
+    setBusy(true);
+    setMsg(null);
+    try {
+      await setDoc(
+        doc(db, 'clients', user.uid, 'selfMarketing', 'profile'),
+        { ...data, schema: 1, locale: i18n.language === 'en' ? 'en' : 'ro', updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      justSaved.current = true;
+      try { localStorage.removeItem(SELF_PROFILE_DRAFT_KEY); } catch { /* private mode */ }
+      const fn = httpsCallable<{ profile: SelfCompanyProfile }, { opportunities?: unknown }>(functions, 'selfGenerateOpportunities');
+      await fn({ profile: data });
+      setStep(STEP_OPPORTUNITIES);
+      setMsg({ kind: 'ok', key: 'selfMarketing.oppDone' });
+    } catch (e) {
+      console.warn('selfGenerateOpportunities failed:', e);
+      setMsg({ kind: 'err', key: errKey(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const generateDetails = async () => {
     setBusy(true);
     setMsg(null);
@@ -206,6 +240,16 @@ export default function SelfMarketingFunnel() {
       ].join('\n'),
     }]),
   ];
+  const opportunitiesSections = (o: SelfOpportunities) =>
+    o.items.map((it, i) => ({
+      label: `${i + 1}. ${it.title} (${t(`selfMarketing.impact_${it.impact}`)})`,
+      body: [
+        `${t('selfMarketing.oChannel')}: ${it.channel}`,
+        `${t('selfMarketing.oWhy')}: ${it.why}`,
+        `${t('selfMarketing.oWhat')}: ${it.description}`,
+        `${t('selfMarketing.oFirstStep')}: ${it.firstStep}`,
+      ].join('\n'),
+    }));
   const detailsSections = (d: SelfDetails) => [
     { label: t('selfMarketing.dBudget'), body: d.budgetSplit },
     { label: t('selfMarketing.dAudienceDetail'), body: d.audienceDetail },
@@ -283,6 +327,40 @@ export default function SelfMarketingFunnel() {
             {busy ? t('selfMarketing.generating') : t('selfMarketing.generate')}
           </button>
           {quotaBlock()}
+        </div>
+      )}
+
+      {/* Pas 2 — Oportunități (idei prioritizate pe impact) */}
+      {step === STEP_OPPORTUNITIES && (
+        <div>
+          <p style={{ color: 'var(--fg-1)', fontSize: 14, margin: '0 0 12px' }}>{t('selfMarketing.oppIntro')}</p>
+          <button className="btn btn-primary" disabled={busy || !canGenerate} onClick={() => void generateOpportunities()} style={{ padding: '10px 22px', fontSize: 14 }}>
+            {busy ? t('selfMarketing.oppGenerating') : (opportunities && opportunities.items.length > 0 ? t('selfMarketing.oppRegenerate') : t('selfMarketing.oppGenerate'))}
+          </button>
+          {quotaBlock()}
+
+          {opportunities && opportunities.items.length > 0 ? (
+            <>
+              <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+                {opportunities.items.map((it, i) => (
+                  <div key={i} style={card}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <h3 style={{ fontSize: 15, margin: 0, flex: 1 }}>{i + 1}. {it.title || '—'}</h3>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: IMPACT_COLOR[it.impact], borderRadius: 5, padding: '2px 8px' }}>{t(`selfMarketing.impact_${it.impact}`)}</span>
+                    </div>
+                    {it.channel ? <div style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, marginTop: 2 }}>{it.channel}</div> : null}
+                    {detailField(t('selfMarketing.oWhy'), it.why)}
+                    {detailField(t('selfMarketing.oWhat'), it.description)}
+                    {detailField(t('selfMarketing.oFirstStep'), it.firstStep)}
+                  </div>
+                ))}
+              </div>
+              {exportBar(t('selfMarketing.step_opportunities'), opportunitiesSections(opportunities))}
+              <p style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: 14 }}>{t('selfMarketing.oppNext')}</p>
+            </>
+          ) : (
+            <p style={{ color: 'var(--fg-1)', fontSize: 13, marginTop: 14 }}>{t('selfMarketing.oppEmpty')}</p>
+          )}
         </div>
       )}
 
@@ -364,8 +442,8 @@ export default function SelfMarketingFunnel() {
         </div>
       )}
 
-      {/* Pașii 2 / 5 — în curând */}
-      {(step === 1 || step === 4) && (
+      {/* Pasul 5 (Execuție) — în curând */}
+      {step === 4 && (
         <div style={{ ...card, textAlign: 'center', color: 'var(--fg-1)' }}>
           <p style={{ margin: 0 }}>{t('selfMarketing.stepSoon')}</p>
         </div>

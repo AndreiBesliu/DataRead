@@ -147,6 +147,56 @@ export function coerceToSelfStrategy(v: unknown): SelfStrategy {
   };
 }
 
+// ── Oportunități: ~10 idei de promovare prioritizate pe impact (pasul „Oportunități", intrarea în funnel) ──
+
+export const OPPORTUNITIES_MAX = 10;
+export const OPPORTUNITY_LIMITS = {
+  title: 140,
+  channel: 80,
+  why: 600,
+  description: 800,
+  firstStep: 400,
+} as const;
+
+export const SELF_IMPACT_LEVELS = ['high', 'medium', 'low'] as const;
+export type SelfImpact = (typeof SELF_IMPACT_LEVELS)[number];
+const IMPACT_ORDER: Record<SelfImpact, number> = { high: 0, medium: 1, low: 2 };
+
+export interface SelfOpportunity {
+  title: string; // ideea de promovare
+  channel: string; // canalul principal (ex. Meta Ads, Google Search, email)
+  impact: SelfImpact; // impact estimat — pentru prioritizare
+  why: string; // de ce e potrivită firmei
+  description: string; // ce presupune concret
+  firstStep: string; // primul pas de făcut
+}
+
+export interface SelfOpportunities {
+  schema: typeof SELF_MARKETING_SCHEMA;
+  items: SelfOpportunity[]; // sortate pe impact (cap OPPORTUNITIES_MAX)
+}
+
+export function coerceToSelfOpportunities(v: unknown): SelfOpportunities {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const L = OPPORTUNITY_LIMITS;
+  const items = (Array.isArray(d.items) ? d.items : [])
+    .map((raw) => {
+      const x = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+      const impact: SelfImpact = SELF_IMPACT_LEVELS.includes(x.impact as SelfImpact) ? (x.impact as SelfImpact) : 'medium';
+      return {
+        title: str(x.title, L.title),
+        channel: str(x.channel, L.channel),
+        impact,
+        why: str(x.why, L.why),
+        description: str(x.description, L.description),
+        firstStep: str(x.firstStep, L.firstStep),
+      };
+    })
+    .sort((a, b) => IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact])
+    .slice(0, OPPORTUNITIES_MAX);
+  return { schema: SELF_MARKETING_SCHEMA, items };
+}
+
 // ── Detalii: aprofundarea tactică a UNEI direcții alese din strategie (pasul „Detalii") ──
 
 export const DETAILS_LIMITS = {

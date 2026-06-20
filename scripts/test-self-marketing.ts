@@ -3,7 +3,10 @@ import {
   coerceToSelfCompanyProfile,
   coerceToSelfStrategy,
   coerceToSelfDetails,
+  coerceToSelfOpportunities,
   coerceToSelfQuota,
+  OPPORTUNITIES_MAX,
+  OPPORTUNITY_LIMITS,
   emptySelfProfile,
   selfFreeRemaining,
   validateSelfProfile,
@@ -74,6 +77,16 @@ check('coerce detalii: câmpuri peste plafon → clamp', (() => {
   const d = coerceToSelfDetails({ directionTitle: 't'.repeat(500), campaignBrief: 'c'.repeat(5000) });
   return d.directionTitle.length === DETAILS_LIMITS.directionTitle && d.campaignBrief.length === DETAILS_LIMITS.campaignBrief;
 })());
+
+// ── coerce oportunități (S2) ──
+check('coerce oportunități: null → 0 items', coerceToSelfOpportunities(null).items.length === 0);
+check('coerce oportunități: impact invalid → medium', coerceToSelfOpportunities({ items: [{ title: 'x', impact: 'huge' }] }).items[0].impact === 'medium');
+check('coerce oportunități: sortare pe impact (high înaintea low)', (() => {
+  const o = coerceToSelfOpportunities({ items: [{ title: 'L', impact: 'low' }, { title: 'H', impact: 'high' }, { title: 'M', impact: 'medium' }] });
+  return o.items[0].impact === 'high' && o.items[1].impact === 'medium' && o.items[2].impact === 'low';
+})());
+check('coerce oportunități: peste plafon → capate', coerceToSelfOpportunities({ items: Array.from({ length: 25 }, () => ({ title: 'x', impact: 'high' })) }).items.length === OPPORTUNITIES_MAX);
+check('coerce oportunități: câmp plafonat', coerceToSelfOpportunities({ items: [{ title: 't'.repeat(500), impact: 'high' }] }).items[0].title.length === OPPORTUNITY_LIMITS.title);
 
 // ── coerce quotă + remaining ──
 check('coerce quotă: null → total 0', coerceToSelfQuota(null).total === 0);

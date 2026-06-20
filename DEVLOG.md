@@ -1557,6 +1557,26 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 15/15 suites (acoperire chei: toate corpurile noi există) + build (paritate i18n) + build:site + boot. DEPLOYED:
 > hosting (UI/i18n). NB pt. viitor: la fiecare felie Self Marketing (Oportunități/Execuție/...) se actualizează și ghidul clientului.
 
+**2026-06-20 - Task Completed — Self Marketing S2: pasul „Oportunități" (paritate cu AI Marketing Explorer)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: Self Marketing trebuie să facă exact ce face marketingexplorer.ro. Gap principal = pasul „Oportunități"
+> (era „în curând"). Livrat S2 (defining feature al competitorului: ~10 idei prioritizate pe impact):
+> - `functions/index.js`: callable nou `selfGenerateOpportunities` (clonă a selfGenerateStrategy — auth + App Check +
+>   self-quota per-client + plafon global + refund la eșec) → `OPPORTUNITIES_SCHEMA` (items: title/channel/impact
+>   high|medium|low/why/description/firstStep) + `buildOpportunitiesPrompt` (cere EXACT 10, prioritizate pe impact);
+>   clamp + sortare pe impact, scrie `clients/{uid}/selfMarketing/opportunities`. Reguli: cade pe matcher-ul existent
+>   `selfMarketing/{docId}` (client-read, write false) — fără schimbare de reguli.
+> - `src/types/selfMarketing.ts`: `SelfOpportunity`/`SelfOpportunities` + `coerceToSelfOpportunities` (impact invalid→
+>   medium, sortare pe impact, cap 10) + OPPORTUNITY_LIMITS (paritate cu JS).
+> - `src/app/SelfMarketingFunnel.tsx`: pasul 2 „Oportunități" devine FUNCȚIONAL — generare + listă cu badge de impact +
+>   canal/de ce/ce presupune/primul pas + export copy/PDF. (Doar pasul 5 „Execuție" rămâne „în curând".)
+> - Ghidul CLIENTULUI: `clSelf` 5→6 (adăugat „Oportunități (idei prioritizate)" în flux). i18n `selfMarketing.opp*`/
+>   `impact_*`/`o*` + `help.clSelf_*` ro+en.
+> Verificat: 15/15 suites (test-self-marketing +5 coerce oportunități) + e2e TEST Q (+6 prompt/schema/paritate OPPORTUNITY_LIMITS;
+>   re-export adăugat în _e2e-lp-entry.ts) + build (paritate i18n) + build:site + boot. DEPLOYED: functions
+>   (selfGenerateOpportunities create) + hosting. **Self Marketing acum:** Profil→Oportunități→Strategie→Detalii (+export);
+>   rămas pt. paritate: S3 Execuție (plan 30 zile), S4 bibliotecă multi-firmă, S5 credite cumpărabile.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

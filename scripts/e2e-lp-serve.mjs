@@ -569,6 +569,16 @@ console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil serve
   const ds = fns.DETAILS_SCHEMA;
   ok(ds && ds.additionalProperties === false && ['budgetSplit', 'audienceDetail', 'messaging', 'funnel', 'campaignBrief', 'timeline'].every((k) => ds.required.includes(k)), 'DETAILS_SCHEMA: cele 6 câmpuri required + additionalProperties false');
   ok(JSON.stringify(C.DETAILS_LIMITS) === JSON.stringify(fns.DETAILS_LIMITS), 'DETAILS_LIMITS identic TS↔JS');
+  // Pasul Oportunități (S2): buildOpportunitiesPrompt + OPPORTUNITIES_SCHEMA + paritate OPPORTUNITY_LIMITS.
+  const oprompt = fns.buildOpportunitiesPrompt(profile);
+  ok(typeof oprompt === 'string' && oprompt.includes('Presto Construct') && /10 OPORTUNIT/i.test(oprompt), 'buildOpportunitiesPrompt: firma + cere 10 oportunități');
+  ok(fns.buildOpportunitiesPrompt(null).length > 0, 'buildOpportunitiesPrompt(null) nu aruncă');
+  const os = fns.OPPORTUNITIES_SCHEMA;
+  const oit = os?.properties?.items?.items;
+  ok(os?.required?.includes('items') && os.additionalProperties === false, 'OPPORTUNITIES_SCHEMA: items required + additionalProperties false');
+  ok(oit?.additionalProperties === false && ['title', 'channel', 'impact', 'why', 'description', 'firstStep'].every((k) => oit.required.includes(k)), 'item oportunitate: 6 câmpuri required + additionalProperties false');
+  ok(JSON.stringify(oit?.properties?.impact?.enum) === JSON.stringify(['high', 'medium', 'low']), 'OPPORTUNITIES_SCHEMA: impact enum high/medium/low');
+  ok(JSON.stringify(C.OPPORTUNITY_LIMITS) === JSON.stringify(fns.OPPORTUNITY_LIMITS), 'OPPORTUNITY_LIMITS identic TS↔JS');
 }
 
 // ── Paritate TS↔JS pe constantele Self Marketing (limits/allowlist/quota): orice drift = silent data loss. ──
