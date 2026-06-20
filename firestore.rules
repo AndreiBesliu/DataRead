@@ -272,6 +272,12 @@ service cloud.firestore {
         allow read: if isAdmin() || (request.auth != null && get(/databases/$(database)/documents/landingPages/$(slug)).data.clientUid == request.auth.uid);
         allow write: if false; // doar functions (contoare incrementate server-side)
       }
+      // A/B testing: contoare vizite/conversii per variantă-experiment (cheia = expId__armId). Aceeași izolare
+      // multi-tenant ca stats/variants (client vede DOAR ale LP-ului lui); scrise exclusiv de functions.
+      match /abStats/{key} {
+        allow read: if isAdmin() || (request.auth != null && get(/databases/$(database)/documents/landingPages/$(slug)).data.clientUid == request.auth.uid);
+        allow write: if false;
+      }
       // Linkuri etichetate generate de operator (Link Builder). Scrise din client de admin.
       match /links/{id} {
         allow read, delete: if isAdmin();

@@ -799,6 +799,93 @@ console.log('\nV) clientSafeDeliverables (filtru oglindă livrabile + versiuni)'
   ok(Object.keys(fns.clientSafeDeliverables(null)).length === 0 && Object.keys(fns.clientSafeDeliverables('x')).length === 0, 'null/gunoi → {} (fără throw)');
 }
 
+// ── TEST W: A/B testing „pe sloturi" — helpers puri + serveLp (split/sticky/cookie/abStats) + submit atribuit. ──
+console.log('\nW) A/B testing — helpers + serveLp split/sticky + abStats');
+{
+  // Helpers puri (paritate cu logica de selecție)
+  ok(JSON.stringify(fns.parseAbCookie('lpab_ab-test=hero:b,cta:a; other=x', 'ab-test')) === JSON.stringify({ hero: 'b', cta: 'a' }), 'parseAbCookie: extrage perechile slug-ului');
+  ok(Object.keys(fns.parseAbCookie('lpab_other=hero:b', 'ab-test')).length === 0, 'parseAbCookie: ignoră alt slug');
+  const arms2 = [{ id: 'a', weight: 1 }, { id: 'b', weight: 1 }];
+  ok(fns.abWeightedPick(arms2, 0.0) === 'a' && fns.abWeightedPick(arms2, 0.99) === 'b', 'abWeightedPick: ponderi egale → împărțire pe rnd');
+  ok(fns.abWeightedPick([{ id: 'a', weight: 9 }, { id: 'b', weight: 1 }], 0.5) === 'a', 'abWeightedPick: pondere mare → favorizat');
+  ok(fns.applyArms('X<!--LP_EXP:hero-->Y', { hero: { a: '<h1>A</h1>' } }, { hero: 'a' }) === 'X<h1>A</h1>Y', 'applyArms: înlocuiește placeholderul cu arma aleasă');
+  ok(fns.applyArms('X<!--LP_EXP:ghost-->Y', {}, {}) === 'XY', 'applyArms: slot orfan → gol');
+  ok(fns.serializeAbCookie('ab-test', { hero: 'b' }).indexOf('lpab_ab-test=hero%3Ab') === 0 && /Path=\/p/.test(fns.serializeAbCookie('ab-test', { hero: 'b' })), 'serializeAbCookie: nume+path corecte');
+  // pickAbAssignment cu rng injectat (determinist)
+  const abLpRaw = { experiments: [{ id: 'hero', status: 'running', winnerArm: '', arms: [{ id: 'a', weight: 1 }, { id: 'b', weight: 1 }] }] };
+  ok(fns.pickAbAssignment(abLpRaw, {}, { rng: () => 0.99 }).assign.hero === 'b', 'pickAbAssignment: split random (rng 0.99 → b)');
+  ok(fns.pickAbAssignment(abLpRaw, { hero: 'a' }, { rng: () => 0.99 }).assign.hero === 'a', 'pickAbAssignment: cookie valid → sticky (nu re-randomizează)');
+  ok(fns.pickAbAssignment(abLpRaw, {}, { isBot: true }).assign.hero === 'a' && Object.keys(fns.pickAbAssignment(abLpRaw, {}, { isBot: true }).count).length === 0, 'pickAbAssignment: bot → control fără contor');
+  ok(fns.pickAbAssignment({ experiments: [{ id: 'hero', status: 'running', winnerArm: 'b', arms: [{ id: 'a' }, { id: 'b' }] }] }, {}, {}).assign.hero === 'b', 'pickAbAssignment: winner promovat → 100% winner');
+  ok(Object.keys(fns.pickAbAssignment({ experiments: [{ id: 'hero', status: 'running', winnerArm: 'b', arms: [{ id: 'a' }, { id: 'b' }] }] }, {}, {}).count).length === 0, 'pickAbAssignment: winner promovat → fără contor/cookie');
+
+  // serveLp integrare: construim o LP cu experiment real (compilat ca în editor)
+  const abLp = C.coerceToLandingPage({
+    schema: 1, slug: 'ab-test', title: 'AB', status: 'published', lang: 'ro', editor: 'visual',
+    blocks: [{ id: 's', type: 'experiment', props: { expId: 'hero' } }],
+    experiments: [{ id: 'hero', name: 'Hero', status: 'running', minSample: 200, winnerArm: '', arms: [
+      { id: 'a', label: 'A', weight: 50, blocks: [{ id: 'h1', type: 'hero', props: { heading: 'VARIANTA-A' } }] },
+      { id: 'b', label: 'B', weight: 50, blocks: [{ id: 'h2', type: 'hero', props: { heading: 'VARIANTA-B' } }] },
+    ] }],
+  });
+  const abAssets = C.recompileLpAssets(abLp);
+  const abDoc = { ...abLp, html: abAssets.html, armsHtml: abAssets.armsHtml, pageDecorHtml: '', conversionHtml: '', hasForm: false, form: { ...abLp.form, enabled: false } };
+
+  // 1) Vizită fără cookie → servește o variantă (A sau B), setează cookie pe ea, loghează vizita ab pe ea.
+  state.lpDoc = abDoc; reset();
+  let servedArm = '';
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/ab-test' }), r);
+    const b = String(r._body || '');
+    const a = b.includes('VARIANTA-A'), bb = b.includes('VARIANTA-B');
+    ok((a || bb) && !(a && bb), 'serveLp A/B: exact O variantă servită (placeholder înlocuit)');
+    servedArm = a ? 'a' : 'b';
+    const cookie = r._headers['Set-Cookie'] || '';
+    ok(cookie.indexOf('lpab_ab-test=hero%3A' + servedArm) === 0, 'serveLp A/B: Set-Cookie sticky pe varianta servită');
+    const abSet = (state.calls['landingPages/abStats:set'] || [])[0];
+    ok(abSet && abSet.id === 'hero__' + servedArm && abSet.data.visits.__inc === 1, 'serveLp A/B: vizită ab contorizată pe varianta servită');
+    ok(!b.includes('<!--LP_EXP:'), 'serveLp A/B: niciun placeholder rezidual');
+  }
+  // 2) A doua vizită CU cookie → aceeași variantă (sticky).
+  reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/ab-test', headers: { host: 'dataread-e1bd6.web.app', cookie: 'lpab_ab-test=hero:' + servedArm } }), r);
+    const b = String(r._body || '');
+    ok(b.includes(servedArm === 'a' ? 'VARIANTA-A' : 'VARIANTA-B'), 'serveLp A/B: cookie → aceeași variantă (sticky)');
+  }
+  // 3) Bot → control (arma A), fără cookie, fără contor.
+  reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/ab-test', headers: { host: 'x', 'user-agent': 'Googlebot/2.1' } }), r);
+    ok(String(r._body || '').includes('VARIANTA-A'), 'serveLp A/B: bot → control (A)');
+    ok(!(r._headers['Set-Cookie']), 'serveLp A/B: bot → fără Set-Cookie');
+    ok(!(state.calls['landingPages/abStats:set']), 'serveLp A/B: bot → fără contor ab');
+  }
+  // 4) winnerArm promovat → 100% pe winner, fără cookie.
+  state.lpDoc = { ...abDoc, experiments: [{ ...abDoc.experiments[0], winnerArm: 'b' }] }; reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/ab-test' }), r);
+    ok(String(r._body || '').includes('VARIANTA-B') && !(r._headers['Set-Cookie']), 'serveLp A/B: winner promovat → 100% B fără cookie');
+  }
+  // 5) Submit cu cookie → conversie atribuită variantei.
+  state.lpDoc = { ...abDoc, hasForm: true, form: { enabled: true, fields: [{ name: 'email', label: 'Email', type: 'email', required: true, options: [], step: 0 }], submitLabel: 'Trimite', successMessage: '', redirectUrl: '', createLead: false, notifyEmail: '', multiStep: false } };
+  reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/_submit', method: 'POST', headers: { cookie: 'lpab_ab-test=hero:b' }, body: { slug: 'ab-test', values: { email: 'a@b.ro' } } }), r);
+    ok(r._status === 200 && r._body && r._body.ok === true, 'serveLp A/B submit: 200 ok');
+    const abSet = (state.calls['landingPages/abStats:set'] || []).find((x) => x.id === 'hero__b');
+    ok(abSet && abSet.data.submissions.__inc === 1, 'serveLp A/B submit: conversie atribuită variantei din cookie (b)');
+  }
+  // 6) Submit FĂRĂ cookie → __unattributed (nu pierdem conversia, nu o atribuim fals).
+  reset();
+  {
+    const r = mkRes(); await serveLp(mkReq({ path: '/p/_submit', method: 'POST', body: { slug: 'ab-test', values: { email: 'c@d.ro' } } }), r);
+    const abSet = (state.calls['landingPages/abStats:set'] || []).find((x) => x.id === 'hero____unattributed');
+    ok(abSet && abSet.data.submissions.__inc === 1, 'serveLp A/B submit: fără cookie → __unattributed');
+  }
+  state.lpDoc = servedDoc;
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

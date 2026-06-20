@@ -1335,6 +1335,23 @@ normaliser, secretele niciodată în chat/repo.
 > UI încă, experiments rămâne []). **RĂMAS #60:** Felia 3 (serveLp split + sticky cookie HMAC + abStats) · Felia 4
 > (reguli abStats scoped) · Felia 5 (UI: editor experimente + panou rezultate).
 
+**2026-06-19 - Task în lucru — A/B testing LP, felia 3+4 (serveLp split + abStats + reguli) [#60]**
+> Model: Claude Opus 4.8 (1M context)
+> Runtime-ul A/B în serveLp (functions/index.js, JS pur testat în e2e). Decizie: FĂRĂ HMAC în v1 (ar lega serveLp
+> de secretul LP_AB_SECRET, indisponibil → ar bloca deploy-ul); cookie-ul validează arm-ul ∈ armele reale; tamper =
+> mutarea propriei conversii între arme valide = neglijabil. HMAC = hardening ulterior.
+> - Helpers puri: `parseAbCookie`/`abWeightedPick`/`pickAbAssignment`/`applyArms`/`serializeAbCookie`. Selecție per
+>   slot: winner promovat→100% (fără cookie/contor); off/stopped→control; running→sticky-cookie sau split ponderat;
+>   boții→control fără contor (nu poluează eșantionul). O singură dată/request → consistență vizită↔contor.
+> - serveLp: cookie sticky `lpab_{slug}` (Path=/p, SameSite=Lax, Secure), `applyArms` înlocuiește placeholderele,
+>   contor vizite în `landingPages/{slug}/abStats/{expId__armId}` (în batch-ul existent). handleSubmit atribuie
+>   conversia variantei din cookie (∈ arme) sau `__unattributed`. NON-REGRESIE: LP fără experimente → assign gol →
+>   zero cookie/contor, applyArms no-op → output identic.
+> - Reguli: `abStats/{key}` read scoped (admin || get(parent).clientUid==uid) + write false (ca stats/variants).
+> Verificat: 14/14 suites + e2e TEST W (helpers + serveLp split/sticky/bot/winner/submit-atribuit/__unattributed,
+> 24 verificări) + build + build:site + boot. DEPLOYED: functions(serveLp) + rules. **RĂMAS #60:** Felia 5 — UI
+> (editor experimente: slot+arme+clonă+weight+status; panou rezultate cu `pickAbWinner` + „Promovează câștigătorul").
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

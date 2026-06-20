@@ -1593,7 +1593,7 @@ function lpNotFound() {
   return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Pagină negăsită</title><style>body{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e8eefc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center}h1{font-size:64px;margin:0}</style></head><body><div><h1>404</h1><p>Pagina nu există sau nu este publicată.</p></div></body></html>';
 }
 
-async function logLpVisit(db, slug, req, lp) {
+async function logLpVisit(db, slug, req, lp, abCount) {
   const q = req.query || {};
   const source = lpBucket(q.utm_source);
   const medium = lpBucket(q.utm_medium, LP_MEDIUM_WHITELIST);
@@ -1627,6 +1627,13 @@ async function logLpVisit(db, slug, req, lp) {
     schema: 1, source: attr.source, medium: attr.medium, campaign: attr.campaign, content: attr.content, term: attr.term,
     visits: inc, lastSeen: ts,
   }, { merge: true });
+  // A/B: contor de vizite per variantă-experiment (allowlist implicit: scriem DOAR perechile alese, care există în doc).
+  for (const expId of Object.keys(abCount || {})) {
+    const armId = abCount[expId];
+    batch.set(base.collection('abStats').doc(expId + '__' + armId), {
+      schema: 1, expId, armId, visits: inc, lastSeen: ts,
+    }, { merge: true });
+  }
   await batch.commit();
   // Vizita brută (fire-and-forget).
   base.collection('visits').add({
@@ -1645,7 +1652,85 @@ async function logLpVisit(db, slug, req, lp) {
   }).catch(() => {});
 }
 
-function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null) {
+// ── A/B testing „pe sloturi" (#60) — pur, testabil în e2e. Cookie sticky `lpab_{slug}=exp:arm;exp2:arm2`.
+// FĂRĂ HMAC în v1: tamperul = mutarea propriei conversii între arme VALIDE (validăm armId ∈ arme) = neglijabil;
+// hardening HMAC (secret LP_AB_SECRET) = follow-up. serveLp poate folosi random/cookie (no-store, nu prerender).
+const AB_UNATTRIBUTED = '__unattributed';
+function abExperimentsOf(lp) {
+  return lp && Array.isArray(lp.experiments)
+    ? lp.experiments.filter((e) => e && typeof e === 'object' && typeof e.id === 'string' && Array.isArray(e.arms))
+    : [];
+}
+function abArmIds(exp) {
+  return (exp.arms || []).filter((a) => a && typeof a.id === 'string').map((a) => a.id);
+}
+function parseAbCookie(cookieHeader, slug) {
+  const out = {};
+  const name = 'lpab_' + slug + '=';
+  const raw = String(cookieHeader || '').split(/;\s*/).find((c) => c.indexOf(name) === 0);
+  if (!raw) return out;
+  let val = raw.slice(name.length);
+  try { val = decodeURIComponent(val); } catch (e) { /* valoare coruptă → ignorăm */ }
+  for (const pair of val.split(',')) {
+    const i = pair.indexOf(':');
+    if (i > 0) { const e = pair.slice(0, i), a = pair.slice(i + 1); if (e && a) out[e] = a; }
+  }
+  return out;
+}
+function abWeightedPick(arms, rnd) {
+  const valid = (arms || []).filter((a) => a && typeof a.id === 'string');
+  if (!valid.length) return '';
+  const w = (a) => (typeof a.weight === 'number' && a.weight > 0 ? a.weight : 1);
+  let total = 0;
+  for (const a of valid) total += w(a);
+  let r = (typeof rnd === 'number' ? rnd : 0) * total;
+  for (const a of valid) { r -= w(a); if (r < 0) return a.id; }
+  return valid[valid.length - 1].id;
+}
+/** Decide varianta per experiment. Întoarce { assign, count, cookiePairs } (toate map expId→armId).
+ *  winner promovat → 100% fără cookie/contor; off/stopped → control; running → sticky-cookie sau split ponderat
+ *  (boții → control, fără contor, ca să nu polueze eșantionul). */
+function pickAbAssignment(lp, parsedCookie, opts) {
+  const isBot = !!(opts && opts.isBot);
+  const rng = opts && typeof opts.rng === 'function' ? opts.rng : Math.random;
+  const assign = {}, count = {}, cookiePairs = {};
+  for (const exp of abExperimentsOf(lp)) {
+    const ids = abArmIds(exp);
+    if (ids.length < 2) { if (ids.length === 1) assign[exp.id] = ids[0]; continue; }
+    const winner = typeof exp.winnerArm === 'string' && ids.indexOf(exp.winnerArm) >= 0 ? exp.winnerArm : '';
+    if (winner) { assign[exp.id] = winner; continue; }
+    if (exp.status !== 'running') { assign[exp.id] = ids[0]; continue; }
+    if (isBot) { assign[exp.id] = ids[0]; continue; }
+    const cookied = parsedCookie && parsedCookie[exp.id];
+    const arm = ids.indexOf(cookied) >= 0 ? cookied : abWeightedPick(exp.arms, rng());
+    assign[exp.id] = arm; count[exp.id] = arm; cookiePairs[exp.id] = arm;
+  }
+  return { assign, count, cookiePairs };
+}
+/** Înlocuiește placeholderele `<!--LP_EXP:id-->` cu HTML-ul variantei alese; sloturile orfane → goale. */
+function applyArms(html, armsHtml, assign) {
+  let out = typeof html === 'string' ? html : '';
+  const am = armsHtml && typeof armsHtml === 'object' ? armsHtml : {};
+  for (const expId of Object.keys(assign || {})) {
+    const arm = assign[expId];
+    const repl = am[expId] && typeof am[expId][arm] === 'string' ? am[expId][arm] : '';
+    out = out.split('<!--LP_EXP:' + expId + '-->').join(repl);
+  }
+  return out.replace(/<!--LP_EXP:[a-z0-9-]+-->/g, '');
+}
+function serializeAbCookie(slug, cookiePairs) {
+  const pairs = Object.keys(cookiePairs || {}).map((e) => e + ':' + cookiePairs[e]);
+  if (!pairs.length) return '';
+  // Path=/p → trimis la /p/{slug}, /p/_track, /p/_submit. Numele e per-slug, deci nu se confundă între pagini.
+  return 'lpab_' + slug + '=' + encodeURIComponent(pairs.join(',')) + '; Path=/p; Max-Age=2592000; SameSite=Lax; Secure';
+}
+exports.parseAbCookie = parseAbCookie;
+exports.abWeightedPick = abWeightedPick;
+exports.pickAbAssignment = pickAbAssignment;
+exports.applyArms = applyArms;
+exports.serializeAbCookie = serializeAbCookie;
+
+function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null, abAssign = null) {
   const lang = lp.lang === 'en' ? 'en' : 'ro';
   const title = lpEscape((lp.title || '').slice(0, 140) || slug);
   const desc = lpEscape((lp.seoDescription || '').slice(0, 320));
@@ -1658,7 +1743,8 @@ function composeLpPage(slug, lp, req, pathPrefix = '/p', chrome = null) {
   const host = /^[a-zA-Z0-9.:-]+$/.test(rawHost) ? rawHost : 'dataread-e1bd6.web.app';
   const canonical = `https://${lpEscape(host)}${pathPrefix}/${slug}`;
   const css = lpThemeCss(lp.design);
-  const body = typeof lp.html === 'string' ? lp.html : '';
+  // A/B: înlocuiește placeholderele de slot cu varianta aleasă (no-op dacă nu există experimente/placeholdere).
+  const body = applyArms(lp.html, lp.armsHtml, abAssign || {});
   // Decorul de fundal al paginii — compilat la salvare în client, injectat aici (motorul nu trăiește în functions).
   const pageDecor = typeof lp.pageDecorHtml === 'string' ? lp.pageDecorHtml : '';
   // Chrome global (header/footer) — DOAR pe paginile de site (chrome != null); null pe campanii (/p/) = NEATINS.
@@ -1862,6 +1948,18 @@ async function handleSubmit(req, res) {
       schema: 1, source: attr.source, medium: attr.medium, campaign: attr.campaign, content: attr.content, term: attr.term,
       submissions: admin.firestore.FieldValue.increment(1), lastSeen: ts,
     }, { merge: true });
+    // A/B: atribuie conversia variantei din cookie-ul sticky (validat ∈ arme); lipsă/invalid pe un exp activ → __unattributed.
+    const parsedAb = parseAbCookie(req.headers.cookie, slug);
+    for (const exp of abExperimentsOf(lp)) {
+      if (exp.status !== 'running') continue;
+      const ids = abArmIds(exp);
+      if (ids.length < 2) continue;
+      if (typeof exp.winnerArm === 'string' && ids.indexOf(exp.winnerArm) >= 0) continue; // winner promovat → nu mai numărăm
+      const arm = ids.indexOf(parsedAb[exp.id]) >= 0 ? parsedAb[exp.id] : AB_UNATTRIBUTED;
+      batch.set(base.collection('abStats').doc(exp.id + '__' + arm), {
+        schema: 1, expId: exp.id, armId: arm, submissions: admin.firestore.FieldValue.increment(1), lastSeen: ts,
+      }, { merge: true });
+    }
     await batch.commit();
     if (lp.form && lp.form.createLead === true) {
       await db.collection('leads').add(mapSubmissionToLead(values, fields, slug, lp.lang));
@@ -2034,13 +2132,19 @@ exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public
     const lpForRender = isSite ? { ...lp, design: (await getPublicThemeDesign(db)) || lp.design } : lp;
     // Chrome global (header/footer + meniu) DOAR pe paginile de site (config sau default); campaniile (/p/) → null → neatinse.
     const chrome = isSite ? ((await getPublicChromeDesign(db)) || DEFAULT_SITE_CHROME) : null;
-    await logLpVisit(db, slug, req, lp).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
+    // A/B: alege varianta per slot (sticky cookie + split ponderat; boții → control fără contor). O singură dată/request,
+    // refolosită la randare ȘI la contorizare (consistență vizită↔contor).
+    const isBot = lpDevice((req.headers['user-agent'] || '').toString()) === 'bot';
+    const ab = pickAbAssignment(lp, parseAbCookie(req.headers.cookie, slug), { isBot });
+    const abCookie = serializeAbCookie(slug, ab.cookiePairs);
+    await logLpVisit(db, slug, req, lp, ab.count).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));
     res
       .status(200)
       .set('Content-Type', 'text/html; charset=utf-8')
       .set('Cache-Control', 'no-store')
-      .set('Content-Security-Policy', LP_CSP)
-      .send(composeLpPage(slug, lpForRender, req, isSite ? '/pagina' : '/p', chrome));
+      .set('Content-Security-Policy', LP_CSP);
+    if (abCookie) res.set('Set-Cookie', abCookie);
+    res.send(composeLpPage(slug, lpForRender, req, isSite ? '/pagina' : '/p', chrome, ab.assign));
   } catch (err) {
     logger.error('serveLp failed', { err: String(err) });
     res.status(500).set('Content-Type', 'text/html; charset=utf-8').send(lpNotFound());
