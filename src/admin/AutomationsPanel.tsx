@@ -38,6 +38,7 @@ export default function AutomationsPanel() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [draft, setDraft] = useState<Automation | null>(null);
   const [cfg, setCfg] = useState<AutomationConfig>(() => coerceToAutomationConfig(null));
+  const [clientOpts, setClientOpts] = useState<Array<{ uid: string; label: string }>>([]);
   const [cfgSaved, setCfgSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -72,6 +73,22 @@ export default function AutomationsPanel() {
   const doneTask = async (id: string) => {
     try { await updateDoc(doc(db, 'tasks', id), { status: 'done' }); } catch (e) { console.warn('task done failed:', e); }
   };
+
+  // Opțiuni de client (pt. regulile scope=client): conturile conectate la lead-uri. Dropdown în loc de UID brut.
+  useEffect(() => {
+    const q = query(collection(db, 'leads'), limit(500));
+    return onSnapshot(q, (snap) => {
+      const map = new Map<string, string>();
+      snap.docs.forEach((d) => {
+        const v = d.data() as Record<string, unknown>;
+        const uid = typeof v.clientUid === 'string' ? v.clientUid : '';
+        if (!uid || map.has(uid)) return;
+        const label = (typeof v.companyName === 'string' && v.companyName) || (typeof v.contactName === 'string' && v.contactName) || (typeof v.email === 'string' && v.email) || uid;
+        map.set(uid, label);
+      });
+      setClientOpts([...map.entries()].map(([uid, label]) => ({ uid, label })));
+    }, () => { /* fără clienți */ });
+  }, []);
 
   const saveConfig = async () => {
     setBusy(true); setErr(''); setCfgSaved(false);
@@ -155,7 +172,14 @@ export default function AutomationsPanel() {
             {draft.scope === 'client' && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={label}>{t('admin.automation.clientUid')}</label>
-                <input style={{ ...input, width: '100%' }} value={draft.clientUid} maxLength={128} onChange={(e) => patch({ clientUid: e.target.value })} />
+                {clientOpts.length > 0 ? (
+                  <select style={{ ...input, width: '100%' }} value={draft.clientUid} onChange={(e) => patch({ clientUid: e.target.value })}>
+                    <option value="">{t('admin.automation.clientPick')}</option>
+                    {clientOpts.map((c) => <option key={c.uid} value={c.uid}>{c.label}</option>)}
+                  </select>
+                ) : (
+                  <input style={{ ...input, width: '100%' }} value={draft.clientUid} maxLength={128} placeholder={t('admin.automation.clientPick')} onChange={(e) => patch({ clientUid: e.target.value })} />
+                )}
               </div>
             )}
           </div>

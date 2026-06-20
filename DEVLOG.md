@@ -1528,6 +1528,23 @@ normaliser, secretele niciodată în chat/repo.
 > DEPLOYED: hosting (doar conținut UI/i18n; fără functions/rules). Notă: e separarea cerută — un ghid pentru echipă, unul
 > pentru clienți, fiecare la fața lui (/admin vs /app).
 
+**2026-06-20 - Task Completed — Automatizări client-scope, Felia 5a (operator face / client vede)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: F5 = automatizări client-scope, „toate 3" (operator-face/client-vede + client self-serve + CRM clasic).
+> Le construiesc pe sub-felii în ordinea fezabilității; **F5a** = fundația (motorul suportă deja scope=client).
+> - `functions/index.js`: ieșirile motorului sunt rutate pe domeniu — `automationOutCol()`: regulile de AGENȚIE scriu în
+>   top-level `notifications`/`tasks` (audiență = operatorii), cele de CLIENT scriu sub `clients/{clientUid}/notifications`
+>   + `clients/{clientUid}/tasks` (audiență = clientul, izolat multi-tenant). notify.operator + task.create folosesc helper-ul.
+> - `firestore.rules`: `clients/{uid}/notifications` (read owner+admin, write false) + `clients/{uid}/tasks` (read owner+admin,
+>   create/delete false, update owner/admin DOAR `status`∈open/done — clientul marchează rezolvat).
+> - `src/admin/AutomationsPanel.tsx`: la scope=client, **dropdown de clienți** (din lead-urile cu clientUid) în loc de UID brut.
+> - `src/app/AppHome.tsx`: secțiune nouă `ClientAutomationFeed` în portal — clientul își vede notificările + task-urile
+>   (deschise, cu „Gata") generate de regulile rulate pe contul lui. i18n `appHome.auto*` + `admin.automation.clientPick` ro+en.
+> Verificat: 15/15 suites + e2e TEST Y (+4 F5a: notify+task sub clients/{uid}, nimic în top-level, tenant greșit → nimic) +
+> build + build:site + boot — toate verzi. DEPLOYED: functions (rutare ieșiri) + hosting (dropdown + portal feed) + rules.
+> **Următor: F5b** (client self-serve — builder de automatizări în /app pe mini-CRM-ul lui, gated de abonament) → **F5c**
+> (CRM clasic facturi/memento — necesită întâi modelul de date Vertical 2). F4 (email/SMS) amânat.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

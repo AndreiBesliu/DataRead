@@ -207,8 +207,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `automationDailyScan` (06:00, lead.inactive cu ctx `lead.daysSinceUpdate`; reguli+config încărcate o dată).
   `tasks/{id}` read admin/create false/update-delete admin; UI „Task-uri deschise" în AutomationsPanel.
   **Motorul acoperă toate declanșatoarele planificate** (lead.*/campaign.*/schedule.*) + acțiuni notify/set_status/task/AI.
-  Felii rămase: F4 email/SMS (AMÂNAT); F5 CRM client-scope; F6 publicare campanii (ads_management). Backstop neimplementat
-  încă: `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR` (constanta există; doar dedupe+cap AI activ).
+  **Felia 5a ACTIV 20.06.2026 (client-scope: operator face / client vede):** ieșirile motorului sunt rutate pe domeniu
+  via `automationOutCol()` — regulile de agenție scriu top-level `notifications`/`tasks` (operatori), cele cu scope:'client'
+  scriu sub `clients/{clientUid}/notifications`+`/tasks` (izolat). Reguli: `clients/{uid}/notifications` read owner+admin/
+  write false; `clients/{uid}/tasks` read owner+admin/create-delete false/update owner-admin DOAR status∈open/done. UI:
+  dropdown de clienți la scope=client în AutomationsPanel + secțiune `ClientAutomationFeed` în /app (client vede notificări+
+  task-uri proprii, marchează „Gata"). Felii rămase: **F5b** (client self-serve — builder în /app pe mini-CRM, gated abonament)
+  → **F5c** (CRM clasic facturi/memento — necesită modelul de date Vertical 2). F4 email/SMS (AMÂNAT); F6 publicare campanii
+  (ads_management). Backstop neimplementat: `AUTOMATION_MAX_RUNS_PER_TARGET_HOUR` (doar dedupe+cap AI activ).
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

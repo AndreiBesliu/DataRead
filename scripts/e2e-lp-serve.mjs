@@ -1005,6 +1005,20 @@ console.log('\nY) dispatch automatizare — onMetric → notify.operator + dedup
   const { db: bdb, store: bstore } = makeAutoStore(seedB);
   await fns.dispatchAutomationEvent(bdb, { trigger: 'lead.created', targetId: 'L11', clientUid: '', ctx: {}, stateHash: 'created' }, { nowMs: 700 });
   ok(!bstore.get('leads/L11'), 'F3: status invalid (zzz) → lead neatins (skipped)');
+
+  // ── Felia 5a: regulă client-scope → notify+task scrise sub clients/{uid}/** (izolare tenant), nu în top-level. ──
+  const seedC = {
+    'automations/c1': { enabled: true, scope: 'client', clientUid: 'u7', name: 'Regulă client', trigger: { type: 'lead.created', config: {} }, conditions: [], actions: [{ type: 'notify.operator', config: { text: 'Salut' } }, { type: 'task.create', config: { title: 'Verifică lead-ul' } }], runCount: 0 },
+  };
+  const { db: cdb, store: cstore } = makeAutoStore(seedC);
+  await fns.dispatchAutomationEvent(cdb, { trigger: 'lead.created', targetId: 'L20', clientUid: 'u7', ctx: {}, stateHash: 'created' }, { nowMs: 800 });
+  ok([...cstore.keys()].filter((k) => k.startsWith('clients/u7/notifications/')).length === 1, 'F5a: notificare scrisă sub clients/{uid}/notifications');
+  ok([...cstore.keys()].filter((k) => k.startsWith('clients/u7/tasks/')).length === 1, 'F5a: task scris sub clients/{uid}/tasks');
+  ok(![...cstore.keys()].some((k) => k.startsWith('notifications/') || k.startsWith('tasks/')), 'F5a: nimic în top-level (izolare multi-tenant)');
+  // tenant greșit → regula client nu se potrivește
+  const { db: cdb2, store: cstore2 } = makeAutoStore(seedC);
+  await fns.dispatchAutomationEvent(cdb2, { trigger: 'lead.created', targetId: 'L21', clientUid: 'u8', ctx: {}, stateHash: 'created' }, { nowMs: 900 });
+  ok([...cstore2.keys()].filter((k) => k.startsWith('clients/')).length === 0, 'F5a: regulă client pe alt tenant (u8) → nimic scris');
 }
 
 rmSync(tmp, { force: true });

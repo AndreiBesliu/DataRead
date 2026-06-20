@@ -127,6 +127,20 @@ service cloud.firestore {
         allow delete: if signedInAs(uid);
       }
 
+      // Notificări + task-uri generate de automatizările client-scope (scope:'client'). Scrise EXCLUSIV de motor
+      // (Admin SDK). Clientul își vede DOAR pe ale lui (izolare multi-tenant); poate marca un task ca rezolvat.
+      match /notifications/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false;
+      }
+      match /tasks/{id} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow create, delete: if false; // doar motorul (Admin SDK)
+        allow update: if (signedInAs(uid) || isAdmin())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['open', 'done'];
+      }
+
       match /onboarding/{docId} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)

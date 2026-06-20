@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { deliverableFieldsFor, type RequestKind } from '../types/request';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
@@ -512,6 +512,51 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 
 /** Dashboardul clientului. Structura prevede de pe acum secțiunile Verticalei 1 (cereri de
  *  marketing / rezultate / AI insights) — „în curând" în v1, populate în felia 2. */
+/** Feed-ul de automatizări al clientului — notificările + task-urile generate de regulile client-scope (scope:'client')
+ *  rulate pe contul lui. Scrise de motor (Admin SDK), citite scoped prin rules. Clientul poate marca un task ca rezolvat. */
+function ClientAutomationFeed({ uid }: { uid: string }) {
+  const { t } = useTranslation();
+  const [notifs, setNotifs] = useState<Array<{ id: string; text?: string; createdAt?: number }>>([]);
+  const [tasks, setTasks] = useState<Array<{ id: string; title?: string; createdAt?: number }>>([]);
+  useEffect(() => {
+    const o1 = onSnapshot(query(collection(db, 'clients', uid, 'notifications'), orderBy('createdAt', 'desc'), limit(20)),
+      (s) => setNotifs(s.docs.map((d) => ({ id: d.id, ...(d.data() as { text?: string; createdAt?: number }) }))), () => { /* none */ });
+    const o2 = onSnapshot(query(collection(db, 'clients', uid, 'tasks'), where('status', '==', 'open'), orderBy('createdAt', 'desc'), limit(20)),
+      (s) => setTasks(s.docs.map((d) => ({ id: d.id, ...(d.data() as { title?: string; createdAt?: number }) }))), () => { /* none */ });
+    return () => { o1(); o2(); };
+  }, [uid]);
+  const done = async (id: string) => { try { await updateDoc(doc(db, 'clients', uid, 'tasks', id), { status: 'done' }); } catch (e) { /* ignore */ } };
+  if (notifs.length === 0 && tasks.length === 0) return null;
+  const row: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderTop: '1px solid var(--border)', fontSize: 13 };
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 18, margin: '0 0 10px' }}>{t('appHome.autoTitle')}</h2>
+      {tasks.length > 0 && (
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{t('appHome.autoTasks')}</div>
+          {tasks.map((tk) => (
+            <div key={tk.id} style={row}>
+              <span style={{ flex: 1 }}>{tk.title}</span>
+              <button className="btn" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => void done(tk.id)}>{t('appHome.taskDone')}</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {notifs.length > 0 && (
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 16px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{t('appHome.autoNotifs')}</div>
+          {notifs.map((n) => (
+            <div key={n.id} style={row}>
+              <span style={{ flex: 1 }}>{n.text}</span>
+              <span style={{ color: 'var(--fg-1)', fontSize: 12 }}>{n.createdAt ? new Date(n.createdAt).toLocaleDateString() : ''}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AppHome() {
   const { t } = useTranslation();
   const { user, initializing, signOutUser } = useAuthStore();
@@ -665,6 +710,8 @@ export default function AppHome() {
       <MarketingPortal uid={user.uid} />
       {/* Landing Pages ale clientului — performanță + lead-uri capturate (scoped prin rules). */}
       <LandingPagesPortal uid={user.uid} />
+      {/* Automatizări client-scope — notificări + task-uri generate de motor pe contul lui. */}
+      <ClientAutomationFeed uid={user.uid} />
     </main>
   );
 }

@@ -2612,9 +2612,18 @@ exports.setAutomationEnabled = onCall({ region: REGION, enforceAppCheck: APP_CHE
 // ── EXECUȚIA motorului — dispatcher + executor. notify.operator = zero cost (Felia 2). Acțiunile AI
 //    (report.generate/campaign.recommend) = Felia 2b: gate prin entitlement client + bypass admin + plafon zilnic
 //    configurabil (appConfig/automation). Restul (lead.set_status/task.create) → felii viitoare ('skipped'). ──
+// Colecția de ieșire: regulile de AGENȚIE scriu în top-level (audiență = operatorii); cele de CLIENT scriu sub
+// clients/{clientUid}/** (audiență = clientul, izolat multi-tenant). `kind` = 'notifications' | 'tasks'.
+function automationOutCol(db, automation, kind) {
+  if (automation.scope === 'client' && automation.clientUid) {
+    return db.collection('clients').doc(automation.clientUid).collection(kind);
+  }
+  return db.collection(kind);
+}
+
 async function writeAutomationNotification(db, match, event, nowMs, idx, text, severity) {
   const id = `${match.key}__a${idx}`.slice(0, 480);
-  await db.collection('notifications').doc(id).set({
+  await automationOutCol(db, match.automation, 'notifications').doc(id).set({
     schema: 1, source: 'automation', automationId: match.automation.id || '', automationName: match.automation.name || '',
     trigger: event.trigger, targetId: event.targetId || '', clientUid: event.clientUid || '',
     text: String(text || match.automation.name || 'Automatizare declanșată').slice(0, 500),
@@ -2669,7 +2678,7 @@ async function executeAutomationAction(db, action, match, event, nowMs, idx, con
   }
   if (action.type === 'task.create') {
     const id = `${match.key}__a${idx}`.slice(0, 480);
-    await db.collection('tasks').doc(id).set({
+    await automationOutCol(db, match.automation, 'tasks').doc(id).set({
       schema: 1, source: 'automation', automationId: match.automation.id || '',
       title: String((action.config && action.config.title) || match.automation.name || 'Task').slice(0, 200),
       leadId: String(event.trigger).startsWith('lead.') ? (event.targetId || '') : '',
