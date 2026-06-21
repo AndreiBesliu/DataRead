@@ -1863,6 +1863,35 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără
 >   functions). Pur refactor UI/IA (zero schimbări de date/reguli/securitate).
 
+**2026-06-21 - Audit pre-lansare (multi-agent) — stare & capacitate**
+> Model: Claude Opus 4.8 (1M context). Workflow: 9 finderi (rules/multi-tenant, functions, ai-cost, money-legal,
+> data-integrity, pii, public-surface, frontend, secrets-deploy) + 2 mapperi (capability, opstate), verificare
+> adversarială per-constatare. 28 constatări → 21 confirmate (4 high, 2 medium, 14 low, 1 nit). ZERO blocker, ZERO
+> breșă cross-tenant exploatabilă anonim. Nu lansăm încă (mai e dezvoltare) — listă de remediat înainte de lansare:
+> **HIGH (cod):**
+> 1. Factura EMISĂ rămâne complet editabilă (items/TVA/părți/date) — regulile blochează doar number/series/kind/status;
+>    fix: îngheață câmpurile financiare în firestore.rules când number!='' + dezactivează inputurile în UI.
+> 2. Factura EMISĂ poate fi ștearsă (delete fără gardă pe number) → gol în secvența legală + contor nedecrementat;
+>    fix: `allow delete: if isAdmin() && resource.data.number==''` + ascunde butonul Șterge pe facturi emise.
+> 3. `aiInsight` (verdict/reasoning intern + aiInsightBy=UID operator) e citibil de client pe campaigns/{id} (read direct,
+>    fără mirror client-safe); fix: mută aiInsight pe doc admin-only / mirror whitelisted (ca deliverables).
+> 4. CSV formula-injection în exportul de leads din AdminHome (csvEscape local nu prefixează =+-@); date de la formularul
+>    PUBLIC anonim → RCE/exfil în Excel la operator; fix: folosește `csvCell` din utils/csv.ts (deja există).
+> **MEDIUM (cod):** 5. Gate-ul AI automatizări folosește `ent.status==='active'` în loc de `ent.active` (expirați primesc AI;
+>    trialing respins) — fix `ent.active===true` (ca selfGlobalPoolFor). 6. `nextFollowUp` derivă greșit (o activitate fără
+>    dată golește un follow-up real) — recalculează din toate activitățile (cel mai apropiat dueAt).
+> **LOW (14):** leads create cu 12 câmpuri necapate (umflare doc anonim); checkout_sessions nevalidat (App Check pending);
+>    callable-urile AI admin fără enforceAppCheck (consistență); storno cu sume necontrolate server-side; mirror deliverables
+>    fără backfill (doar lpIndex are); clientName/requests.clientUid denorm fără re-sync server; operator UID în campaign;
+>    EntCache fără coerce; cap AI operator doar lunar (fără daily/global); etc. **NIT (1):** idem cap operator.
+> **OPERAȚIONAL (consolă Andrei — cele mai mari riscuri):** backup zilnic Firestore + PITR (CRITIC — contorul de facturi
+>    n-are recuperare); monitorizare/alerte externe (error-rate functions+serveLp, uptime, alertă buget — azi ZERO);
+>    confirmă App Check ENFORCEMENT pornit; firestore.indexes.json e gol (indecși compuși de codificat+deploy); suită de
+>    reguli cu emulator (lipsă); pipeline de deploy (manual, fără staging/rollback); rotație ANTHROPIC_API_KEY; a11y (neabordat).
+> Capacitate: Vertical 1 (Marketing AI) + Vertical 2 (Facturi+CRM activități) LIVE; LP Studio/serveLp/analytics, Self
+> Marketing 5 pași, Meta ingest, automatizări notify-only — toate live. Dormant: Stripe self-serve (priceIds goale),
+> Google/TikTok, email/SMS, ANAF e-Factura. (Niciun fix aplicat în acest pas — doar evaluare; remedierile = felii viitoare.)
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
