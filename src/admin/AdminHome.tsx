@@ -23,6 +23,7 @@ import { coerceToOnboarding, type OnboardingData } from '../types/onboarding';
 import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type LeadStatus } from '../types/lead';
 import LeadRequests from './LeadRequests';
 import OpportunityBoard from './OpportunityBoard';
+import LeadActivity from './LeadActivity';
 import SuggestionsPanel from './SuggestionsPanel';
 import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
@@ -679,6 +680,7 @@ export default function AdminHome() {
                                 </div>
                                 {user && <OpportunityBoard leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
                                 {user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
+                                {user && <LeadActivity leadId={l.id} adminUid={user.uid} />}
 
                                 {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
                                 <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>

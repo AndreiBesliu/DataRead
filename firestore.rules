@@ -70,6 +70,20 @@ service cloud.firestore {
           allow update: if false;
         }
       }
+
+      // CRM intern (Verticala 2): jurnalul de activități al lead-ului — exclusiv operatorii. Append-only
+      // (create + delete, fără update) — un istoric de interacțiuni nu se editează (corecție = șterge + adaugă).
+      match /activities/{actId} {
+        allow read, delete: if isAdmin();
+        allow create: if isAdmin()
+          && request.resource.data.keys().hasOnly(['schema', 'type', 'body', 'at', 'dueAt', 'createdBy'])
+          && request.resource.data.schema == 1
+          && request.resource.data.type in ['note', 'call', 'email', 'meeting', 'other']
+          && request.resource.data.body is string && request.resource.data.body.size() <= 2000
+          && request.resource.data.at is number
+          && request.resource.data.dueAt is string && request.resource.data.dueAt.size() <= 10;
+        allow update: if false;
+      }
     }
 
     // ───────── Izolare multi-tenant: tot ce aparține unui client stă sub clients/{uid}/** ─────────

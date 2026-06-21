@@ -1817,6 +1817,22 @@ normaliser, secretele niciodată în chat/repo.
 >   stornedBy, ALREADY_STORNOED, STORNO_NO_ORIGINAL/NOT_FOUND/NOT_ISSUED/OF_STORNO) + build + build:site + boot. DEPLOYED:
 >   functions + hosting + rules. Backlog: e-Factura ANAF; numerotare proforme (serie separată); reset anual.
 
+**2026-06-21 - Task Completed — CRM intern: jurnal de activități per lead (Verticala 2)**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). Primul pas din CRM-ul intern: un ISTORIC de interacțiuni pe lead (peste
+> nota unică + pipeline-ul de status existent), care leagă relația de marketing de munca/facturarea ulterioară.
+> - Model `src/types/crmActivity.ts` (`CrmActivity` schema:1: type[note/call/email/meeting/other] + body + at(millis) +
+>   dueAt(follow-up) + createdBy; coerce unic). Colecție `leads/{leadId}/activities/{id}` (zona operatorilor).
+> - UI `src/admin/LeadActivity.tsx` (autonomă, ca LeadRequests/OpportunityBoard) — timeline cronologic + formular (tip +
+>   text + dată de follow-up); follow-up scadent evidențiat roșu. Un rând în AdminHome (expanderul lead-ului).
+> - Reguli: `leads/{id}/activities` read/delete admin, create admin (hasOnly + type enum + body≤2000 + at number +
+>   dueAt≤10), **append-only** (`update:false` — corecție = șterge+adaugă). `at` = client clock (number), nu serverTimestamp
+>   (cere `is number` + ordonare client-side; unealtă operator, nu registru legal).
+> - i18n `admin.activity.*` (ro+en); test pur `scripts/test-crm.ts` (coerce). Review adversarial (1 agent): 0 bug-uri,
+>   1 nit (import `serverTimestamp` nefolosit) — reparat.
+> Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără functions).
+>   Backlog CRM: contacte multiple per client; follow-up scadent în „Sugestii"; activități și pe clienții cu cont.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

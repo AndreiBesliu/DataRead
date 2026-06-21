@@ -244,7 +244,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `issueInvoice` scrie `clients/{uid}/notifications/invoice-{id}` (id determinist, best-effort, doar la prima emitere) prin
   `writeInvoiceNotification`; text localizat `invoiceNotifText` (ro/en după `clients/{uid}.locale`) — apare în feed-ul existent
   `ClientAutomationFeed` (zero cod frontend nou). e-Factura ANAF + storno/corecții + reset anual = felii viitoare. NU e gated
-  încă pe pachet (unealtă operator). Restul Verticalei 2 (CRM intern, comunicare, automatizări CRM) = neînceput.
+  încă pe pachet (unealtă operator).
+- **CRM intern — jurnal de activități (ACTIV 21.06.2026, modul `crm`):** istoric de interacțiuni per lead (peste nota
+  unică + pipeline-ul de status). `src/types/crmActivity.ts` (`CrmActivity` schema:1: type note/call/email/meeting/other +
+  body + at(millis) + dueAt follow-up + createdBy; coerce unic). Colecție `leads/{leadId}/activities/{id}` (operatori);
+  reguli read/delete admin, create admin (hasOnly + validare), **append-only** (`update:false`). UI `LeadActivity` (timeline
+  + formular cu follow-up) în expanderul lead-ului din /admin (lângă OpportunityBoard/LeadRequests). `at` = client clock
+  (ordonare client-side; unealtă operator, nu registru legal). Backlog CRM: contacte multiple/client; follow-up scadent în
+  „Sugestii"; activități pe clienții cu cont. Restul Verticalei 2 (comunicare email/SMS, automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
