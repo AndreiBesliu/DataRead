@@ -30,6 +30,7 @@ import {
 } from '../src/analytics/lpStats';
 import { coerceBlocks, coerceToLpBlock, compileBlocks, compileConversion, defaultBlockProps } from '../src/types/lpBlocks';
 import { coerceConversion, coerceOffer } from '../src/types/landingPage';
+import { renderEmail, coerceEmailDraft } from '../src/utils/email';
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
 import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
@@ -544,6 +545,14 @@ check('coerceOffer: plafoane titlu/mesaj', (() => {
   return o.expiredHeadline.length === 120 && o.expiredMessage.length === 600;
 })());
 check('coerce LP: offer integrat în coerceToLandingPage', coerceToLandingPage({ offer: { expiresAt: '2026-06-21T12:00:00.000Z', mode: 'redirect' } }).offer.mode === 'redirect');
+
+// ── Email (comunicare CRM, felia 1) ──
+check('renderEmail: escapează corpul (anti-injecție)', renderEmail({ subject: 's', body: '<b>x</b>', unsubscribeUrl: '', brand: 'D', lang: 'ro' }).html.includes('&lt;b&gt;'));
+check('renderEmail: newline → <br>', renderEmail({ subject: 's', body: 'a\nb', unsubscribeUrl: '', brand: 'D', lang: 'ro' }).html.includes('a<br>b'));
+check('renderEmail: footer dezabonare https', renderEmail({ subject: 's', body: 'x', unsubscribeUrl: 'https://x.ro/u', brand: 'D', lang: 'ro' }).html.includes('https://x.ro/u'));
+check('renderEmail: unsubscribe non-https → fără footer', !renderEmail({ subject: 's', body: 'x', unsubscribeUrl: 'http://x/u', brand: 'D', lang: 'ro' }).html.includes('Dezabonare'));
+check('renderEmail: subiect plafonat la 200', renderEmail({ subject: 's'.repeat(300), body: 'x', unsubscribeUrl: '', brand: 'D', lang: 'ro' }).subject.length === 200);
+check('coerceEmailDraft: plafoane subiect/corp', (() => { const d = coerceEmailDraft({ subject: 's'.repeat(300), body: 'b'.repeat(6000) }); return d.subject.length === 200 && d.body.length === 5000; })());
 
 // ── Formular multi-step (#59) ──
 check('coerce: form.multiStep bool', coerceToLandingPage({ form: { enabled: true, multiStep: true } }).form.multiStep === true);

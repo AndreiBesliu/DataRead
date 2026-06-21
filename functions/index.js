@@ -2634,11 +2634,42 @@ function composeSiteChrome(rawChrome, lang) {
 }
 exports.composeSiteChrome = composeSiteChrome;
 
+// Dezabonare un-click din footer-ul emailurilor: GET /p/_unsubscribe?lead=…&t=token → setează emailOptOut=true pe lead
+// (Admin SDK). Tokenul aleator per-lead = autorizarea (fără login). Idempotent; răspuns simplu, noindex.
+// Nucleu testabil: setează emailOptOut=true pe lead dacă tokenul corespunde. {ok, reason}. Idempotent.
+async function performUnsubscribe(db, leadId, token) {
+  if (!leadId || !token || !/^[A-Za-z0-9_-]+$/.test(String(leadId))) return { ok: false, reason: 'invalid' };
+  const ref = db.collection('leads').doc(String(leadId));
+  const snap = await ref.get();
+  const lead = snap.exists ? (snap.data() || {}) : null;
+  if (lead && lead.emailUnsubToken && String(token) === String(lead.emailUnsubToken)) {
+    await ref.set({ emailOptOut: true }, { merge: true });
+    return { ok: true };
+  }
+  return { ok: false, reason: 'badtoken' };
+}
+exports.performUnsubscribe = performUnsubscribe;
+
+async function handleUnsubscribe(req, res) {
+  const q = req.query || {};
+  const page = (msg) => `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Dezabonare</title><style>body{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e8eefc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center;padding:24px}p{font-size:17px;max-width:420px}</style></head><body><div><p>${lpEscape(msg)}</p></div></body></html>`;
+  const html = (status, msg) => res.status(status).set('Content-Type', 'text/html; charset=utf-8').set('Cache-Control', 'no-store').set('X-Robots-Tag', 'noindex').send(page(msg));
+  try {
+    const r = await performUnsubscribe(admin.firestore(), String(q.lead || ''), String(q.t || ''));
+    if (r.ok) return html(200, 'Te-ai dezabonat. Nu vei mai primi emailuri de la noi.');
+    return html(r.reason === 'invalid' ? 400 : 200, 'Link de dezabonare invalid sau expirat.');
+  } catch (e) {
+    logger.error('unsubscribe failed', { e: String(e) });
+    return html(200, 'A apărut o eroare. Reîncearcă mai târziu.');
+  }
+}
+
 exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public' }, async (req, res) => {
   try {
     const path = req.path || '';
     if (path === '/p/_track') return await handleTrack(req, res);
     if (path === '/p/_submit') return await handleSubmit(req, res);
+    if (path === '/p/_unsubscribe') return await handleUnsubscribe(req, res);
     // Două căi: /p/{slug} = LP de campanie; /pagina/{slug} = pagină de site (CMS LP Studio, temă publică).
     const m = path.match(/^\/(p|pagina)\/([^/]+)\/?$/);
     const isSite = m ? m[1] === 'pagina' : false;
@@ -3048,6 +3079,82 @@ exports.runMetaPull = runMetaPull;
 // executeAction/runs vin în feliile următoare. Paritate TS↔JS testată în e2e (TEST X).
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
 const AUTOMATION_ENABLED = true; // ACTIVAT 2026-06-20 (Felia 2): triggere onMetricWrite/onCampaignAutomation + executor notify.operator.
+// Comunicare CRM prin email (Verticala 2, felia 1) — DORMANT/deploy-safe. Cu false: sendLeadEmail întoarce 'disabled' și
+// NU scrie în coada `mail/{id}` (deci nu se trimite nimic). ACTIVARE (Andrei): instalează extensia firestore-send-email cu
+// credențiale SendGrid/SMTP + autentifică domeniul (SPF/DKIM/DMARC) → pune true + `npm run deploy:functions`. Vezi CLAUDE.md.
+const EMAIL_ENABLED = false;
+const EMAIL_MAIL_COLLECTION = 'mail'; // colecția citită de extensia Trigger Email
+const LP_CANONICAL_ORIGIN_FOR_EMAIL = 'https://dataread-e1bd6.web.app'; // baza link-ului de dezabonare (host canonic)
+
+// PORT JS al renderEmail (src/utils/email.ts) — IDENTIC (paritate verificată e2e TEST EMAIL). Escapează corpul,
+// adaugă footer de dezabonare https. Pur (fără I/O).
+function renderEmail(input) {
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const subject = String((input && input.subject) || '').slice(0, 200);
+  const rawBody = String((input && input.body) || '').slice(0, 5000);
+  const brand = String((input && input.brand) || 'DataRead').slice(0, 80);
+  const lang = input && input.lang === 'en' ? 'en' : 'ro';
+  const unsub = typeof (input && input.unsubscribeUrl) === 'string' && /^https:\/\/[^\s"')]+$/i.test(input.unsubscribeUrl) ? input.unsubscribeUrl : '';
+  const unsubLabel = lang === 'en' ? 'Unsubscribe' : 'Dezabonare';
+  const bodyHtml = esc(rawBody).replace(/\n/g, '<br>');
+  const footerHtml = unsub
+    ? `<hr style="border:none;border-top:1px solid #e2e6eb;margin:24px 0"><p style="font-size:12px;color:#6b7280">${esc(brand)} &middot; <a href="${esc(unsub)}" style="color:#6b7280">${unsubLabel}</a></p>`
+    : '';
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#16202c;max-width:600px;margin:0 auto;padding:20px">${bodyHtml}${footerHtml}</div>`;
+  const text = rawBody + (unsub ? `\n\n— ${brand}\n${unsubLabel}: ${unsub}` : '');
+  return { subject, html, text };
+}
+exports.renderEmail = renderEmail;
+
+// Nucleu testabil: trimite un email unui lead (operator). Presupune EMAIL_ENABLED (gardat de callable). Respectă
+// opt-out-ul (GDPR), generează/reutilizează tokenul de dezabonare, scrie în coada extensiei + loghează activitatea CRM.
+async function performSendLeadEmail(db, opts) {
+  const o = opts || {};
+  const leadId = String(o.leadId || '');
+  const subject = String(o.subject || '').slice(0, 200);
+  const body = String(o.body || '').slice(0, 5000);
+  const actorUid = String(o.actorUid || '');
+  const origin = String(o.origin || LP_CANONICAL_ORIGIN_FOR_EMAIL);
+  if (!leadId) throw new HttpsError('invalid-argument', 'leadId necesar.');
+  if (!subject.trim() || !body.trim()) throw new HttpsError('invalid-argument', 'Subiect și mesaj necesare.');
+  const leadRef = db.collection('leads').doc(leadId);
+  const snap = await leadRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
+  const lead = snap.data() || {};
+  const to = String(lead.contactEmail || '').trim();
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) throw new HttpsError('failed-precondition', 'NO_EMAIL');
+  if (lead.emailOptOut === true) throw new HttpsError('failed-precondition', 'OPTED_OUT'); // dezabonat → NU trimite
+  // Token de dezabonare per-lead, stabil (generat o singură dată) — fără secret partajat.
+  let token = String(lead.emailUnsubToken || '');
+  if (!token) {
+    token = require('crypto').randomBytes(16).toString('hex');
+    await leadRef.set({ emailUnsubToken: token }, { merge: true });
+  }
+  const unsubscribeUrl = `${origin}/p/_unsubscribe?lead=${encodeURIComponent(leadId)}&t=${encodeURIComponent(token)}`;
+  const rendered = renderEmail({ subject, body, unsubscribeUrl, brand: 'DataRead', lang: lead.locale === 'en' ? 'en' : 'ro' });
+  // Coada extensiei Trigger Email (firestore-send-email). Fără extensia instalată, docul stă — nimic nu pleacă.
+  const mailRef = await db.collection(EMAIL_MAIL_COLLECTION).add({
+    to: [to],
+    message: { subject: rendered.subject, html: rendered.html, text: rendered.text },
+    _leadId: leadId, _by: actorUid, _at: admin.firestore.FieldValue.serverTimestamp(), // audit intern (ignorat de extensie)
+  });
+  // Jurnal CRM (type email) — istoricul interacțiunii cu lead-ul.
+  await leadRef.collection('activities').add({
+    schema: 1, type: 'email', body: `${subject}\n\n${body}`.slice(0, 4000), at: Date.now(), dueAt: '', createdBy: actorUid,
+  });
+  return { mailId: mailRef.id, to };
+}
+exports.performSendLeadEmail = performSendLeadEmail;
+
+// Callable operator: trimite email unui lead. GATED (EMAIL_ENABLED) — cu flag false întoarce 'disabled' și NU scrie nimic.
+exports.sendLeadEmail = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+  if (!EMAIL_ENABLED) return { status: 'disabled' };
+  const d = request.data || {};
+  const res = await performSendLeadEmail(admin.firestore(), { leadId: d.leadId, subject: d.subject, body: d.body, actorUid: request.auth.uid });
+  return { status: 'queued', ...res };
+});
 
 const AUTOMATION_SCHEMA = 1;
 const AUTOMATION_TRIGGERS = [

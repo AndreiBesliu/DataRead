@@ -1315,9 +1315,11 @@ function makeMigStore(seed) {
     async update(data) { applyUpdate(path, data); },
     collection: (sub) => colRef(`${path}/${sub}`),
   });
+  let auto = 0;
   function colRef(path) {
     return {
       doc: (id) => docRef(`${path}/${id}`),
+      async add(data) { const id = `auto${++auto}`; store.set(`${path}/${id}`, Object.assign({}, data)); return { id }; },
       async get() {
         const docs = [];
         for (const [k, v] of store) {
@@ -1373,6 +1375,48 @@ console.log('\nADM) performBackfillAdminEmails — repopulează email admin din 
   ok(store.get('admins/u4').email === 'has@dataread.ro', 'ADM: u4 cu email → neatins');
   const res2 = await fns.performBackfillAdminEmails(db);
   ok(res2.updated === 0, 'ADM: re-rulare → idempotentă (u1/u2/u4 au email; u3 tot negăsit în Auth → 0 actualizări)');
+}
+
+// ── TEST EMAIL: renderEmail (escape + footer) + performSendLeadEmail (coadă + opt-out + activitate) + unsubscribe. ──
+console.log('\nEMAIL) renderEmail + performSendLeadEmail + performUnsubscribe (comunicare CRM, felia 1)');
+{
+  const grab = async (fn) => { try { return { res: await fn(), err: null }; } catch (e) { return { res: null, err: e }; } };
+  // renderEmail (port JS): escapează corpul + footer dezabonare https; non-https → fără footer.
+  const r1 = fns.renderEmail({ subject: 'Salut', body: 'Linia 1\n<script>x</script>', unsubscribeUrl: 'https://dataread.ro/p/_unsubscribe?lead=L1&t=tok', brand: 'DataRead', lang: 'ro' });
+  ok(r1.subject === 'Salut', 'EMAIL: subiect păstrat');
+  ok(r1.html.includes('&lt;script&gt;') && !r1.html.includes('<script>x'), 'EMAIL: corp escapat (anti-injecție)');
+  ok(r1.html.includes('Linia 1<br>'), 'EMAIL: newline → <br>');
+  ok(r1.html.includes('Dezabonare') && r1.html.includes('https://dataread.ro/p/_unsubscribe'), 'EMAIL: footer dezabonare https');
+  ok(r1.text.includes('Dezabonare: https://dataread.ro'), 'EMAIL: footer dezabonare în text');
+  const r2 = fns.renderEmail({ subject: 'X', body: 'corp', unsubscribeUrl: 'http://insecure/x', brand: 'D', lang: 'en' });
+  ok(!r2.html.includes('Unsubscribe') && !r2.html.includes('insecure'), 'EMAIL: unsubscribe non-https → fără footer (anti open-redirect)');
+
+  // performSendLeadEmail: lead cu email → scrie în coada `mail` + loghează activitate + generează token.
+  const { db, store } = makeMigStore({ 'leads/L1': { companyName: 'Acme', contactEmail: 'a@b.ro', locale: 'ro' } });
+  const sres = await fns.performSendLeadEmail(db, { leadId: 'L1', subject: 'Bună', body: 'Mesaj test', actorUid: 'op1' });
+  ok(sres && sres.to === 'a@b.ro', 'EMAIL: performSendLeadEmail întoarce destinatarul');
+  const mailDocs = [...store.keys()].filter((k) => k.startsWith('mail/'));
+  ok(mailDocs.length === 1, 'EMAIL: un doc scris în coada `mail`');
+  const mail = store.get(mailDocs[0]);
+  ok(mail.to[0] === 'a@b.ro' && mail.message && mail.message.subject === 'Bună' && /Mesaj test/.test(mail.message.html), 'EMAIL: coada are to + subiect + html');
+  ok(mail.message.html.includes('/p/_unsubscribe?lead=L1'), 'EMAIL: link de dezabonare cu leadId injectat');
+  ok(store.get('leads/L1').emailUnsubToken, 'EMAIL: token de dezabonare generat pe lead');
+  const acts = [...store.keys()].filter((k) => k.startsWith('leads/L1/activities/'));
+  ok(acts.length === 1 && store.get(acts[0]).type === 'email', 'EMAIL: activitate CRM de tip email logată');
+
+  // opt-out → refuză; fără email → refuză.
+  const { db: db2 } = makeMigStore({ 'leads/L2': { contactEmail: 'c@d.ro', emailOptOut: true } });
+  const e2 = (await grab(() => fns.performSendLeadEmail(db2, { leadId: 'L2', subject: 'S', body: 'B', actorUid: 'op1' }))).err;
+  ok(e2 && /OPTED_OUT/.test(e2.message || ''), 'EMAIL: lead dezabonat → OPTED_OUT (nu trimite)');
+  const { db: db3 } = makeMigStore({ 'leads/L3': { contactEmail: '' } });
+  const e3 = (await grab(() => fns.performSendLeadEmail(db3, { leadId: 'L3', subject: 'S', body: 'B', actorUid: 'op1' }))).err;
+  ok(e3 && /NO_EMAIL/.test(e3.message || ''), 'EMAIL: lead fără adresă → NO_EMAIL');
+
+  // performUnsubscribe: token corect → emailOptOut=true; token greșit → neatins.
+  const { db: db4, store: st4 } = makeMigStore({ 'leads/L4': { contactEmail: 'e@f.ro', emailUnsubToken: 'secrettok' } });
+  ok((await fns.performUnsubscribe(db4, 'L4', 'secrettok')).ok === true && st4.get('leads/L4').emailOptOut === true, 'EMAIL: unsubscribe cu token corect → opt-out');
+  const { db: db5, store: st5 } = makeMigStore({ 'leads/L5': { emailUnsubToken: 'good' } });
+  ok((await fns.performUnsubscribe(db5, 'L5', 'wrong')).ok === false && !st5.get('leads/L5').emailOptOut, 'EMAIL: unsubscribe cu token greșit → neatins');
 }
 
 rmSync(tmp, { force: true });

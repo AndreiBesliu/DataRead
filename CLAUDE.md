@@ -270,8 +270,18 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   denormalizează `leads/{id}.nextFollowUp` = cel mai APROPIAT dueAt din TOATE activitățile (`nearestDue`, recalculat la
   add+delete — fix 21.06.2026: o notă fără dată nu mai golește un follow-up real); `buildSuggestions` (pur)
   emite `followUpDue` (high) când nextFollowUp ≤ azi — fără collectionGroup/index (SuggestionsPanel citește deja `leads`).
-  Backlog CRM: contacte multiple/client; activități pe clienții cu cont. Restul Verticalei 2 (comunicare email/SMS,
-  automatizări CRM) = neînceput.
+  Backlog CRM: contacte multiple/client; activități pe clienții cu cont.
+- **CRM comunicare — email (Verticala 2, felia 1, ACTIV cod 21.06.2026; DORMANT live).** Operatorul trimite email unui lead
+  din `LeadActivity` („Trimite email") → callable `sendLeadEmail` (admin-only, App Check) → nucleu `performSendLeadEmail`:
+  verifică `emailOptOut` (GDPR), generează token de dezabonare per-lead (`emailUnsubToken`, aleator), randează cu `renderEmail`
+  (pur `src/utils/email.ts` + PORT JS în functions, paritate e2e — escapează corpul + footer dezabonare https), scrie în coada
+  **`mail/{id}`** (extensia Firebase „Trigger Email" o consumă) + loghează activitate CRM (type email). **Dezabonare un-click:**
+  `GET /p/_unsubscribe?lead=…&t=token` (serveLp) → `performUnsubscribe` setează `emailOptOut=true` (token aleator = autorizare,
+  fără login). **GATED deploy-safe:** `EMAIL_ENABLED=false` → `sendLeadEmail` întoarce 'disabled', NU scrie în coadă; + fără
+  extensia instalată nu pleacă nimic. Reguli: `mail` = read/write false (doar Admin SDK + extensie). **ACTIVARE (Andrei,
+  consolă):** instalează extensia firestore-send-email cu credențiale SendGrid/SMTP + autentifică domeniul dataread.ro
+  (SPF/DKIM/DMARC, contra spam/blacklist) → `EMAIL_ENABLED=true` + `npm run deploy:functions`. Rămas: acțiunea de motor
+  `email.send` (automatizări CRM) + SMS (Twilio) = felii viitoare; reutilizează `renderEmail`/coada.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

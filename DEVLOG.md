@@ -1990,6 +1990,24 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + e2e (OFF) + build (typecheck+paritate i18n) + build:site + boot. DEPLOYED: functions+hosting+rules.
 > Amânat: valabilitate trasă automat din setările `campaigns` (necesită câmp expirare pe modelul de campanie).
 
+**2026-06-21 - Task Completed — CRM comunicare felia 1: email către lead (gated, deploy-safe)**
+> Model: Claude Opus 4.8 (1M context). Andrei a ales opțiunea ③ (comunicare email/SMS), abordarea „email gestionat" — după
+> o discuție despre livrabilitate (blacklist/junk). Concluzie comună: deliverability ≈ 90% DNS+cont (SPF/DKIM/DMARC), nu cod;
+> SendGrid (extensia Firebase) minimizează cooking-ul. Livrat GATED ca să nu trimită nimic până e setup-ul gata.
+> - **Nucleu pur** `src/utils/email.ts` (`renderEmail`: escape corp + newline→<br> + footer dezabonare https; `coerceEmailDraft`)
+>   PORTAT 1:1 în functions (paritate e2e TEST EMAIL).
+> - **functions:** `EMAIL_ENABLED=false` (gate); `performSendLeadEmail`/`sendLeadEmail` (admin+App Check) → verifică opt-out,
+>   generează `emailUnsubToken`, randează, scrie în coada `mail/{id}` (extensia Trigger Email), loghează activitate CRM (email).
+>   Cu flag false → 'disabled', nimic în coadă. **Dezabonare un-click** `GET /p/_unsubscribe?lead&t` → `performUnsubscribe`
+>   setează `emailOptOut` (token aleator = autorizare). Reguli: `mail` read/write false (doar Admin SDK + extensie).
+> - **UI:** „Trimite email" în `LeadActivity` (subiect+corp → callable; stări disabled/opt-out/no-addr). i18n ro+en.
+> - **Teste:** render (TS test-landing + JS e2e), performSendLeadEmail (coadă+activitate+token+opt-out/NO_EMAIL),
+>   performUnsubscribe (token corect/greșit).
+> Verificat: 17/17 suites + e2e (EMAIL) + build + build:site + boot. DEPLOYED: functions+hosting+rules (rămâne DORMANT).
+> **ACTIVARE (Andrei, consolă):** instalează extensia firestore-send-email (SendGrid/SMTP) + autentifică domeniul
+> (SPF/DKIM/DMARC) + `EMAIL_ENABLED=true` + deploy:functions. Rămas (felii viitoare): acțiune motor `email.send` (automatizări
+> CRM) + SMS (Twilio) — reutilizează renderEmail/coada.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

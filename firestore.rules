@@ -338,6 +338,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Coada de email (extensia Trigger Email / firestore-send-email) — scrisă EXCLUSIV de functions (Admin SDK) +
+    // procesată de extensie (Admin SDK). Clientul NU atinge niciodată (conține adrese + conținut). Vezi sendLeadEmail.
+    match /mail/{id} {
+      allow read, write: if false;
+    }
+
     // ───────── Motor de automatizare (declanșatoare → condiții → acțiuni) ─────────
     // O REGULĂ = automations/{id}; jurnalul de rulări = automations/{id}/runs/{runId} (audit + dedupe idempotent).
     // Regulile sunt deținute de operatori (scope:'agency') SAU de client (scope:'client', per clientUid — Verticala 2).

@@ -6,7 +6,9 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
+import { EMAIL_SUBJECT_MAX, EMAIL_BODY_MAX } from '../utils/email';
 import { ACTIVITY_TYPES, ACTIVITY_BODY_MAX, coerceToCrmActivity, type ActivityType, type CrmActivity } from '../types/crmActivity';
 
 const TYPE_ICON: Record<ActivityType, string> = { note: '📝', call: '📞', email: '✉️', meeting: '🤝', other: '•' };
@@ -59,6 +61,26 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
     } catch (e) { console.warn(e); }
   };
 
+  // ── Trimite email (felia 1, gated server-side prin EMAIL_ENABLED) — callable scrie în coadă + loghează activitate. ──
+  const [mailOpen, setMailOpen] = useState(false);
+  const [mailSubject, setMailSubject] = useState('');
+  const [mailBody, setMailBody] = useState('');
+  const [mailState, setMailState] = useState<{ s: 'idle' | 'busy' | 'ok' | 'disabled' | 'err'; msg: string }>({ s: 'idle', msg: '' });
+  const sendEmail = async () => {
+    if (!mailSubject.trim() || !mailBody.trim()) return;
+    setMailState({ s: 'busy', msg: '' });
+    try {
+      const fn = httpsCallable<{ leadId: string; subject: string; body: string }, { status: string }>(functions, 'sendLeadEmail');
+      const res = await fn({ leadId, subject: mailSubject.slice(0, EMAIL_SUBJECT_MAX), body: mailBody.slice(0, EMAIL_BODY_MAX) });
+      if (res.data?.status === 'disabled') { setMailState({ s: 'disabled', msg: t('admin.activity.mailDisabled') }); return; }
+      setMailState({ s: 'ok', msg: t('admin.activity.mailSent') });
+      setMailSubject(''); setMailBody(''); setMailOpen(false);
+    } catch (e) {
+      const code = String((e as { message?: string }).message ?? '');
+      setMailState({ s: 'err', msg: code.includes('OPTED_OUT') ? t('admin.activity.mailOptedOut') : code.includes('NO_EMAIL') ? t('admin.activity.mailNoAddr') : t('admin.activity.mailErr') });
+    }
+  };
+
   const fmt = (ms: number) => (ms ? new Date(ms).toLocaleString('ro-RO') : '—');
   const inp: CSSProperties = { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, background: 'var(--bg-1)', color: 'var(--fg-0)' };
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -76,7 +98,23 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
           <input type="date" style={inp} value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
         </label>
         <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy || !body.trim()} onClick={() => void add()}>{t('admin.activity.add')}</button>
+        <button className="btn" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setMailOpen((o) => !o)}>✉️ {t('admin.activity.emailBtn')}</button>
       </div>
+
+      {/* Trimite email către lead (felia 1) — server-side gated; loghează automat o activitate de tip email. */}
+      {mailOpen && (
+        <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-1)', display: 'grid', gap: 6 }}>
+          <input style={inp} maxLength={EMAIL_SUBJECT_MAX} placeholder={t('admin.activity.emailSubject')} value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} />
+          <textarea style={{ ...inp, minHeight: 90, resize: 'vertical', fontFamily: 'inherit' }} maxLength={EMAIL_BODY_MAX} placeholder={t('admin.activity.emailBody')} value={mailBody} onChange={(e) => setMailBody(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={mailState.s === 'busy' || !mailSubject.trim() || !mailBody.trim()} onClick={() => void sendEmail()}>
+              {mailState.s === 'busy' ? t('admin.activity.emailSending') : t('admin.activity.emailSend')}
+            </button>
+            {mailState.msg && <span style={{ fontSize: 12, color: mailState.s === 'ok' ? '#1e7e34' : mailState.s === 'disabled' ? 'var(--fg-1)' : '#c0392b' }}>{mailState.msg}</span>}
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: 0 }}>{t('admin.activity.emailHint')}</p>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '8px 0 0' }}>{t('admin.activity.empty')}</p>
