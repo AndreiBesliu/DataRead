@@ -55,6 +55,17 @@ async function recomputeAdminClaim(uid) {
   logger.info('admin claim recomputed', { uid, admin: isAdmin, role });
 }
 
+// Email + nume al unui admin din Firebase Auth (SURSA de adevăr). Best-effort: utilizator șters / fără permisiune → gol.
+// Folosit la crearea admins/{uid} (bootstrap) + backfill, ca UI-ul să afișeze adresa, nu UID-ul.
+async function resolveAuthIdentity(uid) {
+  try {
+    const u = await admin.auth().getUser(uid);
+    return { email: String(u.email || '').slice(0, 120), displayName: String(u.displayName || '').slice(0, 80) };
+  } catch (e) {
+    return { email: '', displayName: '' };
+  }
+}
+
 // Decizie PURĂ (testabilă) pentru mutațiile de administrare. `owners` = uid-urile cu rol owner (snapshot
 // consistent, citit în tranzacție). Întoarce {ok, code}. Protejează ultimul owner (anti-blocare).
 function canMutateAdmin(params) {
@@ -89,8 +100,11 @@ exports.onAdminRequestCreated = onDocumentCreated({ document: 'adminRequests/{ui
     const db = admin.firestore();
     const existing = await db.collection('admins').limit(1).get();
     if (!existing.empty) return; // bootstrap-ul rulează o singură dată, pe platforma fără admini
+    const ident = await resolveAuthIdentity(uid); // email/nume din Auth → UI afișează adresa, nu UID-ul
     await db.collection('admins').doc(uid).set({
       approvedBy: 'bootstrap',
+      ...(ident.email ? { email: ident.email } : {}),
+      ...(ident.displayName ? { displayName: ident.displayName } : {}),
       approvedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     logger.info('bootstrap admin approved', { uid });
@@ -2694,6 +2708,33 @@ exports.backfillLpIndex = onCall({ region: REGION }, async (request) => {
   }
   await Promise.all(ops);
   return { written };
+});
+
+// Backfill unic (nucleu testabil): documentele admins/{uid} create de fluxul vechi / bootstrap NU au câmpul `email` →
+// UI-ul afișează UID-ul în loc de adresă. Repopulează email/displayName din Firebase Auth pentru orice admin căruia îi
+// lipsesc. Idempotentă: cine are deja email e sărit; un utilizator nerezolvabil în Auth e lăsat neatins.
+async function performBackfillAdminEmails(db) {
+  const snap = await db.collection('admins').get();
+  let updated = 0;
+  for (const d of snap.docs) {
+    const x = d.data() || {};
+    if (x.email && String(x.email).trim()) continue; // are deja email
+    const ident = await resolveAuthIdentity(d.id);
+    if (!ident.email && !ident.displayName) continue; // Auth n-a putut rezolva → nu atinge documentul
+    await d.ref.set({ ...(ident.email ? { email: ident.email } : {}), ...(ident.displayName ? { displayName: ident.displayName } : {}) }, { merge: true });
+    updated++;
+  }
+  return { updated };
+}
+exports.performBackfillAdminEmails = performBackfillAdminEmails;
+
+// Admin-only (orice operator poate repara afișarea; e doar email, nu schimbă roluri).
+exports.backfillAdminEmails = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+  const res = await performBackfillAdminEmails(admin.firestore());
+  logger.info('backfillAdminEmails done', res);
+  return res;
 });
 
 // Migrare unică (nucleu testabil): mută analiza AI internă de pe campaigns/{id} (citibilă de client → SCURGERE de

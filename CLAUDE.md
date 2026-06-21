@@ -98,8 +98,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   autorizează apelantul DIN FIRESTORE (rol live, nu token vechi), tranzacție cu toate citirile înainte de
   scrieri, protecția ultimului owner (`canMutateAdmin` pură), audit append-only `adminAudit/{id}`.
   Reguli: `admins`/`adminRequests`(update,delete)/`adminAudit` = `write:false` (doar Admin SDK). UI: tab
-  „Administratori" (`AdminsPanel`) cu cereri+listă+roluri+revoke+jurnal. Amânat: invitație pe email;
-  permisiuni per-modul; suită reguli cu emulator.
+  „Administratori" (`AdminsPanel`) cu cereri+listă+roluri+revoke+jurnal. **Email afișat (fix 21.06.2026):** docul
+  `admins/{uid}` poartă `email`/`displayName`; aprobarea le scrie din cerere, iar bootstrap-ul + backfill-ul le iau din
+  Firebase Auth (`resolveAuthIdentity`). Adminii vechi (pre-15.06) n-aveau email → `AdminsPanel` cheamă AUTOMAT (o dată,
+  la încărcare, dacă lipsește) callable-ul admin `backfillAdminEmails` (`performBackfillAdminEmails`, idempotent) care
+  repopulează din Auth → tabelul arată adresa, nu UID-ul. Amânat: invitație pe email; permisiuni per-modul; suită reguli cu emulator.
 - **Design:** tema bannerului oficial (navy #0a1228, roșu #e02639, albastru electric #2e7fff,
   diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public.
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech

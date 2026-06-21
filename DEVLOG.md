@@ -1937,6 +1937,21 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: build (typecheck + paritate i18n) + build:site (16) + boot. DEPLOYED: hosting + rules. Pur refactor UI/IA
 >   (zero schimbări de date/reguli/securitate/logică).
 
+**2026-06-21 - Task Completed — Fix: email-ul administratorilor afișa UID în loc de adresă**
+> Model: Claude Opus 4.8 (1M context). Andrei a raportat (screenshot) că „Administratori activi" arăta UID-ul în coloana
+> Email, deși jurnalul de audit afișa corect adresele. Cauză: docul `admins/{uid}` poartă `email`, dar adminii vechi
+> (creați înainte de fluxul RBAC din 15.06 + cel de bootstrap) NU au câmpul → UI cădea pe UID. Auditul are emailuri
+> fiindcă le stochează separat (actorEmail/targetEmail) la momentul acțiunii.
+> - **`resolveAuthIdentity(uid)`** (functions): email+nume din Firebase Auth (sursa de adevăr; best-effort).
+> - **Bootstrap** (`onAdminRequestCreated`) scrie acum email/displayName din Auth la crearea founder-ului.
+> - **`backfillAdminEmails`** (callable admin-only, nucleu `performBackfillAdminEmails`): repopulează din Auth orice
+>   admin fără email; idempotent (cine are email e sărit; nerezolvabil în Auth → neatins).
+> - **Auto-vindecare UI** (`AdminsPanel`): la încărcare, dacă vreun admin n-are email, cheamă o dată backfill-ul →
+>   onSnapshot reîmprospătează → tabelul arată adresa. Zero acțiune manuală pentru Andrei.
+> - Test e2e **ADM**: `performBackfillAdminEmails` (repopulare din Auth, păstrare rol prin merge, sărit cei cu email /
+>   negăsiți în Auth, idempotență). Stub `admin.auth().getUser` adăugat în harness.
+> Verificat: 17/17 suites + e2e (MIG+ADM) + build (typecheck+paritate i18n) + boot. DEPLOYED: functions + hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

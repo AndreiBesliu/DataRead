@@ -75,6 +75,9 @@ const fakeDb = {
 const fakeFirestore = () => fakeDb;
 fakeFirestore.FieldValue = { increment: (n) => ({ __inc: n }), serverTimestamp: () => ({ __ts: true }), delete: () => ({ __del: true }) };
 Object.defineProperty(admin, 'firestore', { value: fakeFirestore, configurable: true, writable: true });
+// Stub admin.auth().getUser — pt. backfill-ul de email admin (resolveAuthIdentity). Populat per-test prin authUsers.
+const authUsers = {};
+Object.defineProperty(admin, 'auth', { value: () => ({ getUser: async (uid) => { if (authUsers[uid]) return authUsers[uid]; throw new Error('no-user'); } }), configurable: true, writable: true });
 
 const fns = fnRequire(fnIndex);
 const serveLp = fns.serveLp; // handler express (gen-2 onRequest) — apelabil ca (req,res)
@@ -1259,36 +1262,38 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
 // Mută analiza AI internă de pe campaigns/{id} (citibil de client) în campaignInsights/{id} (admin-only) și ȘTERGE
 // câmpurile scurse. Câmpurile scrise TREBUIE să fie cele citite de onMetricWrite/onCampaignAutomation (verdict +
 // denormalizări clientUid/platform/leadId) — testul prinde un typo de nume de câmp (JS fără typecheck).
+// makeMigStore: store în memorie cu collection().get() + ref.set(merge)/update(FieldValue.delete) — reutilizat de MIG + ADM.
+function makeMigStore(seed) {
+  const store = new Map(Object.entries(seed || {}));
+  const applyUpdate = (path, data) => {
+    const cur = Object.assign({}, store.get(path) || {});
+    for (const [k, v] of Object.entries(data)) { if (v && v.__del) delete cur[k]; else cur[k] = v; }
+    store.set(path, cur);
+  };
+  const docRef = (path) => ({
+    _path: path,
+    async get() { return { exists: store.has(path), id: path.split('/').pop(), data: () => store.get(path), ref: docRef(path) }; },
+    async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
+    async update(data) { applyUpdate(path, data); },
+    collection: (sub) => colRef(`${path}/${sub}`),
+  });
+  function colRef(path) {
+    return {
+      doc: (id) => docRef(`${path}/${id}`),
+      async get() {
+        const docs = [];
+        for (const [k, v] of store) {
+          if (k.startsWith(path + '/')) { const rest = k.slice(path.length + 1); if (!rest.includes('/')) docs.push({ id: rest, data: () => v, ref: docRef(k) }); }
+        }
+        return { docs, empty: docs.length === 0, size: docs.length };
+      },
+    };
+  }
+  return { db: { collection: (c) => colRef(c) }, store };
+}
+
 console.log('\nMIG) performMigrateCampaignInsights — relocare + scrub leak aiInsight');
 {
-  function makeMigStore(seed) {
-    const store = new Map(Object.entries(seed || {}));
-    const applyUpdate = (path, data) => {
-      const cur = Object.assign({}, store.get(path) || {});
-      for (const [k, v] of Object.entries(data)) { if (v && v.__del) delete cur[k]; else cur[k] = v; }
-      store.set(path, cur);
-    };
-    const docRef = (path) => ({
-      _path: path,
-      async get() { return { exists: store.has(path), id: path.split('/').pop(), data: () => store.get(path), ref: docRef(path) }; },
-      async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
-      async update(data) { applyUpdate(path, data); },
-      collection: (sub) => colRef(`${path}/${sub}`),
-    });
-    function colRef(path) {
-      return {
-        doc: (id) => docRef(`${path}/${id}`),
-        async get() {
-          const docs = [];
-          for (const [k, v] of store) {
-            if (k.startsWith(path + '/')) { const rest = k.slice(path.length + 1); if (!rest.includes('/')) docs.push({ id: rest, data: () => v, ref: docRef(k) }); }
-          }
-          return { docs, empty: docs.length === 0, size: docs.length };
-        },
-      };
-    }
-    return { db: { collection: (c) => colRef(c) }, store };
-  }
   const { db, store } = makeMigStore({
     'campaigns/c1': { name: 'Camp 1', leadId: 'L1', clientUid: 'u1', platform: 'meta', totals: {}, aiInsight: { verdict: 'scale', headline: 'Merge bine', reasoning: 'ROAS mare', actions: 'Crește bugetul' }, aiInsightAt: { __ts: true }, aiInsightBy: 'operator9' },
     'campaigns/c2': { name: 'Camp 2', leadId: 'L2', clientUid: 'u2', platform: 'google', totals: {} }, // fără insight → sărit
@@ -1305,6 +1310,31 @@ console.log('\nMIG) performMigrateCampaignInsights — relocare + scrub leak aiI
   ok(!store.has('campaignInsights/c2'), 'MIG: campania fără insight nu produce doc campaignInsights');
   const res2 = await fns.performMigrateCampaignInsights(db);
   ok(res2.migrated === 0 && res2.scrubbed === 0, 'MIG: re-rulare după curățare → no-op (idempotentă)');
+}
+
+// ── TEST ADM: performBackfillAdminEmails — repopulează email/displayName din Auth pe admins/{uid} fără email. ──
+// Bug raportat: documentele admins vechi/bootstrap n-aveau `email` → UI afișa UID-ul. Câmpurile scrise (`email`,
+// `displayName`) TREBUIE să coincidă cu cele citite de AdminsPanel (x.email/x.displayName).
+console.log('\nADM) performBackfillAdminEmails — repopulează email admin din Auth');
+{
+  authUsers['u1'] = { email: 'founder@dataread.ro', displayName: 'Founder' };
+  authUsers['u2'] = { email: 'op@dataread.ro', displayName: '' };
+  // u3 NU există în Auth (getUser aruncă) → trebuie lăsat neatins
+  const { db, store } = makeMigStore({
+    'admins/u1': { approvedBy: 'bootstrap', role: 'owner' },        // fără email → backfill
+    'admins/u2': { role: 'operator' },                              // fără email → backfill (doar email, fără nume)
+    'admins/u3': { role: 'operator' },                             // fără email + fără Auth → neatins
+    'admins/u4': { role: 'operator', email: 'has@dataread.ro' },    // are deja email → sărit
+  });
+  const res = await fns.performBackfillAdminEmails(db);
+  ok(res.updated === 2, 'ADM: 2 repopulați (u1,u2); u3 negăsit în Auth + u4 cu email deja → săriți');
+  ok(store.get('admins/u1').email === 'founder@dataread.ro' && store.get('admins/u1').displayName === 'Founder', 'ADM: u1 email+nume din Auth');
+  ok(store.get('admins/u1').role === 'owner', 'ADM: backfill păstrează rolul (merge, nu suprascrie)');
+  ok(store.get('admins/u2').email === 'op@dataread.ro' && !store.get('admins/u2').displayName, 'ADM: u2 email din Auth, fără nume gol scris');
+  ok(!store.get('admins/u3').email, 'ADM: u3 (negăsit în Auth) rămâne fără email');
+  ok(store.get('admins/u4').email === 'has@dataread.ro', 'ADM: u4 cu email → neatins');
+  const res2 = await fns.performBackfillAdminEmails(db);
+  ok(res2.updated === 0, 'ADM: re-rulare → idempotentă (u1/u2/u4 au email; u3 tot negăsit în Auth → 0 actualizări)');
 }
 
 rmSync(tmp, { force: true });

@@ -3,7 +3,7 @@
  * setRole) trec prin callable-ul owner-only `manageAdmin` (autoritate Firestore, last-owner, audit).
  * Clientul nu mai scrie direct în admins/adminRequests (reguli: write false).
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -50,6 +50,16 @@ export default function AdminsPanel({ myUid, isOwner }: { myUid: string; isOwner
   }, []);
 
   const ownerCount = useMemo(() => admins.filter((a) => a.role === 'owner').length, [admins]);
+
+  // Auto-vindecare afișare email: documentele admins vechi / bootstrap n-au câmpul `email` → tabelul ar arăta UID-ul.
+  // La prima încărcare, dacă vreun admin n-are email, cerem backfill-ul server-side (din Firebase Auth). O singură dată,
+  // idempotent: după ce emailurile sunt scrise, onSnapshot reîmprospătează și condiția nu mai e îndeplinită.
+  const healed = useRef(false);
+  useEffect(() => {
+    if (healed.current || admins.length === 0 || !admins.some((a) => !a.email)) return;
+    healed.current = true;
+    httpsCallable(functions, 'backfillAdminEmails')({}).catch(() => {});
+  }, [admins]);
 
   async function act(action: string, targetUid: string, role?: AdminRole) {
     setErr('');
