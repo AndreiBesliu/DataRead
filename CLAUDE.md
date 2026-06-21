@@ -148,6 +148,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   testat în `scripts/test-analytics.ts`. Introducere MANUALĂ + **import CSV** (`src/utils/metricsCsv.ts`,
   parser pur tolerant ro/en, upsert pe dată); conectorii API scriu în același model. `source` pe metrică
   (`'manual'|Platform`) distinge manual vs API. Plafon valoric `MAX_METRIC_VALUE` în `coerceToDailyMetric`.
+  **Analiză AI campanie = colecție SEPARATĂ admin-only `campaignInsights/{campaignId}` (ACTIV 21.06.2026, remediere audit):**
+  verdictul/raționamentul intern + UID-ul operatorului NU mai stau pe `campaigns/{id}` (citibil de client → scurgere) ci pe
+  `campaignInsights/{id}` (reguli: read admin, **write false** — scris exclusiv de Admin SDK). `performCampaignInsight` scrie
+  acolo (denormalizează leadId/clientUid/platform pt. triggere); `onCampaignAutomation` ascultă `campaignInsights/{id}`;
+  `MarketingCenter`/`SuggestionsPanel` au listener separat pe colecție → Map pe id. Cheia ctx automatizări rămâne
+  `campaign.aiInsight.verdict` (compat). Date ISTORICE: callable admin `migrateCampaignInsights` (buton „Mentenanță" în tab
+  Sănătate) mută vechiul `aiInsight`/`aiInsightAt`/`aiInsightBy` în `campaignInsights` + îl șterge de pe campanie (idempotent).
 - **Ingestie automată campanii (conectori Ads — Meta ACTIV 19.06.2026; Google/TikTok dormant):** vezi
   `docs/CONNECTORS-ADS-API.md`. **Felia 0 (live):** `campaigns.clientUid` denormalizat (din lead, ținut în
   sincron de triggerul **`onLeadWrite`**) — leagă campania de cont pentru reguli multi-tenant + jobul de
@@ -240,7 +247,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   stornarea anulează exact originalul la cent. Garduri SERVER (performIssueInvoice): originalul trebuie factură EMISĂ
   (nu proformă/draft/storno), marcat `stornoedBy` la prima stornare (anti dublă-stornare); proformele NU consumă secvența
   (`PROFORMA_NO_ISSUE`). qty negativ permis DOAR pe stornări (coerce); reguli: `kind`+`stornoOf` imuabile după numerotare,
-  `stornoOf` validat (hasOnly series/number/id). **Notificare la emitere (ACTIV 21.06.2026):**
+  `stornoOf` validat (hasOnly series/number/id). **Imutabilitate factură EMISĂ (ACTIV 21.06.2026, remediere audit):**
+  odată cu `number != ''`, regulile ÎNGHEAȚĂ tot conținutul fiscal — `items/vatRate/seller/buyer/currency/issuedAt` +
+  CONȚINUTUL `stornoOf` + marcajele server `issuedNumberAt`/`stornoedBy`; rămân editabile DOAR status/dueAt/notes.
+  `createdBy` = provenanță imuabilă pe ORICE update (UI nu o mai rescrie: `createdBy: a.createdBy || currentUser`). Ștergere
+  DOAR pe nenumerotate (`allow delete: if isAdmin() && number == ''`; corecția = stornare, nu ștergere). Storno = reversare
+  EXACTĂ verificată SERVER (`stornoMatchesOriginal` pur în `performIssueInvoice` → `STORNO_MISMATCH`; epsilon 1e-9).
+  UI `InvoicesPanel` blochează inputurile + ascunde Șterge/✕/„adaugă linie" pe facturi emise. **Notificare la emitere (ACTIV 21.06.2026):**
   `issueInvoice` scrie `clients/{uid}/notifications/invoice-{id}` (id determinist, best-effort, doar la prima emitere) prin
   `writeInvoiceNotification`; text localizat `invoiceNotifText` (ro/en după `clients/{uid}.locale`) — apare în feed-ul existent
   `ClientAutomationFeed` (zero cod frontend nou). e-Factura ANAF + storno/corecții + reset anual = felii viitoare. NU e gated

@@ -1892,6 +1892,39 @@ normaliser, secretele niciodată în chat/repo.
 > Marketing 5 pași, Meta ingest, automatizări notify-only — toate live. Dormant: Stripe self-serve (priceIds goale),
 > Google/TikTok, email/SMS, ANAF e-Factura. (Niciun fix aplicat în acest pas — doar evaluare; remedierile = felii viitoare.)
 
+**2026-06-21 - Task Completed — Remediere audit: Felia A (money-legal facturi) + Felia B (scurgere date + CSV)**
+> Model: Claude Opus 4.8 (1M context). Prompt Andrei: „a+b" (remediază HIGH-urile #1+#2+#6 money-legal și #3+#4 securitate).
+> **Felia A — facturi imutabile (HIGH #1+#2, MED #6):**
+> - **Imutabilitate factură EMISĂ** (firestore.rules + UI): odată cu `number != ''`, conținutul fiscal e ÎNGHEȚAT —
+>   `items/vatRate/seller/buyer/currency/issuedAt` + (din review) CONȚINUTUL `stornoOf` + marcajele server `issuedNumberAt`/
+>   `stornoedBy`. Editabile DOAR status/dueAt/notes. `createdBy` = provenanță imuabilă pe ORICE update (pin în reguli +
+>   UI nu o mai rescrie la fiecare salvare — `createdBy: a.createdBy || currentUser`). `InvoicesPanel` blochează inputurile
+>   (`locked`/`disabled`) + ascunde ✕/„adaugă linie" pe facturi emise.
+> - **Ștergere blocată pe facturi emise:** `allow delete: if isAdmin() && resource.data.number == ''` + butonul Șterge
+>   ascuns pe rândurile numerotate (corecția = stornare, nu ștergere — fără gol în secvență).
+> - **Storno = reversare EXACTĂ (invariant server, MED #6):** `stornoMatchesOriginal` (pur, exportat) verifică în
+>   `performIssueInvoice` că storno-ul neagă exact originalul (qty negate, preț/părți/TVA/monedă identice) → `STORNO_MISMATCH`
+>   altfel. Epsilon 1e-9 (fără fals-pozitive la cenți). i18n `errStornoMismatch`.
+> **Felia B — scurgere `aiInsight` (HIGH #3) + CSV injection (HIGH #4):**
+> - **Analiza AI campanii MUTATĂ** de pe `campaigns/{id}` (citibil de client) în colecția admin-only `campaignInsights/{id}`
+>   (reguli: read admin, write false; scrisă exclusiv de Admin SDK). `performCampaignInsight` scrie acolo (denormalizează
+>   leadId/clientUid/platform pt. triggere); `onMetricWrite` citește verdictul de acolo; `onCampaignAutomation` repointat pe
+>   `campaignInsights/{campaignId}` (before/after pe `.verdict`). Frontend: `MarketingCenter` + `SuggestionsPanel` au listener
+>   separat pe `campaignInsights` → Map indexat pe id. Cheia ctx automatizări rămâne `campaign.aiInsight.verdict` (compat).
+> - **Migrare date ISTORICE (din review — relocarea oprea doar scrierile NOI):** callable admin `migrateCampaignInsights`
+>   (+ nucleu testabil `performMigrateCampaignInsights`) mută `aiInsight`/`aiInsightAt`/`aiInsightBy` vechi în `campaignInsights`
+>   și le ȘTERGE de pe `campaigns/{id}` (FieldValue.delete). Idempotentă. Buton „Mentenanță" în tab-ul Sănătate (de rulat o
+>   dată de Andrei post-deploy). **Până la rulare, leak-ul persistă pe datele vechi.**
+> - **CSV formula-injection:** `AdminHome.exportCsv` folosește acum `csvCell` (utils/csv.ts — prefixează `'` pe `=+-@\t\r`)
+>   în loc de `csvEscape` local; date din formularul PUBLIC anonim nu mai pot deveni formule în Excel-ul operatorului.
+> - **Review adversarial:** workflow 4 dimensiuni × verificatori. Faza de verificare a căzut pe limită de sesiune; cele 13
+>   constatări brute verificate MANUAL (citire cod). Reale → reparate (stornoOf/issuedNumberAt/stornoedBy/createdBy freeze +
+>   scrub istoric + test campaignInsights). Refuzate de finderi înșiși: sameParty/epsilon/happy-path/guard original/qty-zero.
+> - Test nou e2e **MIG**: `performMigrateCampaignInsights` (câmpuri campaignInsights corecte + scrub + idempotență) — prinde
+>   typo de nume de câmp (functions = JS fără typecheck; vezi feedback_dataread_functions_testing).
+> Verificat: 17/17 suites + e2e (INV storno + MIG) + build (typecheck + paritate i18n) + build:site (16) + boot. DEPLOYED:
+>   functions + hosting + firestore:rules. Rămâne pentru Andrei: rulează butonul „Migrează analizele AI campanii" o dată.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -195,6 +195,7 @@ service cloud.firestore {
           && request.resource.data.series is string && request.resource.data.series.size() <= 20
           && request.resource.data.series.matches('[A-Za-z0-9_-]*')
           && request.resource.data.number == resource.data.number // clientul nu schimbă NICIODATĂ numărul
+          && (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy) // provenanță imuabilă (audit)
           && (resource.data.number == '' || request.resource.data.series == resource.data.series) // serie blocată după numerotare
           && (!('stornoOf' in request.resource.data) || (request.resource.data.stornoOf.keys().hasOnly(['series', 'number', 'id'])
             && request.resource.data.stornoOf.series is string && request.resource.data.stornoOf.series.size() <= 20
@@ -202,8 +203,27 @@ service cloud.firestore {
             && request.resource.data.stornoOf.id is string && request.resource.data.stornoOf.id.size() <= 200))
           && (resource.data.number == '' || request.resource.data.kind == resource.data.kind) // natura fiscală blocată după numerotare
           && (resource.data.number == '' || (('stornoOf' in request.resource.data) == ('stornoOf' in resource.data))) // storno/non-storno blocat după numerotare
-          && (resource.data.number == '' || request.resource.data.status != 'draft'); // numerotată ⇒ nu revine la draft
-        allow delete: if isAdmin();
+          && (resource.data.number == '' || request.resource.data.status != 'draft') // numerotată ⇒ nu revine la draft
+          // Factură EMISĂ = document fiscal IMUTABIL: conținutul financiar/identitate/data + REFERINȚA de stornare
+          // (stornoOf) + marcajele puse de server (issuedNumberAt = momentul numerotării; stornoedBy = anti dublă-stornare)
+          // sunt ÎNGHEȚATE. Rămân editabile DOAR status, dueAt, notes (+ updatedAt). number/series/kind + PREZENȚA stornoOf
+          // deja blocate mai sus; aici blocăm și CONȚINUTUL stornoOf + cele două marcaje server (== pe map e structural).
+          && (resource.data.number == '' || (
+               request.resource.data.items == resource.data.items
+            && request.resource.data.vatRate == resource.data.vatRate
+            && request.resource.data.seller == resource.data.seller
+            && request.resource.data.buyer == resource.data.buyer
+            && request.resource.data.currency == resource.data.currency
+            && request.resource.data.issuedAt == resource.data.issuedAt
+            && (!('stornoOf' in resource.data) || request.resource.data.stornoOf == resource.data.stornoOf)
+            && (('issuedNumberAt' in request.resource.data) == ('issuedNumberAt' in resource.data))
+            && (!('issuedNumberAt' in resource.data) || request.resource.data.issuedNumberAt == resource.data.issuedNumberAt)
+            && (('stornoedBy' in request.resource.data) == ('stornoedBy' in resource.data))
+            && (!('stornoedBy' in resource.data) || request.resource.data.stornoedBy == resource.data.stornoedBy)
+          ));
+        // Ștergere DOAR pe nenumerotate (ciorne/proforme). O factură emisă NU se șterge (ar lăsa gol în secvența
+        // legală + contorul nu se decrementează) — corecția se face prin stornare.
+        allow delete: if isAdmin() && resource.data.number == '';
       }
 
       match /onboarding/{docId} {
@@ -295,6 +315,14 @@ service cloud.firestore {
            get(/databases/$(database)/documents/campaigns/$(campaignId)).data.clientUid == request.auth.uid);
         allow create, update, delete: if isAdmin();
       }
+    }
+
+    // Analiza AI internă a campaniilor (verdict/reasoning + UID-ul operatorului) — STRICT operatori. Ținută SEPARAT
+    // de campaigns/{id} (citibilă de client) ca să nu se scurgă judecata internă a agenției către client. Scrisă
+    // EXCLUSIV de functions (performCampaignInsight, Admin SDK).
+    match /campaignInsights/{campaignId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // ───────── Motor de automatizare (declanșatoare → condiții → acțiuni) ─────────

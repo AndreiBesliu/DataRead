@@ -74,6 +74,11 @@ interface CampaignRow {
   clientName: string;
   data: CampaignDef;
   createdAt: unknown;
+}
+
+/** Analiza AI internă a unei campanii, citită din colecția admin-only `campaignInsights` (NU din
+ *  documentul `campaigns/{id}`, care e citibil de client — vezi onCampaignAutomation/performCampaignInsight). */
+interface CampaignInsight {
   insight: AiInsight | null;
   insightAt: unknown;
 }
@@ -205,7 +210,7 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
     try {
       const fn = httpsCallable<{ campaignId: string }, { insight?: AiInsight }>(functions, 'aiAnalyzeCampaign');
       await fn({ campaignId });
-      // Documentul campaniei e actualizat de functions → onSnapshot din părinte aduce insight-ul nou.
+      // Functions scrie analiza în `campaignInsights/{campaignId}` → listener-ul din părinte aduce insight-ul nou.
     } catch (e) {
       const code = String((e as { code?: string }).code ?? '');
       setAiErr(
@@ -558,6 +563,7 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
 export default function MarketingCenter({ leads }: { leads: Array<{ id: string; label: string }> }) {
   const { t } = useTranslation();
   const [campaigns, setCampaigns] = useState<CampaignRow[] | null>(null);
+  const [insights, setInsights] = useState<Map<string, CampaignInsight>>(new Map());
   const [platformFilter, setPlatformFilter] = useState<'all' | Platform>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | CampaignStatus>('all');
   const [search, setSearch] = useState('');
@@ -577,13 +583,34 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
         snap.forEach((d) => {
           const raw = d.data();
           const data = coerceToCampaign(raw);
-          if (data) out.push({ id: d.id, leadId: typeof raw.leadId === 'string' ? raw.leadId : '', clientName: typeof raw.clientName === 'string' ? raw.clientName : '', data, createdAt: raw.createdAt, insight: coerceToInsight(raw.aiInsight), insightAt: raw.aiInsightAt });
+          if (data) out.push({ id: d.id, leadId: typeof raw.leadId === 'string' ? raw.leadId : '', clientName: typeof raw.clientName === 'string' ? raw.clientName : '', data, createdAt: raw.createdAt });
         });
         setCampaigns(out);
       },
       (err) => {
         console.warn('campaigns listener:', err);
         setCampaigns([]);
+      }
+    );
+  }, []);
+
+  // Analiza AI internă stă în colecția SEPARATĂ admin-only `campaignInsights/{campaignId}` (nu pe documentul
+  // campaniei, care e citibil de client) — ca verdictul/raționamentul intern + UID-ul operatorului să nu se
+  // scurgă la client. Listener separat → Map indexat pe id-ul campaniei, consumat la randarea CampaignDetail.
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, 'campaignInsights'),
+      (snap) => {
+        const m = new Map<string, CampaignInsight>();
+        snap.forEach((d) => {
+          const raw = d.data();
+          m.set(d.id, { insight: coerceToInsight(raw), insightAt: raw.at });
+        });
+        setInsights(m);
+      },
+      (err) => {
+        console.warn('campaignInsights listener:', err);
+        setInsights(new Map());
       }
     );
   }, []);
@@ -816,7 +843,7 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
                     {openId === c.id && (
                       <tr>
                         <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={8}>
-                          <CampaignDetail campaignId={c.id} currency={c.data.currency} insight={c.insight} insightAt={c.insightAt} />
+                          <CampaignDetail campaignId={c.id} currency={c.data.currency} insight={insights.get(c.id)?.insight ?? null} insightAt={insights.get(c.id)?.insightAt} />
                           <div style={{ marginTop: 12, textAlign: 'right' }}>
                             <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void deleteCampaign(c.id)}>{t('admin.campDelete')}</button>
                           </div>

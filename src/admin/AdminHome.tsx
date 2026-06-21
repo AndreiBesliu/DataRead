@@ -33,6 +33,7 @@ import InvoicesPanel from './InvoicesPanel';
 import HealthPanel from './HealthPanel';
 import DesignHome from './DesignHome';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
+import { csvCell } from '../utils/csv';
 import type { AdminRole } from '../types/adminRole';
 import { useAdminTheme } from '../theme/useAdminTheme';
 import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeStyle } from '../theme/themes';
@@ -67,10 +68,6 @@ const STATUS_COLOR: Record<LeadStatus, string> = {
   won: '#1e7e34',
   lost: '#8a93a3',
 };
-
-function csvEscape(v: string): string {
-  return `"${v.replace(/"/g, '""')}"`;
-}
 
 interface ClientRow {
   uid: string;
@@ -415,10 +412,11 @@ export default function AdminHome() {
         t(STATUS_KEY[l.status]),
         l.notes,
         l.data.description,
-      ].map(csvEscape).join(';')
+      ].map(csvCell).join(';')
     );
-    // BOM pentru diacritice corecte în Excel; separator ';' (convenția RO).
-    const csv = '﻿' + [header.map(csvEscape).join(';'), ...lines].join('\r\n');
+    // BOM pentru diacritice corecte în Excel; separator ';' (convenția RO). csvCell = anti formula-injection
+    // (prefix ' pe =,+,-,@,tab,CR) — datele de lead vin din formularul PUBLIC anonim, nu au încredere.
+    const csv = '﻿' + [header.map(csvCell).join(';'), ...lines].join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;

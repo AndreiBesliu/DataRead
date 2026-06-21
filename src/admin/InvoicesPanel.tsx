@@ -98,7 +98,9 @@ export default function InvoicesPanel() {
       const a = coerceToInvoice(draft);
       const id = draft.id || doc(collection(db, 'clients', uid, 'invoices')).id;
       const { id: _drop, updatedAt: _u, ...rest } = a;
-      await setDoc(doc(db, 'clients', uid, 'invoices', id), { ...rest, schema: 1, createdBy: auth.currentUser?.uid || '', updatedAt: serverTimestamp() }, { merge: true });
+      // createdBy = provenanță IMUABILĂ: o păstrăm pe cea existentă (din doc-ul încărcat) și o setăm DOAR la creare
+      // (draft nou → createdBy gol din coerce). Rescrierea ei la fiecare editare = re-atribuire de autor (blocată acum de reguli).
+      await setDoc(doc(db, 'clients', uid, 'invoices', id), { ...rest, schema: 1, createdBy: a.createdBy || auth.currentUser?.uid || '', updatedAt: serverTimestamp() }, { merge: true });
       setDraft(null);
     } catch (e) { console.warn('save invoice failed:', e); setErr(t('admin.invoices.err')); }
     finally { setBusy(false); }
@@ -122,6 +124,7 @@ export default function InvoicesPanel() {
         : msg.includes('BAD_SERIES') ? t('admin.invoices.errSeriesChars')
         : msg.includes('PROFORMA_NO_ISSUE') ? t('admin.invoices.errProformaIssue')
         : msg.includes('ALREADY_STORNOED') ? t('admin.invoices.errStornoTwice')
+        : msg.includes('STORNO_MISMATCH') ? t('admin.invoices.errStornoMismatch')
         : msg.includes('STORNO_') ? t('admin.invoices.errStorno')
         : t('admin.invoices.errIssue'));
     } finally { setBusy(false); }
@@ -148,17 +151,21 @@ export default function InvoicesPanel() {
   const lbl: CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--fg-1)', display: 'block', marginBottom: 3 };
   const card: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 8 };
   const money = (n: number) => `${n.toFixed(2)} ${draft?.currency || 'RON'}`;
+  // Factură EMISĂ (are număr) = document fiscal IMUTABIL: conținutul financiar/identitate/dată e blocat în UI
+  // (și în reguli) — corecția se face DOAR prin stornare. Editabile rămân status, scadența, notele.
+  const locked = !!(draft && String(draft.number || '').trim());
+  const ro = (extra?: CSSProperties): CSSProperties => ({ ...inp, ...(locked ? { opacity: 0.6 } : {}), ...extra });
   const partyFields = (which: 'seller' | 'buyer') => {
     const p = draft![which];
     return (
       <div style={{ display: 'grid', gap: 6 }}>
-        <div><label style={lbl}>{t('admin.invoices.name')}</label><input style={inp} value={p.name} onChange={(e) => patchParty(which, { name: e.target.value })} /></div>
+        <div><label style={lbl}>{t('admin.invoices.name')}</label><input style={ro()} disabled={locked} value={p.name} onChange={(e) => patchParty(which, { name: e.target.value })} /></div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.cui')}</label><input style={inp} value={p.cui} onChange={(e) => patchParty(which, { cui: e.target.value })} /></div>
-          <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.regCom')}</label><input style={inp} value={p.regCom} onChange={(e) => patchParty(which, { regCom: e.target.value })} /></div>
+          <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.cui')}</label><input style={ro()} disabled={locked} value={p.cui} onChange={(e) => patchParty(which, { cui: e.target.value })} /></div>
+          <div style={{ flex: 1 }}><label style={lbl}>{t('admin.invoices.regCom')}</label><input style={ro()} disabled={locked} value={p.regCom} onChange={(e) => patchParty(which, { regCom: e.target.value })} /></div>
         </div>
-        <div><label style={lbl}>{t('admin.invoices.address')}</label><input style={inp} value={p.address} onChange={(e) => patchParty(which, { address: e.target.value })} /></div>
-        <div><label style={lbl}>{t('admin.invoices.iban')}</label><input style={inp} value={p.iban} onChange={(e) => patchParty(which, { iban: e.target.value })} /></div>
+        <div><label style={lbl}>{t('admin.invoices.address')}</label><input style={ro()} disabled={locked} value={p.address} onChange={(e) => patchParty(which, { address: e.target.value })} /></div>
+        <div><label style={lbl}>{t('admin.invoices.iban')}</label><input style={ro()} disabled={locked} value={p.iban} onChange={(e) => patchParty(which, { iban: e.target.value })} /></div>
       </div>
     );
   };
@@ -253,7 +260,10 @@ export default function InvoicesPanel() {
                           )}
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => { setErr(''); setDraft(coerceToInvoice(r)); }}>{t('admin.invoices.edit')}</button>
                           <button className="btn" style={{ padding: '3px 9px', fontSize: 12, marginRight: 6 }} onClick={() => printInvoice(coerceToInvoice(r), pdfLabels(coerceToInvoice(r)))}>📄 {t('admin.invoices.print')}</button>
-                          <button className="btn" style={{ padding: '3px 9px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r)}>{t('admin.invoices.delete')}</button>
+                          {/* Ștergere DOAR pe documente nenumerotate (ciorne) — o factură emisă se corectează prin stornare, nu se șterge. */}
+                          {!String(r.number || '').trim() && (
+                            <button className="btn" style={{ padding: '3px 9px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r)}>{t('admin.invoices.delete')}</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -282,10 +292,11 @@ export default function InvoicesPanel() {
             </div>
             <div><label style={lbl}>{t('admin.invoices.series')}</label><input style={{ ...inp, ...(draft.number ? { opacity: 0.6 } : {}) }} value={draft.series} disabled={!!draft.number} onChange={(e) => patch({ series: e.target.value.replace(/[^A-Za-z0-9_-]/g, '') })} /></div>
             <div><label style={lbl}>{t('admin.invoices.number')}</label><input style={{ ...inp, opacity: 0.6 }} value={draft.number || t('admin.invoices.numberAuto')} disabled readOnly /></div>
-            <div><label style={lbl}>{t('admin.invoices.issued')}</label><input type="date" style={inp} value={draft.issuedAt} onChange={(e) => patch({ issuedAt: e.target.value })} /></div>
+            <div><label style={lbl}>{t('admin.invoices.issued')}</label><input type="date" style={ro()} disabled={locked} value={draft.issuedAt} onChange={(e) => patch({ issuedAt: e.target.value })} /></div>
             <div><label style={lbl}>{t('admin.invoices.due')}</label><input type="date" style={inp} value={draft.dueAt} onChange={(e) => patch({ dueAt: e.target.value })} /></div>
-            <div><label style={lbl}>{t('admin.invoices.currency')}</label><input style={inp} value={draft.currency} onChange={(e) => patch({ currency: e.target.value })} /></div>
+            <div><label style={lbl}>{t('admin.invoices.currency')}</label><input style={ro()} disabled={locked} value={draft.currency} onChange={(e) => patch({ currency: e.target.value })} /></div>
           </div>
+          {locked && <p style={{ fontSize: 12, color: '#8a5a00', background: '#fff7e6', border: '1px solid #f0d99b', borderRadius: 6, padding: '6px 10px', margin: '8px 0 0' }}>{t('admin.invoices.lockedHint')}</p>}
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
             <div style={{ flex: '1 1 260px' }}><div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t('admin.invoices.seller')}</div>{partyFields('seller')}</div>
@@ -296,20 +307,20 @@ export default function InvoicesPanel() {
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t('admin.invoices.items')}</div>
             {draft.items.map((it, i) => (
               <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                <input style={{ ...inp, flex: '3 1 200px' }} placeholder={t('admin.invoices.itemDesc')} value={it.description} onChange={(e) => patchItem(i, { description: e.target.value })} />
-                <input type="number" min={0} step="any" style={{ ...inp, flex: '1 1 70px' }} placeholder={t('admin.invoices.qty')} value={it.qty} onChange={(e) => patchItem(i, { qty: Number(e.target.value) || 0 })} />
-                <input type="number" min={0} step="any" style={{ ...inp, flex: '1 1 90px' }} placeholder={t('admin.invoices.unitPrice')} value={it.unitPrice} onChange={(e) => patchItem(i, { unitPrice: Number(e.target.value) || 0 })} />
+                <input style={ro({ flex: '3 1 200px' })} disabled={locked} placeholder={t('admin.invoices.itemDesc')} value={it.description} onChange={(e) => patchItem(i, { description: e.target.value })} />
+                <input type="number" min={0} step="any" style={ro({ flex: '1 1 70px' })} disabled={locked} placeholder={t('admin.invoices.qty')} value={it.qty} onChange={(e) => patchItem(i, { qty: Number(e.target.value) || 0 })} />
+                <input type="number" min={0} step="any" style={ro({ flex: '1 1 90px' })} disabled={locked} placeholder={t('admin.invoices.unitPrice')} value={it.unitPrice} onChange={(e) => patchItem(i, { unitPrice: Number(e.target.value) || 0 })} />
                 <span style={{ flex: '1 1 90px', alignSelf: 'center', textAlign: 'right', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{money(lineTotal(it))}</span>
-                <button className="btn" style={{ padding: '4px 9px', fontSize: 12 }} onClick={() => patch({ items: draft.items.filter((_, j) => j !== i) })}>✕</button>
+                {!locked && <button className="btn" style={{ padding: '4px 9px', fontSize: 12 }} onClick={() => patch({ items: draft.items.filter((_, j) => j !== i) })}>✕</button>}
               </div>
             ))}
-            {draft.items.length < INVOICE_ITEMS_MAX && (
+            {!locked && draft.items.length < INVOICE_ITEMS_MAX && (
               <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => patch({ items: [...draft.items, { description: '', qty: 1, unitPrice: 0 }] })}>{t('admin.invoices.addItem')}</button>
             )}
           </div>
 
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 12 }}>
-            <div><label style={lbl}>{t('admin.invoices.vatRate')} (%)</label><input type="number" min={0} max={100} step="any" style={{ ...inp, width: 90 }} value={draft.vatRate} onChange={(e) => patch({ vatRate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} /></div>
+            <div><label style={lbl}>{t('admin.invoices.vatRate')} (%)</label><input type="number" min={0} max={100} step="any" style={ro({ width: 90 })} disabled={locked} value={draft.vatRate} onChange={(e) => patch({ vatRate: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} /></div>
             <div><label style={lbl}>{t('admin.invoices.status')}</label>
               <select style={{ ...inp, width: 150 }} value={draft.status} onChange={(e) => patch({ status: e.target.value as InvoiceStatus })}>
                 {INVOICE_STATUSES.filter((st) => !draft.number || st !== 'draft').map((st) => <option key={st} value={st}>{t(`admin.invoices.status_${st}`)}</option>)}

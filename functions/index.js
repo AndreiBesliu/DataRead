@@ -830,6 +830,26 @@ function nextInvoiceNumber(counterExists, counterNext, startNumber) {
 exports.invoiceCounterKey = invoiceCounterKey;
 exports.nextInvoiceNumber = nextInvoiceNumber;
 
+/** Pur: o stornare e reversarea EXACTĂ a originalului — aceleași linii cu cantitatea NEGATĂ (preț/descriere
+ *  identice, în aceeași ordine) + aceleași TVA/monedă/părți. Folosit ca invariant server în performIssueInvoice. */
+function stornoMatchesOriginal(storno, orig) {
+  const sIt = Array.isArray(storno.items) ? storno.items : [];
+  const oIt = Array.isArray(orig.items) ? orig.items : [];
+  if (sIt.length === 0 || sIt.length !== oIt.length) return false;
+  const near = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) < 1e-9;
+  for (let i = 0; i < oIt.length; i++) {
+    const s = sIt[i] || {}; const o = oIt[i] || {};
+    if (String(s.description || '') !== String(o.description || '')) return false;
+    if (!near(s.qty, -(Number(o.qty) || 0))) return false;   // cantitate negată
+    if (!near(s.unitPrice, o.unitPrice)) return false;       // preț identic
+  }
+  if (!near(storno.vatRate, orig.vatRate)) return false;
+  if (String(storno.currency || '') !== String(orig.currency || '')) return false;
+  const sameParty = (a, b) => { const x = a || {}; const y = b || {}; return ['name', 'cui', 'regCom', 'address', 'iban'].every((k) => String(x[k] || '') === String(y[k] || '')); };
+  return sameParty(storno.buyer, orig.buyer) && sameParty(storno.seller, orig.seller);
+}
+exports.stornoMatchesOriginal = stornoMatchesOriginal;
+
 /** Nucleu testabil (tranzacție reală pe Firestore în memorie în e2e). Presupune apelantul DEJA autorizat (admin). */
 async function performIssueInvoice(db, data) {
   const clientUid = String((data || {}).clientUid || '');
@@ -861,6 +881,9 @@ async function performIssueInvoice(db, data) {
       if (orig.kind !== 'factura' || !String(orig.number || '').trim()) throw new HttpsError('failed-precondition', 'STORNO_ORIGINAL_NOT_ISSUED');
       if (orig.stornoOf) throw new HttpsError('failed-precondition', 'STORNO_OF_STORNO');
       if (orig.stornoedBy) throw new HttpsError('failed-precondition', 'ALREADY_STORNOED');
+      // „Reversare exactă" devine invariant SERVER (nu doar UI): storno = negarea exactă a originalului
+      // (cantități negate, preț/părți/TVA/monedă identice). Blochează o stornare hand-editată cu sume diferite.
+      if (!stornoMatchesOriginal(inv, orig)) throw new HttpsError('failed-precondition', 'STORNO_MISMATCH');
     }
     const series = String(inv.series || '').trim().slice(0, 20);
     if (!series) throw new HttpsError('failed-precondition', 'NO_SERIES');
@@ -1249,7 +1272,14 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     reasoning: String(out.reasoning || '').slice(0, 4000),
     actions: String(out.actions || '').slice(0, 4000),
   };
-  await campRef.set({ aiInsight: insight, aiInsightAt: admin.firestore.FieldValue.serverTimestamp(), aiInsightBy: actorUid }, { merge: true });
+  // Analiza AI = judecată INTERNĂ a operatorului (verdict/reasoning + UID-ul lui). NU se scrie pe campaigns/{id}
+  // (citibilă de client) — ci pe campaignInsights/{id} (admin-only), ca să nu se scurgă către client. Denormalizăm
+  // leadId/clientUid/platform pentru triggerul de automatizare + listenerele admin (fără citire suplimentară a campaniei).
+  await db.collection('campaignInsights').doc(campaignId).set({
+    schema: 1, verdict: insight.verdict, headline: insight.headline, reasoning: insight.reasoning, actions: insight.actions,
+    leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
+    at: admin.firestore.FieldValue.serverTimestamp(), by: actorUid,
+  }, { merge: true });
   logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: actorUid, usage: response.usage });
   return { insight };
 }
@@ -2666,6 +2696,61 @@ exports.backfillLpIndex = onCall({ region: REGION }, async (request) => {
   return { written };
 });
 
+// Migrare unică (nucleu testabil): mută analiza AI internă de pe campaigns/{id} (citibilă de client → SCURGERE de
+// verdict/raționament intern + UID-ul operatorului) în colecția admin-only campaignInsights/{id}, apoi ȘTERGE câmpurile
+// aiInsight/aiInsightAt/aiInsightBy de pe documentul campaniei. Necesar pentru datele ISTORICE scrise de codul vechi
+// (relocarea oprește doar scrierile NOI). Idempotentă: campaniile fără aiInsight sunt sărite; re-rularea = no-op.
+// Câmpurile scrise în campaignInsights TREBUIE să fie identice cu performCampaignInsight (verdict/headline/reasoning/
+// actions + leadId/clientUid/platform denormalizate) — onMetricWrite/onCampaignAutomation depind de ele. (Testat: TEST MIG.)
+async function performMigrateCampaignInsights(db) {
+  const snap = await db.collection('campaigns').get();
+  let migrated = 0;
+  let scrubbed = 0;
+  const ops = [];
+  for (const d of snap.docs) {
+    const camp = d.data() || {};
+    const ins = camp.aiInsight;
+    const hasLeak = (ins && typeof ins === 'object') || camp.aiInsightBy != null || camp.aiInsightAt != null;
+    if (!hasLeak) continue;
+    if (ins && typeof ins === 'object') {
+      // Oglindește în colecția admin-only (merge: nu suprascrie un insight mai nou scris deja de codul nou).
+      const verdict = ['scale', 'maintain', 'pause', 'test'].includes(ins.verdict) ? ins.verdict : 'maintain';
+      ops.push(db.collection('campaignInsights').doc(d.id).set({
+        schema: 1,
+        verdict,
+        headline: String(ins.headline || '').slice(0, 4000),
+        reasoning: String(ins.reasoning || '').slice(0, 4000),
+        actions: String(ins.actions || '').slice(0, 4000),
+        leadId: String(camp.leadId || ''),
+        clientUid: String(camp.clientUid || ''),
+        platform: String(camp.platform || ''),
+        at: camp.aiInsightAt || admin.firestore.FieldValue.serverTimestamp(),
+        by: String(camp.aiInsightBy || ''),
+        migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }));
+      migrated++;
+    }
+    // Curăță câmpurile scurse de pe documentul campaniei (citibil de client).
+    ops.push(d.ref.update({
+      aiInsight: admin.firestore.FieldValue.delete(),
+      aiInsightAt: admin.firestore.FieldValue.delete(),
+      aiInsightBy: admin.firestore.FieldValue.delete(),
+    }));
+    scrubbed++;
+  }
+  await Promise.all(ops);
+  return { migrated, scrubbed };
+}
+exports.performMigrateCampaignInsights = performMigrateCampaignInsights;
+
+exports.migrateCampaignInsights = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+  const res = await performMigrateCampaignInsights(admin.firestore());
+  logger.info('migrateCampaignInsights done', res);
+  return res;
+});
+
 // ── Management administratori (RBAC owner/operator) — toate mutațiile prin acest callable owner-only.
 // Autorizarea apelantului se face DIN FIRESTORE (rol live), nu din token (poate fi vechi). Last-owner +
 // self-heal founder + audit, totul într-o tranzacție. Vezi canMutateAdmin (pur, testat).
@@ -3223,6 +3308,9 @@ if (AUTOMATION_ENABLED) {
       const campSnap = await admin.firestore().collection('campaigns').doc(campaignId).get();
       if (!campSnap.exists) return;
       const camp = campSnap.data() || {};
+      // Verdictul AI s-a mutat pe campaignInsights/{id} (admin-only) — îl citim de acolo pentru ctx.
+      const insSnap = await admin.firestore().collection('campaignInsights').doc(campaignId).get();
+      const curVerdict = insSnap.exists ? String((insSnap.data() || {}).verdict || '') : '';
       const spend = Number(after.spend) || 0; const leads = Number(after.leads) || 0; const clicks = Number(after.clicks) || 0;
       const impressions = Number(after.impressions) || 0; const revenue = Number(after.revenue) || 0;
       const ctx = {
@@ -3231,7 +3319,7 @@ if (AUTOMATION_ENABLED) {
         'metric.roas': spend > 0 ? revenue / spend : 0,
         'metric.ctr': impressions > 0 ? (clicks / impressions) * 100 : 0,
         'campaign.platform': camp.platform || '',
-        'campaign.aiInsight.verdict': (camp.aiInsight && camp.aiInsight.verdict) || '',
+        'campaign.aiInsight.verdict': curVerdict,
       };
       const event = {
         trigger: 'campaign.metric_threshold', targetId: campaignId, clientUid: camp.clientUid || '',
@@ -3241,15 +3329,16 @@ if (AUTOMATION_ENABLED) {
     } catch (e) { console.error('onMetricWrite automation failed:', e); }
   });
 
-  // Campanie scrisă → eveniment „verdict AI", DOAR când verdictul aiInsight s-a schimbat (altfel recalculul de
-  // totals la fiecare pull ar declanșa constant). before/after pe aiInsight.verdict.
-  exports.onCampaignAutomation = onDocumentWritten({ document: 'campaigns/{campaignId}', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async (ev) => {
+  // Analiză AI scrisă (campaignInsights/{id}) → eveniment „verdict AI", DOAR când verdictul s-a schimbat. Triggerul
+  // ascultă pe colecția admin-only (insight-ul s-a mutat de pe campaigns/{id}); platform/clientUid sunt denormalizate
+  // pe doc-ul de insight, deci nu mai citim campania. before/after pe `verdict`.
+  exports.onCampaignAutomation = onDocumentWritten({ document: 'campaignInsights/{campaignId}', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async (ev) => {
     try {
       const before = ev.data && ev.data.before && ev.data.before.exists ? ev.data.before.data() : null;
       const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
       if (!after) return;
-      const bv = (before && before.aiInsight && before.aiInsight.verdict) || '';
-      const av = (after.aiInsight && after.aiInsight.verdict) || '';
+      const bv = (before && before.verdict) || '';
+      const av = after.verdict || '';
       if (!av || av === bv) return; // doar la SCHIMBARE de verdict
       const ctx = { 'campaign.aiInsight.verdict': av, 'campaign.platform': after.platform || '' };
       const event = { trigger: 'campaign.insight', targetId: ev.params.campaignId, clientUid: after.clientUid || '', ctx, stateHash: av };

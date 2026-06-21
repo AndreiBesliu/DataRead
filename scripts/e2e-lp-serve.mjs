@@ -73,7 +73,7 @@ const fakeDb = {
 };
 // admin.firestore e un getter pe namespace → îl înlocuim cu defineProperty (configurable).
 const fakeFirestore = () => fakeDb;
-fakeFirestore.FieldValue = { increment: (n) => ({ __inc: n }), serverTimestamp: () => ({ __ts: true }) };
+fakeFirestore.FieldValue = { increment: (n) => ({ __inc: n }), serverTimestamp: () => ({ __ts: true }), delete: () => ({ __del: true }) };
 Object.defineProperty(admin, 'firestore', { value: fakeFirestore, configurable: true, writable: true });
 
 const fns = fnRequire(fnIndex);
@@ -1201,9 +1201,11 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
   }
   // 13) STORNARE validă: original emis → storno primește număr + originalul e marcat stornedBy (anti dublă-stornare)
   {
+    const ORIG_ITEMS = [{ description: 'Serviciu', qty: 2, unitPrice: 100 }];
+    const ST_ITEMS = [{ description: 'Serviciu', qty: -2, unitPrice: 100 }]; // negarea exactă
     const { db, store } = makeInvStore({
-      'clients/u1/invoices/orig': { series: 'DR', number: '7', status: 'sent', kind: 'factura' },
-      'clients/u1/invoices/st': { series: 'DR', number: '', status: 'draft', kind: 'factura', stornoOf: { series: 'DR', number: '7', id: 'orig' } },
+      'clients/u1/invoices/orig': { series: 'DR', number: '7', status: 'sent', kind: 'factura', items: ORIG_ITEMS, vatRate: 19, currency: 'RON' },
+      'clients/u1/invoices/st': { series: 'DR', number: '', status: 'draft', kind: 'factura', items: ST_ITEMS, vatRate: 19, currency: 'RON', stornoOf: { series: 'DR', number: '7', id: 'orig' } },
       'invoiceCounters/DR': { series: 'DR', next: 8 },
     });
     const { res } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'st' }));
@@ -1233,6 +1235,76 @@ console.log('\nINV) performIssueInvoice — numerotare atomică per serie');
     const e4 = (await grab(() => fns.performIssueInvoice(makeInvStore(seed).db, { clientUid: 'u1', invoiceId: 'sOfStorno' }))).err;
     ok(e4 && /STORNO_OF_STORNO/.test(e4.message || ''), 'storno al unei stornări → STORNO_OF_STORNO');
   }
+  // 15) stornoMatchesOriginal (pur) + STORNO_MISMATCH (reversare exactă = invariant server)
+  {
+    const orig = { items: [{ description: 'A', qty: 2, unitPrice: 100 }, { description: 'B', qty: 1, unitPrice: 50 }], vatRate: 19, currency: 'RON', seller: { name: 'Ag' }, buyer: { name: 'Cl' } };
+    const good = { items: [{ description: 'A', qty: -2, unitPrice: 100 }, { description: 'B', qty: -1, unitPrice: 50 }], vatRate: 19, currency: 'RON', seller: { name: 'Ag' }, buyer: { name: 'Cl' } };
+    ok(fns.stornoMatchesOriginal(good, orig) === true, 'stornoMatchesOriginal: negare exactă → true');
+    ok(fns.stornoMatchesOriginal({ ...good, items: [{ description: 'A', qty: -1, unitPrice: 100 }, { description: 'B', qty: -1, unitPrice: 50 }] }, orig) === false, 'mismatch: cantitate parțială → false');
+    ok(fns.stornoMatchesOriginal({ ...good, buyer: { name: 'Altcineva' } }, orig) === false, 'mismatch: alt cumpărător → false');
+    ok(fns.stornoMatchesOriginal({ ...good, items: [{ description: 'A', qty: -2, unitPrice: 999 }, { description: 'B', qty: -1, unitPrice: 50 }] }, orig) === false, 'mismatch: alt preț → false');
+    ok(fns.stornoMatchesOriginal({ ...good, items: [{ description: 'A', qty: -2, unitPrice: 100 }] }, orig) === false, 'mismatch: număr diferit de linii → false');
+    // performIssueInvoice respinge un storno cu sume necorespunzătoare
+    const { db } = makeInvStore({
+      'clients/u1/invoices/o2': { series: 'DR', number: '7', status: 'sent', kind: 'factura', items: orig.items, vatRate: 19, currency: 'RON', seller: orig.seller, buyer: orig.buyer },
+      'clients/u1/invoices/sBad': { series: 'DR', number: '', status: 'draft', kind: 'factura', items: [{ description: 'A', qty: -1, unitPrice: 100 }, { description: 'B', qty: -1, unitPrice: 50 }], vatRate: 19, currency: 'RON', seller: orig.seller, buyer: orig.buyer, stornoOf: { series: 'DR', number: '7', id: 'o2' } },
+      'invoiceCounters/DR': { series: 'DR', next: 8 },
+    });
+    const { err } = await grab(() => fns.performIssueInvoice(db, { clientUid: 'u1', invoiceId: 'sBad' }));
+    ok(err && /STORNO_MISMATCH/.test(err.message || ''), 'performIssueInvoice: storno cu sume diferite → STORNO_MISMATCH');
+  }
+}
+
+// ── TEST MIG: performMigrateCampaignInsights — relocare + scrub al scurgerii aiInsight (constatare audit Felia B). ──
+// Mută analiza AI internă de pe campaigns/{id} (citibil de client) în campaignInsights/{id} (admin-only) și ȘTERGE
+// câmpurile scurse. Câmpurile scrise TREBUIE să fie cele citite de onMetricWrite/onCampaignAutomation (verdict +
+// denormalizări clientUid/platform/leadId) — testul prinde un typo de nume de câmp (JS fără typecheck).
+console.log('\nMIG) performMigrateCampaignInsights — relocare + scrub leak aiInsight');
+{
+  function makeMigStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    const applyUpdate = (path, data) => {
+      const cur = Object.assign({}, store.get(path) || {});
+      for (const [k, v] of Object.entries(data)) { if (v && v.__del) delete cur[k]; else cur[k] = v; }
+      store.set(path, cur);
+    };
+    const docRef = (path) => ({
+      _path: path,
+      async get() { return { exists: store.has(path), id: path.split('/').pop(), data: () => store.get(path), ref: docRef(path) }; },
+      async set(data, opts) { store.set(path, opts && opts.merge ? Object.assign({}, store.get(path) || {}, data) : Object.assign({}, data)); },
+      async update(data) { applyUpdate(path, data); },
+      collection: (sub) => colRef(`${path}/${sub}`),
+    });
+    function colRef(path) {
+      return {
+        doc: (id) => docRef(`${path}/${id}`),
+        async get() {
+          const docs = [];
+          for (const [k, v] of store) {
+            if (k.startsWith(path + '/')) { const rest = k.slice(path.length + 1); if (!rest.includes('/')) docs.push({ id: rest, data: () => v, ref: docRef(k) }); }
+          }
+          return { docs, empty: docs.length === 0, size: docs.length };
+        },
+      };
+    }
+    return { db: { collection: (c) => colRef(c) }, store };
+  }
+  const { db, store } = makeMigStore({
+    'campaigns/c1': { name: 'Camp 1', leadId: 'L1', clientUid: 'u1', platform: 'meta', totals: {}, aiInsight: { verdict: 'scale', headline: 'Merge bine', reasoning: 'ROAS mare', actions: 'Crește bugetul' }, aiInsightAt: { __ts: true }, aiInsightBy: 'operator9' },
+    'campaigns/c2': { name: 'Camp 2', leadId: 'L2', clientUid: 'u2', platform: 'google', totals: {} }, // fără insight → sărit
+    'campaigns/c1/metrics/2026-06-20': { spend: 100 }, // subdoc → trebuie IGNORAT de get() pe colecția campaigns
+  });
+  const res = await fns.performMigrateCampaignInsights(db);
+  ok(res.migrated === 1 && res.scrubbed === 1, 'MIG: o campanie migrată + curățată (cea fără insight sărită)');
+  const ins = store.get('campaignInsights/c1');
+  ok(ins && ins.verdict === 'scale' && ins.headline === 'Merge bine' && ins.reasoning === 'ROAS mare' && ins.actions === 'Crește bugetul', 'MIG: campaignInsights are verdict/headline/reasoning/actions');
+  ok(ins && ins.clientUid === 'u1' && ins.platform === 'meta' && ins.leadId === 'L1' && ins.by === 'operator9', 'MIG: denormalizări clientUid/platform/leadId/by prezente (consumate de triggere)');
+  const c1 = store.get('campaigns/c1');
+  ok(c1 && !('aiInsight' in c1) && !('aiInsightAt' in c1) && !('aiInsightBy' in c1), 'MIG: câmpurile scurse ȘTERSE de pe campaigns/{id} (leak închis)');
+  ok(c1 && c1.name === 'Camp 1' && c1.clientUid === 'u1', 'MIG: restul câmpurilor campaniei rămân neatinse');
+  ok(!store.has('campaignInsights/c2'), 'MIG: campania fără insight nu produce doc campaignInsights');
+  const res2 = await fns.performMigrateCampaignInsights(db);
+  ok(res2.migrated === 0 && res2.scrubbed === 0, 'MIG: re-rulare după curățare → no-op (idempotentă)');
 }
 
 rmSync(tmp, { force: true });

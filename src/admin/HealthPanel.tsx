@@ -9,7 +9,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import {
   coerceToSelfMarketingConfig,
   SELF_MKT_CONFIG_DEFAULT,
@@ -32,6 +33,7 @@ export default function HealthPanel() {
   const [cfg, setCfg] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [form, setForm] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [saveState, setSaveState] = useState<'idle' | 'busy' | 'saved' | 'err'>('idle');
+  const [migrate, setMigrate] = useState<{ state: 'idle' | 'busy' | 'done' | 'err'; msg: string }>({ state: 'idle', msg: '' });
   // „Murdar" = admin a editat formularul fără să salveze încă → un snapshot remote NU trebuie să-i piardă editarea
   // (ex. al doilea admin salvează concurent). Ref (nu state) ca să fie citit în handler-ul de snapshot fără re-bind.
   const dirty = useRef(false);
@@ -69,6 +71,19 @@ export default function HealthPanel() {
       setSaveState('saved');
     } catch {
       setSaveState('err');
+    }
+  };
+
+  // Migrare unică de securitate: mută analiza AI internă de pe campaigns/{id} (citibilă de client) în
+  // colecția admin-only campaignInsights + curăță câmpurile scurse din datele istorice. Idempotentă.
+  const runMigration = async () => {
+    setMigrate({ state: 'busy', msg: '' });
+    try {
+      const fn = httpsCallable<Record<string, never>, { migrated: number; scrubbed: number }>(functions, 'migrateCampaignInsights');
+      const res = await fn({});
+      setMigrate({ state: 'done', msg: t('admin.health.migrateDone', { migrated: res.data?.migrated ?? 0, scrubbed: res.data?.scrubbed ?? 0 }) });
+    } catch {
+      setMigrate({ state: 'err', msg: t('admin.health.migrateErr') });
     }
   };
 
@@ -111,6 +126,19 @@ export default function HealthPanel() {
           </button>
           {saveState === 'saved' && <span style={{ fontSize: 12, color: '#1e7e34' }}>{t('admin.health.saved')}</span>}
           {saveState === 'err' && <span style={{ fontSize: 12, color: '#c0392b' }}>{t('admin.health.saveErr')}</span>}
+        </div>
+      </div>
+
+      {/* ── Mentenanță: migrări unice de date ── */}
+      <div style={{ ...card, marginBottom: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{t('admin.health.maintTitle')}</div>
+        <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 12px', maxWidth: 680 }}>{t('admin.health.migrateHint')}</p>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn" disabled={migrate.state === 'busy'} onClick={() => void runMigration()}>
+            {migrate.state === 'busy' ? t('admin.health.migrateBusy') : t('admin.health.migrateBtn')}
+          </button>
+          {migrate.state === 'done' && <span style={{ fontSize: 12, color: '#1e7e34' }}>{migrate.msg}</span>}
+          {migrate.state === 'err' && <span style={{ fontSize: 12, color: '#c0392b' }}>{migrate.msg}</span>}
         </div>
       </div>
 

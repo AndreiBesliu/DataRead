@@ -28,6 +28,9 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
   const { t } = useTranslation();
   const [leads, setLeads] = useState<SuggestionLead[]>([]);
   const [camps, setCamps] = useState<SuggestionCampaign[]>([]);
+  // verdict/headline-ul AI stă în colecția admin-only `campaignInsights` (NU pe documentul campaniei,
+  // citibil de client) → listener separat, indexat pe id-ul campaniei, îmbinat în useMemo.
+  const [insights, setInsights] = useState<Map<string, { verdict: string; headline: string }>>(new Map());
 
   useEffect(() => {
     const offL = onSnapshot(
@@ -50,22 +53,42 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
       query(collection(db, 'campaigns'), limit(300)),
       (snap) => setCamps(snap.docs.map((d) => {
         const x = d.data();
-        const ins = (x.aiInsight && typeof x.aiInsight === 'object' ? x.aiInsight : {}) as Record<string, unknown>;
         return {
           id: d.id,
           name: typeof x.name === 'string' ? x.name : '',
           leadId: typeof x.leadId === 'string' ? x.leadId : '',
           clientName: typeof x.clientName === 'string' ? x.clientName : '',
-          verdict: typeof ins.verdict === 'string' ? ins.verdict : '',
-          headline: typeof ins.headline === 'string' ? ins.headline : '',
+          verdict: '',
+          headline: '',
         };
       })),
       () => setCamps([])
     );
-    return () => { offL(); offC(); };
+    const offI = onSnapshot(
+      collection(db, 'campaignInsights'),
+      (snap) => {
+        const m = new Map<string, { verdict: string; headline: string }>();
+        snap.forEach((d) => {
+          const x = d.data();
+          m.set(d.id, {
+            verdict: typeof x.verdict === 'string' ? x.verdict : '',
+            headline: typeof x.headline === 'string' ? x.headline : '',
+          });
+        });
+        setInsights(m);
+      },
+      () => setInsights(new Map())
+    );
+    return () => { offL(); offC(); offI(); };
   }, []);
 
-  const suggestions = useMemo(() => buildSuggestions({ leads, campaigns: camps, nowMs: Date.now() }), [leads, camps]);
+  const suggestions = useMemo(() => {
+    const enriched = camps.map((c) => {
+      const ins = insights.get(c.id);
+      return ins ? { ...c, verdict: ins.verdict, headline: ins.headline } : c;
+    });
+    return buildSuggestions({ leads, campaigns: enriched, nowMs: Date.now() });
+  }, [leads, camps, insights]);
 
   const card: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 };
 
