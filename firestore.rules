@@ -436,6 +436,8 @@ service cloud.firestore {
         && (!('kind' in request.resource.data) || request.resource.data.kind in ['campaign', 'site'])
         // conversionHtml (sticky CTA + exit popup compilate) — opțional, plafonat (anti-bloat; injectat de serveLp).
         && (!('conversionHtml' in request.resource.data) || (request.resource.data.conversionHtml is string && request.resource.data.conversionHtml.size() <= 200000))
+        // offer (ofertă cu termen de valabilitate) — opțional, map; câmpurile string sunt plafonate de coerce/UI + 1MiB backstop.
+        && (!('offer' in request.resource.data) || request.resource.data.offer is map)
         // A/B testing: experimente (listă plafonată) + armsHtml (map). Garda de OCTEȚI (sumă html+arme ≤200KB)
         // rămâne în editor (regulile nu pot itera map-uri); admin-only write + limita Firestore 1MiB = backstop.
         && (!('experiments' in request.resource.data) || (request.resource.data.experiments is list && request.resource.data.experiments.size() <= 3))

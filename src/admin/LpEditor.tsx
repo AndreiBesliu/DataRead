@@ -13,6 +13,7 @@ import ThemeControls from '../theme/ThemeControls';
 import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpConversionPanel from './LpConversionPanel';
+import LpOfferPanel from './LpOfferPanel';
 import LpExperimentsPanel from './LpExperimentsPanel';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorLayers from './LpDecorLayers';
@@ -23,7 +24,7 @@ import type { LpProject } from '../types/lpProject';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'ab';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'offer' | 'ab';
 
 function composeDoc(lp: LandingPage): string {
   const pageDecor = compilePageDecors(lp.pageDecors);
@@ -93,6 +94,7 @@ export default function LpEditor({
       pageDecorHtml: assets.pageDecorHtml, // injectat de serveLp după <body>
       conversion: draft.conversion,
       conversionHtml: assets.conversionHtml, // sticky CTA + exit popup, injectat de serveLp
+      offer: draft.offer, // ofertă cu termen de valabilitate (serveLp comută la expirat) — Task #55
       experiments: draft.experiments, // A/B: sursa (blocuri per variantă)
       armsHtml: assets.armsHtml, // A/B: HTML compilat per variantă (serveLp substituie placeholderele)
       hasForm: assets.hasForm,
@@ -281,6 +283,7 @@ export default function LpEditor({
         {draft.editor === 'code' ? <button onClick={() => setTab('ai')} style={tabBtn(tab === 'ai')}>🤖 {t('admin.lpStudio.tabAi')}</button> : null}
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
         <button onClick={() => setTab('conversion')} style={tabBtn(tab === 'conversion')}>🎯 {t('admin.lpStudio.tabConversion')}</button>
+        <button onClick={() => setTab('offer')} style={tabBtn(tab === 'offer')}>⏳ {t('admin.lpStudio.tabOffer')}</button>
         <button onClick={() => setTab('ab')} style={tabBtn(tab === 'ab')}>🧪 {t('admin.lpStudio.tabAb')}</button>
       </div>
 
@@ -333,6 +336,9 @@ export default function LpEditor({
             )}
             {tab === 'form' && (
               <LpFormConfigPanel value={draft.form} onChange={(form) => setDraft((d) => ({ ...d, form, hasForm: form.enabled }))} />
+            )}
+            {tab === 'offer' && (
+              <LpOfferPanel value={draft.offer} onChange={(offer) => setDraft((d) => ({ ...d, offer }))} />
             )}
             {tab === 'conversion' && (
               <LpConversionPanel value={draft.conversion} onChange={(conversion) => setDraft((d) => ({ ...d, conversion }))} />

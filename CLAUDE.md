@@ -406,6 +406,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   **Formular multi-step (#59 complet, 19.06.2026):** `LpFormField.step` + `LpFormConfig.multiStep`; blocul `form`
   grupează câmpurile pe pași (≥2 grupuri, altfel plat) cu nav Înapoi/Înainte/Trimite + validare per pas
   (`checkValidity`) + script inline; `compileBlocks` primește `lang` (nav ro/en); submit unic (handler serveLp neschimbat).
+  **Ofertă cu termen de valabilitate (#55, ACTIV 21.06.2026):** `LandingPage.offer` (`LpOffer`: `expiresAt` ISO UTC gol=fără
+  expirare + `mode` message|redirect + câmpuri pagină expirată/`redirectUrl`; `coerceOffer` unic, expiresAt validat ISO-Z
+  strict). **serveLp:** după `Date.now() >= Date.parse(expiresAt)` NU mai servește LP-ul — `redirect`→302 către `redirectUrl`
+  (https `LP_SAFE_IMG`), altfel `composeExpiredPage` (temată lpThemeCss, text/CTA escapate lpEscape, `noindex`, fără
+  formular/beacon). **Tracking DIFERENȚIAT:** hitul de după expirare → `stats/{zi}.expired` (contor separat, boții excluși) —
+  NU atinge `visits`/conversii, deci metricile campaniei live rămân curate (`lpStats` agregă `expired`; `LpAnalytics` arată
+  „Vizite după expirare" când >0). serveLp citește `lp.offer` BRUT, defensiv (URL invalid/non-https → fallback, fără 302).
+  UI: tab „Ofertă" (`LpOfferPanel`, datetime-local↔ISO UTC). Amânat: valabilitate trasă din setările `campaigns`.
 - **Decor animat interactiv (ACTIV, 14.06.2026):** `src/types/lpDecor.ts` — `compileDecor` produce
   `<canvas>`+`<script>` inline self-contained (motorul trăiește DOAR în TS); 7 efecte (dots/
   constellation/shapes(7 forme)/grid/waves/bubbles/rings) × 4 interacțiuni (none/mouseReact/

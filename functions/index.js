@@ -2090,6 +2090,33 @@ function lpNotFound() {
   return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Pagină negăsită</title><style>body{font-family:system-ui,sans-serif;background:#0a0f1e;color:#e8eefc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;text-align:center}h1{font-size:64px;margin:0}</style></head><body><div><h1>404</h1><p>Pagina nu există sau nu este publicată.</p></div></body></html>';
 }
 
+// Ofertă expirată: contor SEPARAT pe rollup-ul zilnic (stats.expired) — NU atinge `visits`/conversii, ca metricile
+// campaniei live să rămână curate. Boții sunt excluși de apelant (ca la A/B).
+async function logLpExpiredHit(db, slug) {
+  const day = new Date().toISOString().slice(0, 10);
+  await db.collection('landingPages').doc(slug).collection('stats').doc(day).set({
+    schema: 1, date: day, expired: admin.firestore.FieldValue.increment(1), updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+// Pagina „ofertă expirată" — temată (lpThemeCss) + text/CTA escapate (lpEscape) + href https (LP_SAFE_IMG). Fără
+// formular/beacon/decor (e o pagină statică de final). noindex (nu vrem oferta expirată în Google).
+function composeExpiredPage(slug, lp, offer) {
+  const css = lpThemeCss(lp.design);
+  const lang = lp.lang === 'en' ? 'en' : 'ro';
+  const defH = lang === 'en' ? 'Offer expired' : 'Ofertă expirată';
+  const defM = lang === 'en' ? 'This offer is no longer available.' : 'Această ofertă nu mai este disponibilă.';
+  const headline = lpEscape((String(offer.expiredHeadline || '').trim() || defH).slice(0, 120));
+  const message = lpEscape((String(offer.expiredMessage || '').trim() || defM).slice(0, 600));
+  const title = lpEscape((String(lp.title || '').trim() || defH).slice(0, 140));
+  const ctaHref = typeof offer.expiredCtaHref === 'string' && LP_SAFE_IMG.test(offer.expiredCtaHref) ? offer.expiredCtaHref.slice(0, 500) : '';
+  const ctaText = lpEscape(String(offer.expiredCtaText || '').slice(0, 60));
+  const cta = ctaHref && ctaText
+    ? `<a href="${lpEscape(ctaHref)}" style="display:inline-block;margin-top:26px;padding:12px 28px;border-radius:10px;background:var(--accent);color:var(--accent-contrast);font-weight:700;text-decoration:none">${ctaText}</a>`
+    : '';
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>${css}.lp-exp{min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px;box-sizing:border-box}.lp-exp-box{max-width:560px}.lp-exp h1{font-size:clamp(28px,5vw,44px);margin:0 0 16px}.lp-exp p{font-size:18px;line-height:1.5;color:var(--fg-1);margin:0;white-space:pre-wrap}</style></head><body><div class="lp-exp"><div class="lp-exp-box"><h1>${headline}</h1><p>${message}</p>${cta}</div></div></body></html>`;
+}
+
 async function logLpVisit(db, slug, req, lp, abCount) {
   const q = req.query || {};
   const source = lpBucket(q.utm_source);
@@ -2632,6 +2659,18 @@ exports.serveLp = onRequest({ region: REGION, memory: '256MiB', invoker: 'public
     // A/B: alege varianta per slot (sticky cookie + split ponderat; boții → control fără contor). O singură dată/request,
     // refolosită la randare ȘI la contorizare (consistență vizită↔contor).
     const isBot = lpDevice((req.headers['user-agent'] || '').toString()) === 'bot';
+    // Ofertă cu termen de valabilitate (Task #55): după `offer.expiresAt`, NU mai servim LP-ul. Hitul se numără
+    // SEPARAT (stats.expired, boții excluși) ca să nu polueze metricile campaniei live. `redirect` → 302; altfel
+    // pagina „ofertă expirată". `expiresAt` e ISO UTC (coerce); valoare invalidă → Date.parse NaN → tratat ca neexpirat.
+    const offer = lp.offer && typeof lp.offer === 'object' ? lp.offer : null;
+    if (offer && offer.expiresAt && Date.now() >= Date.parse(offer.expiresAt)) {
+      if (!isBot) await logLpExpiredHit(db, slug).catch((e) => logger.warn('lp expired log failed', { slug, e: String(e) }));
+      const redirect = offer.mode === 'redirect' && typeof offer.redirectUrl === 'string' && LP_SAFE_IMG.test(offer.redirectUrl) ? offer.redirectUrl.slice(0, 500) : '';
+      if (redirect) {
+        return res.status(302).set('Location', redirect).set('Cache-Control', 'no-store').set('X-Robots-Tag', 'noindex').send('');
+      }
+      return res.status(200).set('Content-Type', 'text/html; charset=utf-8').set('Cache-Control', 'no-store').set('X-Robots-Tag', 'noindex').set('Content-Security-Policy', LP_CSP).send(composeExpiredPage(slug, lpForRender, offer));
+    }
     const ab = pickAbAssignment(lp, parseAbCookie(req.headers.cookie, slug), { isBot });
     const abCookie = serializeAbCookie(slug, ab.cookiePairs);
     await logLpVisit(db, slug, req, lp, ab.count).catch((e) => logger.warn('lp visit log failed', { slug, e: String(e) }));

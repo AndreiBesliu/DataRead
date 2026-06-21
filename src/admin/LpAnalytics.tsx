@@ -196,6 +196,7 @@ export default function LpAnalytics({ slug }: { slug: string }) {
         <div style={card}><div style={kpiVal}>{fmtPct(k.engagementRate)}</div><div style={kpiLabel}>{t('admin.lpStudio.anEngagement')}</div></div>
         <div style={card}><div style={kpiVal}>{fmtSec(k.avgTimeSec)}</div><div style={kpiLabel}>{t('admin.lpStudio.anAvgTime')}</div></div>
         <div style={card}><div style={kpiVal}>{k.avgScrollPct === null ? '—' : `${Math.round(k.avgScrollPct)}%`}</div><div style={kpiLabel}>{t('admin.lpStudio.anAvgScroll')}</div></div>
+        {k.expired > 0 && <div style={card}><div style={{ ...kpiVal, color: '#b07b1e' }}>{fmtN(k.expired)}</div><div style={kpiLabel}>{t('admin.lpStudio.lpExpiredLabel')}</div></div>}
       </div>
 
       {spark ? (

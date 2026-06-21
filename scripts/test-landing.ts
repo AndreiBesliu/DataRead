@@ -29,7 +29,7 @@ import {
   type LpStatsDay,
 } from '../src/analytics/lpStats';
 import { coerceBlocks, coerceToLpBlock, compileBlocks, compileConversion, defaultBlockProps } from '../src/types/lpBlocks';
-import { coerceConversion } from '../src/types/landingPage';
+import { coerceConversion, coerceOffer } from '../src/types/landingPage';
 import { coerceToLpDecor, compileDecor } from '../src/types/lpDecor';
 import { LP_TEMPLATES, landingPageFromTemplate } from '../src/admin/lpTemplates';
 import { coerceToLpProject, LP_PROJECT_COLORS } from '../src/types/lpProject';
@@ -528,6 +528,22 @@ check('recompileLpAssets: include conversionHtml', (() => {
   const lp = coerceToLandingPage({ conversion: { stickyCta: { enabled: true, text: 'Hai', href: '#a' } } });
   return recompileLpAssets(lp).conversionHtml.includes('Hai');
 })());
+
+// ── Ofertă cu termen de valabilitate (#55) ──
+check('coerceOffer: null → default (fără expirare, mode message)', (() => {
+  const o = coerceOffer(null);
+  return o.expiresAt === '' && o.mode === 'message';
+})());
+check('coerceOffer: ISO UTC valid păstrat', coerceOffer({ expiresAt: '2026-06-21T12:00:00.000Z' }).expiresAt === '2026-06-21T12:00:00.000Z');
+check('coerceOffer: ISO fără Z (ambiguu) → respins', coerceOffer({ expiresAt: '2026-06-21T12:00' }).expiresAt === '');
+check('coerceOffer: gunoi → expiresAt gol', coerceOffer({ expiresAt: 'maine' }).expiresAt === '');
+check('coerceOffer: mode invalid → message', coerceOffer({ mode: 'xxx' }).mode === 'message');
+check('coerceOffer: mode redirect păstrat', coerceOffer({ mode: 'redirect' }).mode === 'redirect');
+check('coerceOffer: plafoane titlu/mesaj', (() => {
+  const o = coerceOffer({ expiredHeadline: 'h'.repeat(300), expiredMessage: 'm'.repeat(900) });
+  return o.expiredHeadline.length === 120 && o.expiredMessage.length === 600;
+})());
+check('coerce LP: offer integrat în coerceToLandingPage', coerceToLandingPage({ offer: { expiresAt: '2026-06-21T12:00:00.000Z', mode: 'redirect' } }).offer.mode === 'redirect');
 
 // ── Formular multi-step (#59) ──
 check('coerce: form.multiStep bool', coerceToLandingPage({ form: { enabled: true, multiStep: true } }).form.multiStep === true);

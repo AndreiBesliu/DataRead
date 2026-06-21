@@ -200,6 +200,44 @@ state.lpDoc = { ...servedDoc, ogImage: '', favicon: 'http://insecure/f.ico' }; r
 }
 state.lpDoc = servedDoc;
 
+// ── TEST OFF: ofertă cu termen de valabilitate (Task #55) — expirare → pagină „expirat"/redirect + tracking separat ──
+console.log('\nOFF) serveLp ofertă expirată (mesaj + redirect + contor separat)');
+{
+  const PAST = '2020-01-01T00:00:00.000Z';
+  const FUTURE = '2999-01-01T00:00:00.000Z';
+  // 1) Termen în VIITOR → pagina LP normală + vizită normală (oferta încă activă)
+  state.lpDoc = { ...servedDoc, offer: { expiresAt: FUTURE, mode: 'message', expiredHeadline: 'Gata', expiredMessage: 'M', expiredCtaText: '', expiredCtaHref: '', redirectUrl: '' } }; reset();
+  { const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r);
+    ok(r._status === 200 && String(r._body).includes('Titlu Hero de Test'), 'OFF: termen în viitor → pagina LP normală');
+    ok((state.calls['landingPages/visits:add'] || []).length === 1, 'OFF: ofertă activă → vizită normală logată'); }
+  // 2) EXPIRATĂ, mode=message → pagina „ofertă expirată" + contor stats.expired (NU visits)
+  state.lpDoc = { ...servedDoc, offer: { expiresAt: PAST, mode: 'message', expiredHeadline: 'Oferta s-a încheiat', expiredMessage: 'Revino curând!', expiredCtaText: 'Acasă', expiredCtaHref: 'https://dataread.ro', redirectUrl: '' } }; reset();
+  { const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r); const b = String(r._body || '');
+    ok(r._status === 200 && b.includes('Oferta s-a încheiat') && b.includes('Revino curând!'), 'OFF: expirată message → pagină „ofertă expirată"');
+    ok(b.includes('href="https://dataread.ro"') && b.includes('Acasă'), 'OFF: expirată → CTA https randat');
+    ok(!b.includes('Titlu Hero de Test') && !b.includes('data-lp-form'), 'OFF: expirată → NU servește LP-ul/formularul');
+    ok((r._headers['X-Robots-Tag'] || '').includes('noindex'), 'OFF: expirată → noindex');
+    const stats = state.calls['landingPages/stats:set'] || [];
+    ok(stats.length === 1 && stats[0].data.expired && stats[0].data.expired.__inc === 1, 'OFF: expirată → contor stats.expired incrementat');
+    ok(!stats.some((s) => s.data.visits), 'OFF: expirată → NU incrementează visits (metrici live curate)');
+    ok((state.calls['landingPages/visits:add'] || []).length === 0, 'OFF: expirată → fără vizită brută'); }
+  // 3) EXPIRATĂ, mode=redirect cu https → 302 Location + contor expired
+  state.lpDoc = { ...servedDoc, offer: { expiresAt: PAST, mode: 'redirect', expiredHeadline: '', expiredMessage: '', expiredCtaText: '', expiredCtaHref: '', redirectUrl: 'https://dataread.ro/oferta-noua' } }; reset();
+  { const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r);
+    ok(r._status === 302 && r._headers['Location'] === 'https://dataread.ro/oferta-noua', 'OFF: expirată redirect → 302 către URL https');
+    ok((state.calls['landingPages/stats:set'] || []).some((s) => s.data.expired), 'OFF: expirată redirect → tot incrementează contorul expired'); }
+  // 4) EXPIRATĂ, mode=redirect cu URL NEsigur (http) → cade pe pagina „expirat" (fără open-redirect)
+  state.lpDoc = { ...servedDoc, offer: { expiresAt: PAST, mode: 'redirect', expiredHeadline: '', expiredMessage: '', expiredCtaText: '', expiredCtaHref: '', redirectUrl: 'http://insecure.example/x' } }; reset();
+  { const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}` }), r);
+    ok(r._status === 200 && !r._headers['Location'], 'OFF: redirect cu URL non-https → fără 302 (cade pe pagina expirat)'); }
+  // 5) BOT pe ofertă expirată → tot pagina expirat, dar FĂRĂ contorizare (nu poluează nici metricile expired)
+  state.lpDoc = { ...servedDoc, offer: { expiresAt: PAST, mode: 'message', expiredHeadline: 'X', expiredMessage: 'Y', expiredCtaText: '', expiredCtaHref: '', redirectUrl: '' } }; reset();
+  { const r = mkRes(); await serveLp(mkReq({ path: `/p/${slug}`, headers: { host: 'h', 'user-agent': 'Googlebot/2.1', referer: '' } }), r);
+    ok(r._status === 200, 'OFF: bot pe ofertă expirată → tot pagina expirat');
+    ok((state.calls['landingPages/stats:set'] || []).length === 0, 'OFF: bot expirat → fără contorizare (nici expired)'); }
+}
+state.lpDoc = servedDoc;
+
 // ── TEST S: pagini de site (kind:'site') servite la /pagina/{slug}; separare strictă de /p/. ──
 console.log('\nS) pagini de site /pagina/{slug} (kind:site) + separare de /p/');
 {

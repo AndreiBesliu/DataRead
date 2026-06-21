@@ -1972,6 +1972,24 @@ normaliser, secretele niciodată în chat/repo.
 > operator zilnic/global, deliverables backfill. Operațional (consolă Andrei): backup+PITR, monitorizare/alerte, App Check
 > enforcement, firestore.indexes.json, rotație cheie, staging/CD, a11y.
 
+**2026-06-21 - Task Completed — Ofertă cu termen de valabilitate + pagină „expirat" (Task #55, tracking diferențiat)**
+> Model: Claude Opus 4.8 (1M context). Andrei: „hai să vedem ce iese" (după planul confirmat). A treia direcție din
+> „ce urmează" (1,2,3,4); #2 (SmartBill) e parcat până la decizia înlocuiește/augmentează.
+> - **Date:** `LandingPage.offer` (`LpOffer`: expiresAt ISO UTC gol=fără expirare + mode message|redirect + titlu/mesaj/CTA
+>   pagină expirată + redirectUrl). `coerceOffer` unic (expiresAt validat ISO-Z strict → fără ambiguitate de fus orar).
+> - **serveLp:** după `Date.now() >= Date.parse(expiresAt)` nu mai servește LP-ul — redirect→302 (https LP_SAFE_IMG) sau
+>   `composeExpiredPage` (temată, text/CTA escapate, noindex, fără formular/beacon). Citire BRUTĂ defensivă a `lp.offer`.
+> - **Tracking DIFERENȚIAT:** `logLpExpiredHit` incrementează `stats/{zi}.expired` (contor SEPARAT, boții excluși) — NU
+>   atinge `visits`/conversii ⇒ metricile campaniei live rămân curate. `lpStats` agregă `expired`; `LpAnalytics` afișează
+>   „Vizite după expirare" când >0.
+> - **UI:** tab nou „Ofertă" în LP Editor (`LpOfferPanel`, datetime-local↔ISO UTC, mod + câmpuri pagină expirată/redirect).
+>   Reguli: `offer` validat `is map` (string-urile plafonate de coerce/UI + backstop 1MiB).
+> - **Teste:** coerce (#55) în test-landing (ISO valid/ambiguu/gunoi, mode, plafoane) + e2e **OFF** (viitor→normal;
+>   expirat message→pagină expirat + contor expired NU visits; redirect https→302; redirect non-https→fallback; bot→fără
+>   contor). Notă: Link Builder are DEJA dropdown de campanie; partea nouă livrată = expirarea + pagina + metrici separate.
+> Verificat: 17/17 suites + e2e (OFF) + build (typecheck+paritate i18n) + build:site + boot. DEPLOYED: functions+hosting+rules.
+> Amânat: valabilitate trasă automat din setările `campaigns` (necesită câmp expirare pe modelul de campanie).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

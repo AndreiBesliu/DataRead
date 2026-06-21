@@ -74,6 +74,21 @@ export interface LpConversion {
   exitPopup: LpExitPopup;
 }
 
+/** Ofertă cu termen de valabilitate (Task #55). După `expiresAt`, serveLp NU mai servește LP-ul:
+ *  `mode='redirect'` → 302 către `redirectUrl`; `mode='message'` → pagina „ofertă expirată" (titlu/mesaj/CTA).
+ *  Hiturile de după expirare se numără SEPARAT (stats.expired) ca să nu polueze metricile campaniei live. */
+export const LP_OFFER_MODES = ['message', 'redirect'] as const;
+export type LpOfferMode = (typeof LP_OFFER_MODES)[number];
+export interface LpOffer {
+  expiresAt: string;       // ISO UTC ('…Z') sau '' = fără expirare (UI scrie din datetime-local → toISOString)
+  mode: LpOfferMode;
+  expiredHeadline: string; // <= 120
+  expiredMessage: string;  // <= 600
+  expiredCtaText: string;  // <= 60
+  expiredCtaHref: string;  // <= LP_URL_MAX (https)
+  redirectUrl: string;     // <= LP_URL_MAX (https) — pt. mode='redirect'
+}
+
 export interface LpFormConfig {
   enabled: boolean;
   /** Formular pe pași (next/back, validare per pas). Câmpurile se grupează după `field.step`. */
@@ -136,6 +151,8 @@ export interface LandingPage {
   /** Nudge-uri de conversie (sticky CTA + exit popup) + markup-ul compilat (injectat de serveLp). */
   conversion: LpConversion;
   conversionHtml: string;
+  /** Ofertă cu termen de valabilitate (expirare → redirect / pagină „expirat", tracking separat). */
+  offer: LpOffer;
   /** Experimente A/B (sursa: blocuri per variantă). `html` conține placeholdere `<!--LP_EXP:id-->`;
    *  `armsHtml[expId][armId]` = HTML-ul compilat al fiecărei variante (serveLp substituie la servire). */
   experiments: LpExperiment[];
@@ -240,6 +257,26 @@ function coerceHttpsUrl(v: unknown): string {
   return SAFE_HTTPS.test(s) ? s.slice(0, LP_URL_MAX) : '';
 }
 
+/** Ofertă cu termen de valabilitate — normaliser unic. `expiresAt` = ISO UTC strict (gol = fără expirare);
+ *  href-urile rămân brute (validate https la servire, ca restul). */
+const LP_OFFER_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+export function emptyOffer(): LpOffer {
+  return { expiresAt: '', mode: 'message', expiredHeadline: '', expiredMessage: '', expiredCtaText: '', expiredCtaHref: '', redirectUrl: '' };
+}
+export function coerceOffer(v: unknown): LpOffer {
+  const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+  const expiresAt = typeof d.expiresAt === 'string' && LP_OFFER_ISO.test(d.expiresAt.trim()) ? d.expiresAt.trim() : '';
+  return {
+    expiresAt,
+    mode: LP_OFFER_MODES.includes(d.mode as LpOfferMode) ? (d.mode as LpOfferMode) : 'message',
+    expiredHeadline: str(d.expiredHeadline, 120),
+    expiredMessage: str(d.expiredMessage, 600),
+    expiredCtaText: str(d.expiredCtaText, 60),
+    expiredCtaHref: str(d.expiredCtaHref, LP_URL_MAX),
+    redirectUrl: str(d.redirectUrl, LP_URL_MAX),
+  };
+}
+
 /** id sigur pentru experimente/arme: doar [a-z0-9-], fără margini de cratimă, plafonat. */
 function sanitizeAbId(v: unknown, max: number): string {
   return typeof v === 'string' ? v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max) : '';
@@ -322,6 +359,7 @@ export function emptyLandingPage(createdBy = ''): LandingPage {
     form: coerceForm({}),
     conversion: emptyConversion(),
     conversionHtml: '',
+    offer: emptyOffer(),
     experiments: [],
     armsHtml: {},
     knownVariants: {},
@@ -377,6 +415,7 @@ export function coerceToLandingPage(data: unknown): LandingPage {
     form,
     conversion: coerceConversion(d.conversion),
     conversionHtml: str(d.conversionHtml, LP_HTML_MAX),
+    offer: coerceOffer(d.offer),
     experiments,
     armsHtml: coerceArmsHtml(d.armsHtml, experiments),
     knownVariants: coerceKnownVariants(d.knownVariants),

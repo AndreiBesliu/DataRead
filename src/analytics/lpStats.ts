@@ -26,6 +26,7 @@ export interface LpStatsDay {
   engaged: number; // sesiuni „engaged" (timp/scroll peste prag)
   ctaClicks: number;
   submissions: number; // conversii (trimiteri de formular)
+  expired: number; // vizite DUPĂ expirarea ofertei (contor separat — nu intră în `visits`/conversii)
 }
 
 export interface LpTotals {
@@ -36,6 +37,7 @@ export interface LpTotals {
   engaged: number;
   ctaClicks: number;
   submissions: number;
+  expired: number;
   byDevice: Record<string, number>;
   bySource: Record<string, number>;
   byMedium: Record<string, number>;
@@ -48,6 +50,7 @@ export interface LpKpis {
   submissions: number;
   ctaClicks: number;
   engaged: number;
+  expired: number; // vizite după expirarea ofertei (separate de visits)
   convRate: number | null; // submissions / visits
   ctaRate: number | null; // ctaClicks / visits
   engagementRate: number | null; // engaged / visits
@@ -90,13 +93,14 @@ export function coerceToLpStatsDay(v: unknown): LpStatsDay | null {
     engaged: num(d.engaged),
     ctaClicks: num(d.ctaClicks),
     submissions: num(d.submissions),
+    expired: num(d.expired),
   };
 }
 
 export function emptyLpTotals(): LpTotals {
   return {
     visits: 0, beacons: 0, scrollDepthSum: 0, timeOnPageSum: 0, engaged: 0, ctaClicks: 0,
-    submissions: 0, byDevice: {}, bySource: {}, byMedium: {}, byReferrerHost: {}, byCountry: {},
+    submissions: 0, expired: 0, byDevice: {}, bySource: {}, byMedium: {}, byReferrerHost: {}, byCountry: {},
   };
 }
 
@@ -114,6 +118,7 @@ export function sumLpStats(days: LpStatsDay[]): LpTotals {
     t.engaged += d.engaged;
     t.ctaClicks += d.ctaClicks;
     t.submissions += d.submissions;
+    t.expired += d.expired;
     addMap(t.byDevice, d.byDevice);
     addMap(t.bySource, d.bySource);
     addMap(t.byMedium, d.byMedium);
@@ -129,6 +134,7 @@ export function lpKpis(t: LpTotals): LpKpis {
     submissions: t.submissions,
     ctaClicks: t.ctaClicks,
     engaged: t.engaged,
+    expired: t.expired,
     convRate: div(t.submissions, t.visits),
     ctaRate: div(t.ctaClicks, t.visits),
     engagementRate: div(t.engaged, t.visits),
