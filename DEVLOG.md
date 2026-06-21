@@ -1847,6 +1847,22 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules. Slice mic,
 >   admin-only, pur+denormalizare → verificare prin teste (fără workflow de review). Backlog: contacte multiple/client.
 
+**2026-06-21 - Task Completed — Reorganizare /admin: tab „Design & Pagini" + analytics LP în Marketing Center**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „vreau ca tot ce ține de design/landing pages/site într-un tab dedicat și analytics la fel — nu e optim
+> să avem design și analytics în același ecran." Răspunsuri la clarificări: un singur tab Design (Landing + Site); analytics
+> LP MUTAT în Marketing Center (nu tab nou).
+> - **Tab „Design & Pagini"** (`DesignHome`, view `design`): comasează Landing Pages + Site ca sub-tab-uri; AdminView
+>   `landing`+`site` → `design` (nav + label + render). Editorul LP rămâne DOAR design/conținut.
+> - **Analytics LP mutat în Marketing Center** (`LpAnalyticsSection`): alegi o pagină → `LpAnalytics` (trafic/conversie/
+>   variante + rezultate A/B) + `LpLinkBuilder` (linkuri UTM). Scos din `LpEditor` (tab-urile `analytics` + `links` +
+>   importurile lor). Setarea A/B (arme) rămâne în editor (e conținut). Separă proiectarea de măsurare.
+> - i18n `admin.navDesign` + `lpAnalyticsTitle/Hint/Pick` (ro+en); `navLanding/navSite` reutilizate ca etichete sub-tab.
+> - Review adversarial (1 agent): 0 probleme — fără funcționalitate pierdută, fără referințe agățate, paritate i18n,
+>   editorul randează corect cele 6 tab-uri rămase, A/B setup păstrat.
+> Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără
+>   functions). Pur refactor UI/IA (zero schimbări de date/reguli/securitate).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

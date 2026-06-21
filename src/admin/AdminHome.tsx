@@ -31,8 +31,7 @@ import MarketingCenter from './MarketingCenter';
 import AutomationsPanel from './AutomationsPanel';
 import InvoicesPanel from './InvoicesPanel';
 import HealthPanel from './HealthPanel';
-import LandingStudio from './LandingStudio';
-import SiteAdminPanel from './SiteAdminPanel';
+import DesignHome from './DesignHome';
 import AdminsPanel, { BOOTSTRAP_ADMIN_UID } from './AdminsPanel';
 import type { AdminRole } from '../types/adminRole';
 import { useAdminTheme } from '../theme/useAdminTheme';
@@ -40,7 +39,7 @@ import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeS
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'suggestions' | 'marketing' | 'automation' | 'invoices' | 'landing' | 'site' | 'admins' | 'health' | 'help';
+type AdminView = 'leads' | 'suggestions' | 'marketing' | 'automation' | 'invoices' | 'design' | 'admins' | 'health' | 'help';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
@@ -48,8 +47,7 @@ const VIEW_LABEL_KEY: Record<AdminView, string> = {
   marketing: 'admin.navMarketing',
   automation: 'admin.navAutomation',
   invoices: 'admin.navInvoices',
-  landing: 'admin.navLanding',
-  site: 'admin.navSite',
+  design: 'admin.navDesign',
   admins: 'admin.navAdmins',
   health: 'admin.navHealth',
   help: 'admin.navHelp',
@@ -514,7 +512,7 @@ export default function AdminHome() {
 
       {/* Taburi (6 — wrap pe ecrane înguste ca să nu se reverse pe orizontală). */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'suggestions', 'marketing', 'automation', 'invoices', 'landing', 'site', 'admins', 'health', 'help'] as const).map((v) => (
+        {(['leads', 'suggestions', 'marketing', 'automation', 'invoices', 'design', 'admins', 'health', 'help'] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
@@ -541,8 +539,7 @@ export default function AdminHome() {
       {view === 'automation' && <AutomationsPanel />}
       {view === 'invoices' && <InvoicesPanel />}
       {view === 'health' && <HealthPanel />}
-      {view === 'landing' && <LandingStudio adminUid={user.uid} />}
-      {view === 'site' && <SiteAdminPanel adminUid={user.uid} />}
+      {view === 'design' && <DesignHome adminUid={user.uid} />}
       {view === 'admins' && <AdminsPanel myUid={user.uid} isOwner={myRole === 'owner' || user.uid === BOOTSTRAP_ADMIN_UID} />}
 
       {view === 'leads' && (<>

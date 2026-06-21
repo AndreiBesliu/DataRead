@@ -14,10 +14,8 @@ import LpAiPanel from './LpAiPanel';
 import LpFormConfigPanel from './LpFormConfig';
 import LpConversionPanel from './LpConversionPanel';
 import LpExperimentsPanel from './LpExperimentsPanel';
-import LpAnalytics from './LpAnalytics';
 import LpVisualBuilder from './LpVisualBuilder';
 import LpDecorLayers from './LpDecorLayers';
-import LpLinkBuilder from './LpLinkBuilder';
 import LpPreviewPane from './LpPreviewPane';
 import { compileConversion } from '../types/lpBlocks';
 import { compilePageDecors, lpServedByteSize, LP_HTML_MAX, recompileLpAssets, sanitizeSlug, type LandingPage } from '../types/landingPage';
@@ -25,7 +23,7 @@ import type { LpProject } from '../types/lpProject';
 
 const ORIGIN = ((import.meta.env?.VITE_SITE_ORIGIN as string) || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 
-type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'ab' | 'links' | 'analytics';
+type EditorTab = 'code' | 'design' | 'ai' | 'form' | 'conversion' | 'ab';
 
 function composeDoc(lp: LandingPage): string {
   const pageDecor = compilePageDecors(lp.pageDecors);
@@ -284,15 +282,9 @@ export default function LpEditor({
         <button onClick={() => setTab('form')} style={tabBtn(tab === 'form')}>{t('admin.lpStudio.tabForm')}</button>
         <button onClick={() => setTab('conversion')} style={tabBtn(tab === 'conversion')}>🎯 {t('admin.lpStudio.tabConversion')}</button>
         <button onClick={() => setTab('ab')} style={tabBtn(tab === 'ab')}>🧪 {t('admin.lpStudio.tabAb')}</button>
-        {!isNew ? <button onClick={() => setTab('links')} style={tabBtn(tab === 'links')}>🔗 {t('admin.lpStudio.tabLinks')}</button> : null}
-        {!isNew ? <button onClick={() => setTab('analytics')} style={tabBtn(tab === 'analytics')}>📊 {t('admin.lpStudio.tabAnalytics')}</button> : null}
       </div>
 
-      {tab === 'analytics' && !isNew ? (
-        <LpAnalytics slug={docId as string} />
-      ) : tab === 'links' && !isNew ? (
-        <LpLinkBuilder slug={docId as string} origin={ORIGIN} />
-      ) : (
+      {(
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', minWidth: 300, maxWidth: 440 }}>
             {tab === 'code' && draft.editor === 'visual' && (

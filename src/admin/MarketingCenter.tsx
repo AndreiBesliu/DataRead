@@ -21,6 +21,7 @@ import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { parseMetricsCsv } from '../utils/metricsCsv';
 import { toCsv } from '../utils/csv';
 import PlatformConnect from './PlatformConnect';
+import LpAnalyticsSection from './LpAnalyticsSection';
 import {
   CAMPAIGN_SCHEMA,
   CAMPAIGN_STATUSES,
@@ -829,6 +830,11 @@ export default function MarketingCenter({ leads }: { leads: Array<{ id: string; 
           </table>
         </div>
       )}
+
+      {/* Analytics Landing Pages — mutat aici din editorul LP (separăm proiectarea de măsurare). */}
+      <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+        <LpAnalyticsSection />
+      </div>
     </div>
   );
 }

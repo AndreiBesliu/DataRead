@@ -337,6 +337,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (`src/app/HelpHome.tsx`) + link în header /app. **Strategie:** schelet acum, conținut completat
   INCREMENTAL per feature (ca DEVLOG), polish spre lansare. i18n `help.*` ro+en; test de acoperire a cheilor
   (helpContent → ro). i18n = sursă unică pentru titluri.
+- **IA /admin (reorg 21.06.2026): separare design ↔ analytics.** Landing Pages + Site sunt comasate într-UN tab
+  **„Design & Pagini"** (`DesignHome`, view `design`, sub-tab-uri Landing/Site) — editorul LP (`LpEditor`) rămâne DOAR
+  design/conținut (cod/design/AI/formular/conversie/A/B-setup). **Analytics-ul LP a fost mutat în Marketing Center**
+  (`LpAnalyticsSection`: alegi pagina → `LpAnalytics`+rezultate A/B + `LpLinkBuilder`). Regula: proiectarea și măsurarea
+  nu mai stau în același ecran. (Notă: descrierile de mai jos „tab Landing Pages" = acum sub-tab-ul Landing din Design.)
 - **Landing Pages — LP Studio (ACTIV, 13.06.2026):** tab „Landing Pages" în `/admin` = un „IDE":
   editor de cod (textarea HTML) SAU **builder vizual pe blocuri** (mod `editor: 'code'|'visual'` pe
   LP; blocurile din `src/types/lpBlocks.ts` se compilează prin `compileBlocks` în ACELAȘI `html`
