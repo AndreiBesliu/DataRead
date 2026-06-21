@@ -1358,7 +1358,7 @@ exports.automationAiAllowed = automationAiAllowed;
 
 if (AI_ENABLED) {
   exports.aiClientReport = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot genera rapoarte.');
@@ -1370,7 +1370,7 @@ if (AI_ENABLED) {
   );
 
   exports.aiAnalyzeCampaign = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot analiza campanii.');
@@ -1381,7 +1381,7 @@ if (AI_ENABLED) {
   );
 
   exports.aiGenerateCampaign = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
       if (request.auth.token.admin !== true) {
@@ -1480,7 +1480,7 @@ if (AI_ENABLED) {
   // Admin-only, oglindește aiGenerateCampaign. Scrie leads/{id}.channelRecommendations (merge); UI-ul
   // operatorului afișează un board sortabil după impact + „Creează cerere" pre-completată din oportunitate.
   exports.aiRecommendChannels = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       assertAdmin(request, 'Doar operatorii pot genera recomandări.');
       const { leadId } = request.data || {};
@@ -1883,7 +1883,7 @@ if (AI_ENABLED) {
   }
 
   exports.aiGenerateLandingPage = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
@@ -1899,7 +1899,7 @@ if (AI_ENABLED) {
   );
 
   exports.aiEditLandingPage = onCall(
-    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' },
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
       if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
@@ -3238,7 +3238,9 @@ async function executeAutomationAction(db, action, match, event, nowMs, idx, con
     if (clientUid) {
       const cSnap = await db.collection('clients').doc(clientUid).get();
       const ent = (cSnap.exists && cSnap.data() && cSnap.data().entitlement) || {};
-      entitlementActive = ent.status === 'active';
+      // `active` = boolean RECALCULAT de recomputeEntitlement (include periodEnd > now), NU status brut din Stripe —
+      // un abonament EXPIRAT cu status:'active'/active:false nu mai trebuie să primească AI; `trialing` valid trece. (ca selfGlobalPoolFor)
+      entitlementActive = ent.active === true;
     }
     if (!automationAiAllowed(config, { aiEnabled: AI_ENABLED, entitlementActive })) {
       return { type: action.type, status: 'skipped', reason: AI_ENABLED ? 'no_entitlement' : 'ai_disabled' };

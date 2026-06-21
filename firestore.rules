@@ -58,7 +58,20 @@ service cloud.firestore {
         && request.resource.data.contactEmail is string && request.resource.data.contactEmail.size() <= 120
         && request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() <= 30
         && request.resource.data.description is string && request.resource.data.description.size() <= 2000
-        && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
+        && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5
+        // Plafoane de mărime pe TOATE celelalte câmpuri de string (formular PUBLIC anonim → anti umflare doc / abuz).
+        // Guard `in` fiindcă unele câmpuri pot lipsi din payload; când există, trebuie string sub plafon.
+        && (!('cui' in request.resource.data) || (request.resource.data.cui is string && request.resource.data.cui.size() <= 40))
+        && (!('website' in request.resource.data) || (request.resource.data.website is string && request.resource.data.website.size() <= 200))
+        && (!('contactName' in request.resource.data) || (request.resource.data.contactName is string && request.resource.data.contactName.size() <= 120))
+        && (!('industry' in request.resource.data) || (request.resource.data.industry is string && request.resource.data.industry.size() <= 80))
+        && (!('industryOther' in request.resource.data) || (request.resource.data.industryOther is string && request.resource.data.industryOther.size() <= 120))
+        && (!('adBudget' in request.resource.data) || (request.resource.data.adBudget is string && request.resource.data.adBudget.size() <= 40))
+        && (!('facebook' in request.resource.data) || (request.resource.data.facebook is string && request.resource.data.facebook.size() <= 200))
+        && (!('instagram' in request.resource.data) || (request.resource.data.instagram is string && request.resource.data.instagram.size() <= 200))
+        && (!('tiktok' in request.resource.data) || (request.resource.data.tiktok is string && request.resource.data.tiktok.size() <= 200))
+        && (!('packageInterest' in request.resource.data) || (request.resource.data.packageInterest is string && request.resource.data.packageInterest.size() <= 60))
+        && (!('locale' in request.resource.data) || (request.resource.data.locale is string && request.resource.data.locale.size() <= 10));
 
       // Cererile de marketing ale lead-ului (Verticala 1) — exclusiv zona operatorilor.
       match /requests/{reqId} {

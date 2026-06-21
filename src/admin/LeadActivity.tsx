@@ -12,6 +12,13 @@ import { ACTIVITY_TYPES, ACTIVITY_BODY_MAX, coerceToCrmActivity, type ActivityTy
 const TYPE_ICON: Record<ActivityType, string> = { note: '📝', call: '📞', email: '✉️', meeting: '🤝', other: '•' };
 type Row = CrmActivity & { id: string };
 
+/** Follow-up-ul denormalizat pe lead = cel mai APROPIAT dueAt (cel mai mic, lexicografic pe 'YYYY-MM-DD') dintre TOATE
+ *  activitățile cu dată — NU dueAt-ul ultimei activități adăugate (o notă fără dată ar fi golit un follow-up real). */
+function nearestDue(items: Array<{ dueAt?: string }>): string {
+  const dates = items.map((r) => r.dueAt || '').filter(Boolean);
+  return dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : '';
+}
+
 export default function LeadActivity({ leadId, adminUid }: { leadId: string; adminUid: string }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Row[]>([]);
@@ -36,8 +43,9 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
       await addDoc(collection(db, 'leads', leadId, 'activities'), {
         schema: 1, type, body: body.slice(0, ACTIVITY_BODY_MAX), at: Date.now(), dueAt: dueAt || '', createdBy: adminUid,
       });
-      // Denormalizează follow-up-ul ultimei activități pe lead → tab-ul „Sugestii" îl vede fără query pe subcolecție.
-      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: dueAt || '' }); } catch (e) { console.warn('nextFollowUp update failed:', e); }
+      // Denormalizează follow-up-ul pe lead → tab-ul „Sugestii" îl vede fără query pe subcolecție. = cel mai apropiat
+      // dueAt din TOATE activitățile (cele existente + cea nou-adăugată) — o notă fără dată NU mai golește un follow-up real.
+      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: nearestDue([...rows, { dueAt: dueAt || '' }]) }); } catch (e) { console.warn('nextFollowUp update failed:', e); }
       setBody(''); setDueAt(''); setType('note');
     } catch (e) { console.warn('add activity failed:', e); }
     finally { setBusy(false); }
@@ -46,9 +54,8 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
     if (!window.confirm(t('admin.activity.deleteConfirm'))) return;
     try {
       await deleteDoc(doc(db, 'leads', leadId, 'activities', id));
-      // Recalculează follow-up-ul = al celei mai recente activități RĂMASE (rows e desc după `at`).
-      const latest = rows.filter((r) => r.id !== id)[0];
-      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: latest ? latest.dueAt : '' }); } catch (e) { console.warn('nextFollowUp recompute failed:', e); }
+      // Recalculează follow-up-ul = cel mai apropiat dueAt dintre activitățile RĂMASE (nu doar al celei mai recente).
+      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: nearestDue(rows.filter((r) => r.id !== id)) }); } catch (e) { console.warn('nextFollowUp recompute failed:', e); }
     } catch (e) { console.warn(e); }
   };
 

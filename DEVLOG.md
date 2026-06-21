@@ -1952,6 +1952,26 @@ normaliser, secretele niciodată în chat/repo.
 >   negăsiți în Auth, idempotență). Stub `admin.auth().getUser` adăugat în harness.
 > Verificat: 17/17 suites + e2e (MIG+ADM) + build (typecheck+paritate i18n) + boot. DEPLOYED: functions + hosting + rules.
 
+**2026-06-21 - Task Completed — Închiderea backlogului de audit (MEDIUM + LOW de cod)**
+> Model: Claude Opus 4.8 (1M context). Andrei: „ce urmează" → opțiunea 1 (curățenie audit). Patru fix-uri din constatările
+> rămase ale auditului pre-lansare:
+> - **MED #5 — poarta AI automatizări:** `executeAutomationAction` folosea `ent.status==='active'` (expirați cu status vechi
+>   primeau AI; un `trialing` valid era respins). Acum `ent.active===true` — boolean RECALCULAT de `recomputeEntitlement`
+>   (include periodEnd>now), aceeași sursă de adevăr ca `selfGlobalPoolFor`.
+> - **MED #6 — `nextFollowUp` drift:** la ADĂUGAREA unei activități fără dată, `nextFollowUp` era suprascris cu '' →
+>   golea un follow-up real; la delete lua dueAt-ul celei mai recente activități (nu cel mai apropiat). Acum helper pur
+>   `nearestDue` = cel mai mic dueAt non-gol din TOATE activitățile, recalculat la add+delete (`LeadActivity`).
+> - **LOW — enforceAppCheck pe AI admin:** cele 6 callable-uri AI admin (aiGenerateCampaign/aiAnalyzeCampaign/aiClientReport/
+>   aiRecommendChannels/aiGenerate+EditLandingPage) au acum `enforceAppCheck: APP_CHECK_ENFORCED` (consistență cu self/issue;
+>   cheia reCAPTCHA e deja în build, App Check live).
+> - **LOW — plafoane `leads` create:** formularul PUBLIC anonim — toate câmpurile de string rămase (cui/website/contactName/
+>   industry/industryOther/adBudget/facebook/instagram/tiktok/packageInterest/locale) capate în firestore.rules (guard `in`),
+>   anti umflare doc / abuz.
+> Verificat: 17/17 suites + e2e + build (typecheck+paritate i18n) + boot. DEPLOYED: functions + hosting + firestore:rules.
+> Rămas din audit (amânat, valoare/efort): EntCache coerce (boot-test acoperă coruperea), denorm re-sync server, cap AI
+> operator zilnic/global, deliverables backfill. Operațional (consolă Andrei): backup+PITR, monitorizare/alerte, App Check
+> enforcement, firestore.indexes.json, rotație cheie, staging/CD, a11y.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
