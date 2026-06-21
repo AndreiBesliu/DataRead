@@ -250,8 +250,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   body + at(millis) + dueAt follow-up + createdBy; coerce unic). Colecție `leads/{leadId}/activities/{id}` (operatori);
   reguli read/delete admin, create admin (hasOnly + validare), **append-only** (`update:false`). UI `LeadActivity` (timeline
   + formular cu follow-up) în expanderul lead-ului din /admin (lângă OpportunityBoard/LeadRequests). `at` = client clock
-  (ordonare client-side; unealtă operator, nu registru legal). Backlog CRM: contacte multiple/client; follow-up scadent în
-  „Sugestii"; activități pe clienții cu cont. Restul Verticalei 2 (comunicare email/SMS, automatizări CRM) = neînceput.
+  (ordonare client-side; unealtă operator, nu registru legal). **Follow-up în „Sugestii" (ACTIV 21.06.2026):** `LeadActivity`
+  denormalizează `leads/{id}.nextFollowUp` = dueAt-ul ultimei activități (recalculat la delete); `buildSuggestions` (pur)
+  emite `followUpDue` (high) când nextFollowUp ≤ azi — fără collectionGroup/index (SuggestionsPanel citește deja `leads`).
+  Backlog CRM: contacte multiple/client; activități pe clienții cu cont. Restul Verticalei 2 (comunicare email/SMS,
+  automatizări CRM) = neînceput.
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată

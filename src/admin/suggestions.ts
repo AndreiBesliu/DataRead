@@ -4,7 +4,7 @@
  * Firestore (leads + campaigns) în input-urile simple (ms-uri) de aici. Sortare după severitate.
  */
 
-export type SuggestionKind = 'leadUntouched' | 'leadStale' | 'campaignAction' | 'reportMissing';
+export type SuggestionKind = 'leadUntouched' | 'leadStale' | 'campaignAction' | 'reportMissing' | 'followUpDue';
 export type SuggestionSeverity = 'high' | 'medium' | 'low';
 export type SuggestionView = 'leads' | 'marketing';
 
@@ -30,6 +30,8 @@ export interface SuggestionLead {
   createdAtMs: number;
   reportAtMs: number; // 0 dacă nu există raport
   clientUid: string;
+  /** Data follow-up-ului ultimei activități CRM ('YYYY-MM-DD' sau gol) — denormalizat pe lead de LeadActivity. */
+  nextFollowUp: string;
 }
 
 export interface SuggestionCampaign {
@@ -64,6 +66,16 @@ export function buildSuggestions(input: { leads: SuggestionLead[]; campaigns: Su
       out.push({ id: `leadUntouched:${l.id}`, kind: 'leadUntouched', severity: 'high', titleKey: 'admin.sugLeadUntouched', params: { days: ageDays }, detail: l.companyName || l.id, view: 'leads', leadId: l.id });
     } else if (l.status === 'contacted' && ageDays >= SUG_THRESHOLDS.contactedDays) {
       out.push({ id: `leadStale:${l.id}`, kind: 'leadStale', severity: 'medium', titleKey: 'admin.sugLeadStale', params: { days: ageDays }, detail: l.companyName || l.id, view: 'leads', leadId: l.id });
+    }
+  }
+
+  // 1b) Follow-up CRM scadent — data follow-up a ultimei activități a trecut (denormalizată pe lead). High:
+  // e un angajament asumat de operator. „Rezolvat" = loghează o activitate nouă (actualizează/golește nextFollowUp).
+  const todayIso = new Date(nowMs).toISOString().slice(0, 10);
+  for (const l of leads) {
+    const due = typeof l.nextFollowUp === 'string' ? l.nextFollowUp : '';
+    if (due && due <= todayIso) {
+      out.push({ id: `followUpDue:${l.id}`, kind: 'followUpDue', severity: 'high', titleKey: 'admin.sugFollowUp', params: { date: due }, detail: l.companyName || l.id, view: 'leads', leadId: l.id });
     }
   }
 

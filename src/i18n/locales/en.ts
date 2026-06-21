@@ -715,6 +715,7 @@ const en: typeof ro = {
     sugVerdict_test: 'Campaign to test',
     sugVerdict_scale: 'Campaign to scale',
     sugReportMissing: 'Monthly report not delivered this month',
+    sugFollowUp: 'CRM follow-up due ({{date}})',
     lpStudio: {
       title: 'Landing Pages',
       new: 'New page',

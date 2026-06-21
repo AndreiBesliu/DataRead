@@ -1833,6 +1833,20 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules (fără functions).
 >   Backlog CRM: contacte multiple per client; follow-up scadent în „Sugestii"; activități și pe clienții cu cont.
 
+**2026-06-21 - Task Completed — Follow-up CRM scadent în tab-ul „Sugestii"**
+> Model: Claude Opus 4.8 (1M context)
+> Prompt Andrei: „da" (continuă; ultracode). Închide bucla CRM: loghezi un follow-up pe o activitate → ești reamintit
+> când e scadent, în tab-ul „Sugestii" al operatorului.
+> - **Denormalizare anti-query:** `LeadActivity` scrie `leads/{id}.nextFollowUp` = dueAt-ul ULTIMEI activități (la add;
+>   recalculat din activitățile rămase la delete). Evită un collectionGroup query + index pe subcolecție — `SuggestionsPanel`
+>   citește deja `leads`, deci primește câmpul gratis (tiparul „anti-bloat fără citire").
+> - `buildSuggestions` (pur): regulă nouă `followUpDue` (severity high) când `nextFollowUp` ≤ azi (UTC din nowMs injectat).
+>   Model „ultima interacțiune" — o activitate nouă fără follow-up golește nextFollowUp (rezolvă reminderul).
+> - i18n `admin.sugFollowUp` (ro+en); teste pure noi în buildSuggestions (scadent/azi/viitor/gol). Fără reguli noi
+>   (update lead = admin), fără functions.
+> Verificat: 17/17 suites + build (typecheck + paritate i18n) + build:site + boot. DEPLOYED: hosting + rules. Slice mic,
+>   admin-only, pur+denormalizare → verificare prin teste (fără workflow de review). Backlog: contacte multiple/client.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

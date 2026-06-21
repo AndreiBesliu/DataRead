@@ -385,7 +385,8 @@ check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul d
 {
   const NOW = 1_700_000_000_000;
   const day = 86_400_000;
-  const lead = (over: Record<string, unknown>) => ({ id: 'l1', companyName: 'Acme', status: 'new', createdAtMs: NOW, reportAtMs: 0, clientUid: '', ...over }) as Parameters<typeof buildSuggestions>[0]['leads'][number];
+  const lead = (over: Record<string, unknown>) => ({ id: 'l1', companyName: 'Acme', status: 'new', createdAtMs: NOW, reportAtMs: 0, clientUid: '', nextFollowUp: '', ...over }) as Parameters<typeof buildSuggestions>[0]['leads'][number];
+  const isoOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
   const camp = (over: Record<string, unknown>) => ({ id: 'c1', name: 'Camp', leadId: 'l1', clientName: 'Acme', verdict: '', headline: '', ...over }) as Parameters<typeof buildSuggestions>[0]['campaigns'][number];
 
   check('buildSuggestions: input gol → []', buildSuggestions({ leads: [], campaigns: [], nowMs: NOW }).length === 0);
@@ -415,6 +416,23 @@ check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul d
     return !s.some((x) => x.kind === 'reportMissing');
   })());
   check('sugestii: sortare după severitate (high prima)', buildSuggestions({ leads: [lead({ createdAtMs: NOW - 5 * day })], campaigns: [camp({ verdict: 'test' })], nowMs: NOW })[0].severity === 'high');
+  // follow-up CRM scadent (denormalizat pe lead)
+  check('sugestii: follow-up scadent (dueAt în trecut) → followUpDue high', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW, nextFollowUp: isoOf(NOW - 3 * day) })], campaigns: [], nowMs: NOW });
+    return s.some((x) => x.kind === 'followUpDue' && x.severity === 'high' && x.leadId === 'l1');
+  })());
+  check('sugestii: follow-up azi → followUpDue (inclusiv azi)', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW, nextFollowUp: isoOf(NOW) })], campaigns: [], nowMs: NOW });
+    return s.some((x) => x.kind === 'followUpDue');
+  })());
+  check('sugestii: follow-up în viitor → none', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW, nextFollowUp: isoOf(NOW + 10 * day) })], campaigns: [], nowMs: NOW });
+    return !s.some((x) => x.kind === 'followUpDue');
+  })());
+  check('sugestii: fără follow-up (gol) → none', (() => {
+    const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW, nextFollowUp: '' })], campaigns: [], nowMs: NOW });
+    return !s.some((x) => x.kind === 'followUpDue');
+  })());
 }
 
 // ── Ghid/Documentație: acoperirea cheilor i18n din helpContent (altfel s-ar randa cheia brută) ──

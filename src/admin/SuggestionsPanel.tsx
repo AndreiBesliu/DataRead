@@ -41,6 +41,7 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
           createdAtMs: tsMs(x.createdAt),
           reportAtMs: tsMs(x.marketingReportAt),
           clientUid: typeof x.clientUid === 'string' ? x.clientUid : '',
+          nextFollowUp: typeof x.nextFollowUp === 'string' ? x.nextFollowUp : '',
         };
       })),
       () => setLeads([])

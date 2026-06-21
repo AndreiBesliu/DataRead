@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ACTIVITY_TYPES, ACTIVITY_BODY_MAX, coerceToCrmActivity, type ActivityType, type CrmActivity } from '../types/crmActivity';
 
@@ -36,13 +36,20 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
       await addDoc(collection(db, 'leads', leadId, 'activities'), {
         schema: 1, type, body: body.slice(0, ACTIVITY_BODY_MAX), at: Date.now(), dueAt: dueAt || '', createdBy: adminUid,
       });
+      // Denormalizează follow-up-ul ultimei activități pe lead → tab-ul „Sugestii" îl vede fără query pe subcolecție.
+      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: dueAt || '' }); } catch (e) { console.warn('nextFollowUp update failed:', e); }
       setBody(''); setDueAt(''); setType('note');
     } catch (e) { console.warn('add activity failed:', e); }
     finally { setBusy(false); }
   };
   const remove = async (id: string) => {
     if (!window.confirm(t('admin.activity.deleteConfirm'))) return;
-    try { await deleteDoc(doc(db, 'leads', leadId, 'activities', id)); } catch (e) { console.warn(e); }
+    try {
+      await deleteDoc(doc(db, 'leads', leadId, 'activities', id));
+      // Recalculează follow-up-ul = al celei mai recente activități RĂMASE (rows e desc după `at`).
+      const latest = rows.filter((r) => r.id !== id)[0];
+      try { await updateDoc(doc(db, 'leads', leadId), { nextFollowUp: latest ? latest.dueAt : '' }); } catch (e) { console.warn('nextFollowUp recompute failed:', e); }
+    } catch (e) { console.warn(e); }
   };
 
   const fmt = (ms: number) => (ms ? new Date(ms).toLocaleString('ro-RO') : '—');
