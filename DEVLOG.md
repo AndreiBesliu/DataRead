@@ -1925,6 +1925,18 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + e2e (INV storno + MIG) + build (typecheck + paritate i18n) + build:site (16) + boot. DEPLOYED:
 >   functions + hosting + firestore:rules. Rămâne pentru Andrei: rulează butonul „Migrează analizele AI campanii" o dată.
 
+**2026-06-21 - Task Completed — Comasare /admin: tab principal „Administrare" (nav pe două niveluri)**
+> Model: Claude Opus 4.8 (1M context). Prompt Andrei: „lead-uri, sugestii, automatizări, facturi, administratori, sănătate
+> .. toate sub un tab: Administrare." Reduce 9 tab-uri → 4 principale.
+> - **Nav pe DOUĂ niveluri** în `AdminHome.tsx`: tab-uri principale **Administrare / Marketing Center / Design & Pagini /
+>   Ghid**; „Administrare" arată un rând de sub-tab-uri (Lead-uri·Sugestii·Automatizări·Facturi·Administratori·Sănătate).
+> - **Zero mutare de logică:** `view` rămâne granular (cele 9 view-uri); `TOP_TAB_VIEWS` + `topTabOf(view)` derivă grupul
+>   activ; blocurile de randare per view sunt NEATINSE. Clic pe tab principal → primul view al grupului (păstrează sub-tab-ul
+>   dacă ești deja în grup). `SuggestionsPanel.onNavigate(view)` funcționează nealterat (top-tab recalculat din view).
+> - i18n `admin.navAdministrare` (ro „Administrare" / en „Administration").
+> Verificat: build (typecheck + paritate i18n) + build:site (16) + boot. DEPLOYED: hosting + rules. Pur refactor UI/IA
+>   (zero schimbări de date/reguli/securitate/logică).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

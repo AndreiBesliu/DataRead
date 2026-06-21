@@ -628,6 +628,7 @@ const ro = {
     linkBtn: 'Conectează',
     linkUnlink: 'Deconectează',
     linkNoAccounts: 'Niciun cont de client înregistrat încă — clientul își face cont la /app, apoi îl conectezi aici.',
+    navAdministrare: 'Administrare',
     navLeads: 'Lead-uri',
     navMarketing: 'Marketing Center',
     navAutomation: 'Automatizări',

@@ -350,6 +350,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (`src/app/HelpHome.tsx`) + link în header /app. **Strategie:** schelet acum, conținut completat
   INCREMENTAL per feature (ca DEVLOG), polish spre lansare. i18n `help.*` ro+en; test de acoperire a cheilor
   (helpContent → ro). i18n = sursă unică pentru titluri.
+- **IA /admin — nav pe DOUĂ niveluri (comasare 21.06.2026, decizie Andrei).** 4 tab-uri principale: **„Administrare"**
+  (comasează operarea + sistemul: sub-tab-uri Lead-uri/Sugestii/Automatizări/Facturi/Administratori/Sănătate),
+  **Marketing Center**, **Design & Pagini**, **Ghid**. Implementare în `AdminHome.tsx`: `view` rămâne granular (cele 9
+  view-uri), dar `TOP_TAB_VIEWS`/`topTabOf(view)` DERIVĂ grupul activ — randăm rândul de tab-uri principale + (doar în
+  „Administrare") un rând de sub-tab-uri; blocurile de randare per view sunt NEATINSE. Clic pe un tab principal → primul
+  său view (păstrează sub-tab-ul curent dacă ești deja în grup). `SuggestionsPanel.onNavigate` funcționează nealterat
+  (top-tab-ul se recalculează din `view`).
 - **IA /admin (reorg 21.06.2026): separare design ↔ analytics.** Landing Pages + Site sunt comasate într-UN tab
   **„Design & Pagini"** (`DesignHome`, view `design`, sub-tab-uri Landing/Site) — editorul LP (`LpEditor`) rămâne DOAR
   design/conținut (cod/design/AI/formular/conversie/A/B-setup). **Analytics-ul LP a fost mutat în Marketing Center**

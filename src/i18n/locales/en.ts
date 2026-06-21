@@ -621,6 +621,7 @@ const en: typeof ro = {
     linkBtn: 'Connect',
     linkUnlink: 'Disconnect',
     linkNoAccounts: 'No client accounts yet — the client signs up at /app, then you connect them here.',
+    navAdministrare: 'Administration',
     navLeads: 'Leads',
     navMarketing: 'Marketing Center',
     navAutomation: 'Automations',

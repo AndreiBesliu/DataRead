@@ -54,6 +54,25 @@ const VIEW_LABEL_KEY: Record<AdminView, string> = {
   help: 'admin.navHelp',
 };
 
+// Comasare /admin (decizie Andrei, 21.06.2026): un singur tab principal „Administrare" adună operarea zilnică + sistemul
+// (lead-uri/sugestii/automatizări/facturi/administratori/sănătate) ca SUB-tab-uri; Marketing, Design & Pagini și Ghid rămân
+// tab-uri principale separate. Nav pe DOUĂ niveluri — grupul activ se DERIVĂ din `view` (nu ținem state separat).
+type TopTab = 'admin' | 'marketing' | 'design' | 'help';
+const TOP_TAB_ORDER: TopTab[] = ['admin', 'marketing', 'design', 'help'];
+const TOP_TAB_LABEL_KEY: Record<TopTab, string> = {
+  admin: 'admin.navAdministrare',
+  marketing: 'admin.navMarketing',
+  design: 'admin.navDesign',
+  help: 'admin.navHelp',
+};
+const TOP_TAB_VIEWS: Record<TopTab, AdminView[]> = {
+  admin: ['leads', 'suggestions', 'automation', 'invoices', 'admins', 'health'],
+  marketing: ['marketing'],
+  design: ['design'],
+  help: ['help'],
+};
+const topTabOf = (v: AdminView): TopTab => TOP_TAB_ORDER.find((tt) => TOP_TAB_VIEWS[tt].includes(v)) || 'admin';
+
 /** Cheia i18n a fiecărui status de pipeline. */
 const STATUS_KEY: Record<LeadStatus, string> = {
   new: 'admin.statusNew',
@@ -508,28 +527,57 @@ export default function AdminHome() {
         );
       })()}
 
-      {/* Taburi (6 — wrap pe ecrane înguste ca să nu se reverse pe orizontală). */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: 22 }}>
-        {(['leads', 'suggestions', 'marketing', 'automation', 'invoices', 'design', 'admins', 'health', 'help'] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            style={{
-              border: 'none',
-              background: 'none',
-              padding: '8px 14px',
-              marginBottom: -2,
-              fontSize: 15,
-              fontWeight: view === v ? 800 : 600,
-              color: view === v ? 'var(--accent, #2563eb)' : 'var(--fg-1)',
-              borderBottom: view === v ? '2px solid var(--accent, #2563eb)' : '2px solid transparent',
-              cursor: 'pointer',
-            }}
-          >
-            {t(VIEW_LABEL_KEY[v])}
-          </button>
-        ))}
-      </div>
+      {/* Nav pe DOUĂ niveluri: tab-uri principale (Administrare comasează operarea + sistemul) + sub-tab-uri în Administrare.
+          Grupul activ se derivă din `view` (wrap pe ecrane înguste ca să nu se reverse). */}
+      {(() => {
+        const top = topTabOf(view);
+        return (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: top === 'admin' ? 0 : 22 }}>
+              {TOP_TAB_ORDER.map((tt) => {
+                const on = top === tt;
+                return (
+                  <button
+                    key={tt}
+                    onClick={() => { if (topTabOf(view) !== tt) setView(TOP_TAB_VIEWS[tt][0]); }}
+                    style={{
+                      border: 'none', background: 'none', padding: '8px 14px', marginBottom: -2, fontSize: 15,
+                      fontWeight: on ? 800 : 600,
+                      color: on ? 'var(--accent, #2563eb)' : 'var(--fg-1)',
+                      borderBottom: on ? '2px solid var(--accent, #2563eb)' : '2px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t(TOP_TAB_LABEL_KEY[tt])}
+                  </button>
+                );
+              })}
+            </div>
+            {top === 'admin' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, borderBottom: '1px solid var(--border)', marginBottom: 22, paddingTop: 10 }}>
+                {TOP_TAB_VIEWS.admin.map((v) => {
+                  const on = view === v;
+                  return (
+                    <button
+                      key={v}
+                      onClick={() => setView(v)}
+                      style={{
+                        border: 'none', background: 'none', padding: '6px 14px', fontSize: 14,
+                        fontWeight: on ? 800 : 600,
+                        color: on ? 'var(--accent, #2563eb)' : 'var(--fg-1)',
+                        borderBottom: on ? '2px solid var(--accent, #2563eb)' : '2px solid transparent',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {t(VIEW_LABEL_KEY[v])}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {view === 'suggestions' && <SuggestionsPanel onNavigate={(v) => setView(v as AdminView)} />}
       {view === 'help' && <div style={{ marginTop: 12 }}><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{t('help.title')}</h2><HelpView sections={OPERATOR_HELP} /></div>}
