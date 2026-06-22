@@ -1916,6 +1916,51 @@ if (AI_ENABLED) {
       return { html: res.html };
     }
   );
+
+  // „Strategie/Campanie → Landing Page" (north star, felia 1): generează o LP DRAFT din materialele AI existente —
+  // fie livrabilele unei campanii (leads/{id}/requests/{reqId}), fie strategia Self Marketing a clientului. Citește
+  // sursa SERVER-side, compune brief-ul (buildSourceBrief, pur), generează HTML (runLpModel) și persistă o LP scoped.
+  exports.aiLandingFromSource = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii.');
+      const d = request.data || {};
+      const source = d.source === 'strategy' ? 'strategy' : 'campaign';
+      const db = admin.firestore();
+      let ctx = {}, clientUid = '', leadId = '', base = 'campanie';
+      if (source === 'campaign') {
+        leadId = String(d.leadId || ''); const reqId = String(d.reqId || '');
+        if (!leadId || !reqId) throw new HttpsError('invalid-argument', 'leadId și reqId necesare.');
+        const leadSnap = await db.collection('leads').doc(leadId).get();
+        if (!leadSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
+        const lead = leadSnap.data() || {};
+        const reqSnap = await db.collection('leads').doc(leadId).collection('requests').doc(reqId).get();
+        ctx = { lead, req: reqSnap.exists ? (reqSnap.data() || {}) : {} };
+        clientUid = String(lead.clientUid || ''); base = lead.companyName || 'campanie';
+      } else {
+        clientUid = String(d.clientUid || '');
+        if (!clientUid) throw new HttpsError('invalid-argument', 'clientUid necesar.');
+        const profSnap = await db.collection('clients').doc(clientUid).collection('selfMarketing').doc('profile').get();
+        const stratSnap = await db.collection('clients').doc(clientUid).collection('selfMarketing').doc('strategy').get();
+        if (!stratSnap.exists && !profSnap.exists) throw new HttpsError('failed-precondition', 'NO_SOURCE');
+        ctx = { profile: profSnap.exists ? (profSnap.data() || {}) : {}, strat: stratSnap.exists ? (stratSnap.data() || {}) : {} };
+        base = (ctx.profile && ctx.profile.companyName) || 'campanie';
+      }
+      const brief = buildSourceBrief(source, ctx);
+      if (!brief.offer.trim()) throw new HttpsError('failed-precondition', 'EMPTY_SOURCE');
+      await consumeAiQuota(request.auth.uid);
+      const { html, usage } = await runLpModel(buildLpGeneratePrompt(brief));
+      const slug = await uniqueLpSlug(db, base);
+      await db.collection('landingPages').doc(slug).set({
+        schema: 1, kind: 'campaign', slug, title: lpStr(base + ' — campanie', 140), seoDescription: '',
+        status: 'draft', lang: brief.lang, editor: 'code', html: lpStr(html, 200000), blocks: [],
+        clientUid, leadId, createdBy: request.auth.uid,
+      });
+      logger.info('LP from source', { source, slug, by: request.auth.uid, usage });
+      return { slug };
+    }
+  );
 }
 
 // ───────── [4] Landing Pages — servire publică + monitorizare trafic ─────────
@@ -1939,6 +1984,49 @@ function lpBucket(key, whitelist) {
   if (!k) return 'other';
   return (whitelist || LP_SOURCE_WHITELIST).includes(k) ? k : 'other';
 }
+
+// „Strategie/Campanie → LP" (north star): compune brief-ul de generare LP din sursa AI existentă. PUR (testat TEST LPSRC).
+// source='campaign' → din livrabilele campaniei (lead + request); source='strategy' → din profilul + strategia Self Marketing.
+function buildSourceBrief(source, ctx) {
+  const c = ctx || {};
+  const cap = (s, n) => String(s == null ? '' : s).slice(0, n);
+  const join = (arr) => arr.filter(Boolean).join(' — ');
+  if (source === 'strategy') {
+    const p = c.profile || {}; const s = c.strat || {};
+    return {
+      offer: cap(join([p.companyName, p.productsServices, s.overview]), 1000),
+      audience: cap(join([p.audience]), 1000),
+      goal: cap(p.goals, 200),
+      lang: c.lang === 'en' ? 'en' : 'ro',
+      includeForm: true,
+    };
+  }
+  const lead = c.lead || {}; const req = c.req || {};
+  const ads = Array.isArray(req.adTexts)
+    ? req.adTexts.map((a) => (typeof a === 'string' ? a : (a && (a.text || a.body || a.headline)) || '')).filter(Boolean).slice(0, 5).join(' / ')
+    : '';
+  const objectives = Array.isArray(lead.objectives) ? lead.objectives.join(', ') : '';
+  return {
+    offer: cap(join([lead.companyName, lead.description, ads]), 1000),
+    audience: cap(join([lead.industry, objectives]), 1000),
+    goal: 'Conversie pentru campania de marketing',
+    lang: lead.locale === 'en' ? 'en' : 'ro',
+    includeForm: true,
+  };
+}
+exports.buildSourceBrief = buildSourceBrief;
+
+// Slug unic pentru o LP nouă (doc ID = slug). Bază sanitizată + sufix aleator dacă e ocupat (coliziune neglijabilă).
+async function uniqueLpSlug(db, base) {
+  const s = String(base || 'campanie').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'campanie';
+  for (let i = 0; i < 6; i++) {
+    const cand = i === 0 ? s : `${s}-${require('crypto').randomBytes(3).toString('hex')}`;
+    const snap = await db.collection('landingPages').doc(cand).get();
+    if (!snap.exists) return cand;
+  }
+  return `${s}-${require('crypto').randomBytes(4).toString('hex')}`;
+}
+exports.uniqueLpSlug = uniqueLpSlug;
 
 // ── Atribuire per-link (port JS al src/types/lpAttribution.ts — paritate testată în e2e-lp-serve.mjs) ──
 const LP_MEDIUM_WHITELIST = ['video', 'static', 'image', 'story', 'reel', 'carousel', 'post', 'email', 'bio', 'qr', 'sms', 'other'];

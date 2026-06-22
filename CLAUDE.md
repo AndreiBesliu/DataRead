@@ -300,6 +300,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `CHANNELS_SCHEMA` (anti-drift); coerce TS folosește aceleași 4 obiective + 4 niveluri de impact ca schema.
   Inspirat de competitor (vezi `docs/ANALIZA-COMPETITOR-...`); pivotul self-serve (client-gen+credite) e
   amânat post-MVP. Testat în test-landing (coerce/sort) + e2e TEST N (prompt+schema).
+- **„Strategie/Campanie → Landing Page" (ACTIV 21.06.2026; north star [[project_dataread_publishing]] felia 1):** callable
+  `aiLandingFromSource` (admin-only, App Check, quota `aiUsage`) generează o LP DRAFT din materialele AI EXISTENTE — fie
+  livrabilele unei campanii (`source:'campaign'`, leadId+reqId → adTexts/descriere lead), fie strategia Self Marketing a
+  clientului (`source:'strategy'`, clientUid → profile+strategy). Citește sursa SERVER-side → `buildSourceBrief` (PUR,
+  testat LPSRC) compune brief-ul → `runLpModel`/`buildLpGeneratePrompt` (reutilizate din aiGenerateLandingPage) → `uniqueLpSlug`
+  → persistă `landingPages/{slug}` (kind:campaign, status:draft, clientUid/leadId scoped). UI: butoane în `LeadRequests` —
+  „🪄 Landing page" per cerere (campanie) + „🪄 LP din strategie" la nivel de panou când lead-ul are client conectat. Pagina
+  apare ca ciornă în Design & Pagini. Transformă sfatul AI în asset publicabil (= viitor „material" pt. publicarea pe platforme).
 - **„Self Marketing" — strategie AI self-serve (ACTIV 16.06.2026, felia 1):** PRIMUL callable AI accesibil
   CLIENȚILOR non-admin: `selfGenerateStrategy({profile})` (auth obligatoriu, FĂRĂ admin-gate) → strategie amplă cu
   3-4 direcții (`STRATEGY_SCHEMA`: overview + per direcție poziționare/segment/canale/mesaje/idei/KPI), scrie

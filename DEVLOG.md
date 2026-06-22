@@ -2008,6 +2008,20 @@ normaliser, secretele niciodată în chat/repo.
 > (SPF/DKIM/DMARC) + `EMAIL_ENABLED=true` + deploy:functions. Rămas (felii viitoare): acțiune motor `email.send` (automatizări
 > CRM) + SMS (Twilio) — reutilizează renderEmail/coada.
 
+**2026-06-21 - Task Completed — „Strategie/Campanie → Landing Page" (north star felia 1)**
+> Model: Claude Opus 4.8 (1M context). Andrei: îmbunătățim serviciile (plățile lângă lansare) + north star = cockpit care
+> creează materiale și publică campanii pe platforme din admin. Felia 1 = transformă output-ul AI în asset (LP). Sursă:
+> AMBELE (campanie lead SAU strategie Self Marketing).
+> - **functions:** callable `aiLandingFromSource` (admin + App Check + quota aiUsage) — citește sursa server-side, compune
+>   brief-ul cu `buildSourceBrief` (PUR, exportat), generează HTML prin `runLpModel`/`buildLpGeneratePrompt` (reutilizate),
+>   `uniqueLpSlug` (bază sanitizată + sufix la coliziune), persistă `landingPages/{slug}` (draft, kind campaign, scoped client/lead).
+> - **UI:** în `LeadRequests` — „🪄 Landing page" per cerere (source=campaign) + „🪄 LP din strategie" la nivel de panou când
+>   lead-ul are client conectat (source=strategy). Rezultat: ciornă în Design & Pagini. i18n ro+en.
+> - **Teste:** e2e **LPSRC** — buildSourceBrief (campanie: companie+descriere+adTexts; strategie: profil+overview; surse goale)
+>   + uniqueLpSlug (sanitizare diacritice + sufix la coliziune).
+> Verificat: 17/17 suites + e2e (LPSRC) + build + boot. DEPLOYED: functions + hosting + rules.
+> Arhitectat spre north star: LP = primul „material"; urmează output AI bogat (creative) + asset package + publicare (ads_management, App Review).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

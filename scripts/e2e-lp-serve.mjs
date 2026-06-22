@@ -1419,6 +1419,34 @@ console.log('\nEMAIL) renderEmail + performSendLeadEmail + performUnsubscribe (c
   ok((await fns.performUnsubscribe(db5, 'L5', 'wrong')).ok === false && !st5.get('leads/L5').emailOptOut, 'EMAIL: unsubscribe cu token greșit → neatins');
 }
 
+// ── TEST LPSRC: buildSourceBrief (campanie + strategie) + uniqueLpSlug (north star — Strategie/Campanie → LP). ──
+console.log('\nLPSRC) buildSourceBrief + uniqueLpSlug (Strategie/Campanie → Landing Page)');
+{
+  // Sursa = campanie (lead + livrabile)
+  const bc = fns.buildSourceBrief('campaign', {
+    lead: { companyName: 'Acme', description: 'Vindem panouri solare', industry: 'Energie', objectives: ['leads', 'awareness'], locale: 'ro' },
+    req: { adTexts: ['Economisește 40%', { text: 'Instalare rapidă' }] },
+  });
+  ok(bc.offer.includes('Acme') && bc.offer.includes('panouri solare') && bc.offer.includes('Economisește 40%') && bc.offer.includes('Instalare rapidă'), 'LPSRC: brief campanie = companie+descriere+adTexts');
+  ok(bc.audience.includes('Energie') && bc.audience.includes('leads'), 'LPSRC: audience campanie = industrie+obiective');
+  ok(bc.lang === 'ro' && bc.includeForm === true, 'LPSRC: lang + includeForm');
+  // Sursa = strategie Self Marketing (profil + strategie)
+  const bs = fns.buildSourceBrief('strategy', {
+    profile: { companyName: 'Beta SRL', productsServices: 'Consultanță fiscală', audience: 'IMM-uri', goals: 'Mai mulți clienți B2B' },
+    strat: { overview: 'Poziționare premium pe nișă' },
+  });
+  ok(bs.offer.includes('Beta SRL') && bs.offer.includes('Consultanță fiscală') && bs.offer.includes('premium'), 'LPSRC: brief strategie = profil+overview');
+  ok(bs.audience.includes('IMM-uri') && bs.goal.includes('B2B'), 'LPSRC: audience+goal din profil');
+  // offer gol → felia o respinge (verificat în callable prin EMPTY_SOURCE); aici doar că brief-ul e gol
+  ok(fns.buildSourceBrief('strategy', {}).offer === '', 'LPSRC: sursă goală → offer gol (→ EMPTY_SOURCE în callable)');
+  ok(fns.buildSourceBrief('campaign', {}).offer === '', 'LPSRC: campanie goală → offer gol');
+  // uniqueLpSlug: bază sanitizată; coliziune → sufix
+  const { db, store } = makeMigStore({ 'landingPages/acme-srl': { schema: 1 } });
+  ok(await fns.uniqueLpSlug(db, 'Țintă Nouă') === 'tinta-noua', 'LPSRC: slug sanitizat (diacritice → ascii, spații → -)');
+  const s2 = await fns.uniqueLpSlug(db, 'Acme SRL');
+  ok(s2 !== 'acme-srl' && s2.startsWith('acme-srl-'), 'LPSRC: slug ocupat → sufix aleator');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

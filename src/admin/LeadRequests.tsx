@@ -80,6 +80,24 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<VersionRow[] | null>(null);
+  // „Strategie/Campanie → Landing Page" (north star): generează o LP draft din materialele AI existente.
+  const [lpGen, setLpGen] = useState<{ s: 'idle' | 'busy' | 'ok' | 'err'; slug: string; key: string }>({ s: 'idle', slug: '', key: '' });
+  const genLp = async (source: 'campaign' | 'strategy', reqId?: string) => {
+    setLpGen({ s: 'busy', slug: '', key: '' });
+    try {
+      const fn = httpsCallable<{ source: string; leadId?: string; reqId?: string; clientUid?: string }, { slug: string }>(functions, 'aiLandingFromSource');
+      const payload = source === 'campaign' ? { source, leadId, reqId } : { source, clientUid };
+      const { data } = await fn(payload);
+      setLpGen({ s: 'ok', slug: data?.slug || '', key: 'admin.lpGenOk' });
+    } catch (e) {
+      const code = String((e as { message?: string }).message ?? '');
+      const key = code.includes('NO_SOURCE') || code.includes('EMPTY_SOURCE') ? 'admin.lpGenNoSource'
+        : code.includes('resource-exhausted') ? 'admin.reqAiQuota'
+        : code.includes('not-found') || code.includes('internal') ? 'admin.reqAiNotReady'
+        : 'admin.lpGenErr';
+      setLpGen({ s: 'err', slug: '', key });
+    }
+  };
 
   const copyText = (key: string, text: string) => {
     navigator.clipboard
@@ -318,8 +336,14 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
         {rows && rows.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>({rows.length})</span>
         )}
+        {clientUid && (
+          <button className="btn" style={{ marginLeft: creating ? 0 : 'auto', padding: '3px 10px', fontSize: 12 }} disabled={lpGen.s === 'busy'}
+            title={t('admin.lpGenStrategyHint')} onClick={() => void genLp('strategy')}>
+            {lpGen.s === 'busy' ? t('admin.lpGenBusy') : `🪄 ${t('admin.lpGenStrategy')}`}
+          </button>
+        )}
         {!creating && (
-          <button className="btn" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setCreating(true)}>
+          <button className="btn" style={{ marginLeft: clientUid ? 0 : 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setCreating(true)}>
             {t('admin.reqNew')}
           </button>
         )}
@@ -406,10 +430,24 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
                   >
                     {aiBusy ? t('admin.reqAiBusy') : t('admin.reqAiGenerate')}
                   </button>
+                  <button
+                    className="btn"
+                    style={{ padding: '5px 12px', fontSize: 12 }}
+                    disabled={lpGen.s === 'busy'}
+                    title={t('admin.lpGenHint')}
+                    onClick={() => void genLp('campaign', r.id)}
+                  >
+                    {lpGen.s === 'busy' ? t('admin.lpGenBusy') : `🪄 ${t('admin.lpGenCampaign')}`}
+                  </button>
                   <button className="btn" style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void remove(r.id)}>
                     {t('admin.reqDelete')}
                   </button>
                 </div>
+                {lpGen.s !== 'idle' && lpGen.s !== 'busy' && (
+                  <p style={{ fontSize: 12, margin: 0, color: lpGen.s === 'ok' ? '#1e7e34' : '#c0392b' }}>
+                    {t(lpGen.key)}{lpGen.s === 'ok' && lpGen.slug ? `: ${lpGen.slug}` : ''}
+                  </p>
+                )}
 
                 {/* Istoricul versiunilor — snapshot automat înainte de fiecare regenerare/restaurare. */}
                 <div>
