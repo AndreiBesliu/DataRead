@@ -318,6 +318,19 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   conștientizare; `buildStrategyPrompt` = STP per direcție; `buildOpportunitiesPrompt` = prioritizare ICE; `buildChannelsPrompt`
   = ordonare ICE. Prompt-only (pure), testat e2e (TEST FW3). Benchmark-urile L2 sunt acum FOLOSITE explicit în insight (bucla
   benchmark→verdict închisă). Rămâne pe Andrei: calibrarea valorilor reale în BENCHMARKS_RO.
+- **Grounding pe date REALE (ACTIV 23.06.2026, felia 4 „big bet"):** generările folosesc acum date live, nu doar
+  contextul declarat. Toate citirile noi sunt **best-effort** (try/catch + logger.warn → niciodată nu rup generarea de
+  bază). (1) **Trend lună-pe-lună** în `performClientReport`: citește metricile (paralel, max 25 campanii), agregă MoM pe
+  UNIUNEA metricilor cu `monthlyMoM` (cur/prev = aceleași 2 luni reale — NU amestecă luni nealiniate între campanii) →
+  secțiunea „TREND" în raport. (2) **Memorie de insight** în `performCampaignInsight`: citește `campaignInsights/{id}`
+  (analiza anterioară) → `prevInsightBlock` în prompt (continuitate: „au funcționat recomandările trecute?"). (3) **Self
+  Marketing hrănit cu campaniile LIVE ale clientului**: `selfGenerateStrategy/Opportunities` citesc `campaigns where
+  clientUid==uid` (limit 25, doar datele PROPRII — clientUid scris exclusiv de Admin SDK, fără cross-tenant) →
+  `liveCampaignsBlock`. Helperi puri: `monthlyMoM`/`momReportLine`/`liveCampaignsBlock`/`prevInsightBlock` (exportați,
+  testați e2e TEST GND4). Prompt-builder-ele capătă un param opțional nou (backward-compatible: fără param → fără bloc).
+  Review adversarial: bug HIGH prins+reparat (agregare MoM care amesteca luni nealiniate → rescris pe uniune). NB: fereastra
+  de `campaigns.clientUid` stale la reconectarea unui lead (pre-existentă, se auto-vindecă prin onLeadWrite) — robustețe de
+  întărit separat (deconectare-înainte-de-reconectare).
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

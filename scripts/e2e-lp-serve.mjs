@@ -655,6 +655,60 @@ console.log('\nFW3) Framework-uri aplicate — benchmark/funnel · PAS-AIDA · S
   ok(op.includes('ICE') && op.includes('Impact'), 'opportunities: prioritizare ICE');
 }
 
+// ── TEST GND4: big bet grounding real (felia 4) — MoM, insight anterior, campanii live, backward-compat. ──
+console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii live (best-effort)');
+{
+  const metrics = [
+    { date: '2026-04-10', spend: 100, leads: 5, revenue: 300, clicks: 50, impressions: 1000 },
+    { date: '2026-04-20', spend: 50, leads: 2, revenue: 150, clicks: 25, impressions: 500 },
+    { date: '2026-05-05', spend: 200, leads: 10, revenue: 600, clicks: 90, impressions: 1800 },
+  ];
+  const mom = fns.monthlyMoM(metrics);
+  ok(mom && mom.curMonth === '2026-05' && mom.prevMonth === '2026-04', 'monthlyMoM: cur=ultima lună, prev=penultima');
+  ok(mom.cur.spend === 200 && mom.cur.leads === 10, 'monthlyMoM: agregă luna curentă');
+  ok(mom.prev.spend === 150 && mom.prev.leads === 7, 'monthlyMoM: agregă luna precedentă');
+  ok(fns.monthlyMoM([]) === null, 'monthlyMoM: fără date → null');
+
+  // Union de metrici din campanii NEALINIATE pe luni: cur/prev = ultimele 2 luni REALE (nu amestecă).
+  const union = [
+    { date: '2026-04-10', spend: 100, leads: 5, revenue: 300 },
+    { date: '2026-05-05', spend: 200, leads: 10, revenue: 600 },
+    { date: '2026-03-01', spend: 999, leads: 99, revenue: 999 }, // altă campanie, doar martie — NU trebuie amestecat
+  ];
+  const um = fns.monthlyMoM(union);
+  ok(um.curMonth === '2026-05' && um.prevMonth === '2026-04', 'MoM pe uniune: cur/prev = ultimele 2 luni reale (martie ignorat)');
+  ok(um.cur.spend === 200 && um.prev.spend === 100, 'MoM pe uniune: nu amestecă luni nealiniate');
+
+  const line = fns.momReportLine(mom);
+  ok(line.includes('Evoluție lună-pe-lună') && line.includes('2026-04 → 2026-05'), 'momReportLine: linie MoM cu delte');
+  ok(fns.momReportLine(null) === '', 'momReportLine: null → gol');
+  ok(fns.momReportLine(fns.monthlyMoM([{ date: '2026-05-01', spend: 10, leads: 1, revenue: 30 }])).includes('fără lună precedentă'),
+    'momReportLine: o singură lună → notează lipsa comparației');
+
+  const lcb = fns.liveCampaignsBlock([{ name: 'C1', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 300, leads: 5 } }]);
+  ok(lcb.includes('DATE REALE DIN CAMPANIILE TALE') && lcb.includes('C1'), 'liveCampaignsBlock: sumar campanii cu spend');
+  ok(fns.liveCampaignsBlock([]) === '' && fns.liveCampaignsBlock([{ name: 'X', totals: { spend: 0 } }]) === '', 'liveCampaignsBlock: fără spend → gol');
+
+  ok(fns.prevInsightBlock({ verdict: 'scale', headline: 'merge bine', actions: '1. crește bugetul' }).includes('ANALIZA TA ANTERIOARĂ'),
+    'prevInsightBlock: insight anterior formatat');
+  ok(fns.prevInsightBlock(null) === '', 'prevInsightBlock: null → gol');
+
+  // Prompt builders cu noile param + backward-compat (fără param → fără bloc).
+  const insP = fns.buildInsightPrompt({ companyName: 'Y', industry: 'retail' }, { name: 'C' }, [], { verdict: 'test', headline: 'h', actions: 'a' });
+  ok(insP.includes('ANALIZA TA ANTERIOARĂ'), 'buildInsightPrompt: prevInsight inclus');
+  ok(!fns.buildInsightPrompt({ companyName: 'Y' }, { name: 'C' }, []).includes('ANALIZA TA ANTERIOARĂ'), 'buildInsightPrompt: fără prev → fără bloc (compat)');
+
+  const rep = fns.buildClientReportPrompt({ companyName: 'Y' }, [{ name: 'C', totals: { spend: 100, revenue: 200, leads: 3 } }], mom);
+  ok(rep.includes('TREND'), 'buildClientReportPrompt: trend MoM inclus');
+  ok(!fns.buildClientReportPrompt({ companyName: 'Y' }, [{ name: 'C', totals: { spend: 100 } }]).includes('TREND (lună'), 'buildClientReportPrompt: fără mom → fără trend (compat)');
+
+  const prof = { companyName: 'Z', industry: 'retail', productsServices: 'X', audience: 'Y', goals: 'G' };
+  const liveC = [{ name: 'C1', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 300, leads: 5 } }];
+  ok(fns.buildStrategyPrompt(prof, liveC).includes('DATE REALE DIN CAMPANIILE TALE'), 'buildStrategyPrompt: date live incluse');
+  ok(!fns.buildStrategyPrompt(prof).includes('DATE REALE DIN CAMPANIILE TALE'), 'buildStrategyPrompt: fără campanii → fără bloc (compat)');
+  ok(fns.buildOpportunitiesPrompt(prof, liveC).includes('DATE REALE DIN CAMPANIILE TALE'), 'buildOpportunitiesPrompt: date live incluse');
+}
+
 // ── TEST Q: „Self Marketing" — buildStrategyPrompt + STRATEGY_SCHEMA + coerceSelfProfileServer
 // (functions e JS netipizat → require-ul + apelul prind syntax/ReferenceError pe care build-ul nu-i vede). ──
 console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil server-side');

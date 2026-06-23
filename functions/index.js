@@ -625,8 +625,9 @@ const STRATEGY_SCHEMA = {
 };
 exports.STRATEGY_SCHEMA = STRATEGY_SCHEMA;
 
-function buildStrategyPrompt(profile) {
+function buildStrategyPrompt(profile, liveCampaigns) {
   const p = coerceSelfProfileServer(profile);
+  const lcb = liveCampaignsBlock(liveCampaigns);
   return [
     'Construiește o STRATEGIE DE MARKETING amplă pentru firma de mai jos, în limba ROMÂNĂ, cu MAI MULTE',
     'direcții/unghiuri distincte (3-4), ca un strateg senior care explorează opțiuni, nu un singur plan.',
@@ -645,6 +646,7 @@ function buildStrategyPrompt(profile) {
     `Buget estimativ: ${p.budget || 'nespecificat'}`,
     `Obiective de marketing: ${p.goals || '-'}`,
     '',
+    ...(lcb ? [lcb, ''] : []),
     'Întâi un rezumat scurt de poziționare (overview). Apoi 3-4 direcții strategice DIFERITE ca unghi',
     '(ex. una pe achiziție plătită locală, alta pe conținut/organic, alta pe ofertă/retenție) — fiecare cu',
     'unghi de poziționare, segment țintă, mix de canale adaptat bugetului, mesaje-cheie, idei de campanie',
@@ -740,8 +742,9 @@ const OPPORTUNITIES_SCHEMA = {
 };
 exports.OPPORTUNITIES_SCHEMA = OPPORTUNITIES_SCHEMA;
 
-function buildOpportunitiesPrompt(profile) {
+function buildOpportunitiesPrompt(profile, liveCampaigns) {
   const p = coerceSelfProfileServer(profile);
+  const lcb = liveCampaignsBlock(liveCampaigns);
   return [
     'Propune EXACT 10 OPORTUNITĂȚI de promovare pentru firma de mai jos, în limba ROMÂNĂ, prioritizate de la',
     'cel mai mare impact la cel mai mic. Fiecare = o idee concretă (nu generică), pe un canal potrivit bugetului.',
@@ -760,6 +763,7 @@ function buildOpportunitiesPrompt(profile) {
     `Buget estimativ: ${p.budget || 'nespecificat'}`,
     `Obiective de marketing: ${p.goals || '-'}`,
     '',
+    ...(lcb ? [lcb, ''] : []),
     'Pentru fiecare oportunitate: titlu, canal principal, impact (high/medium/low), de ce e potrivită acestei',
     'firme, ce presupune concret și primul pas. Realist pentru o firmă mică/mijlocie din România, fără placeholdere.',
     'Prioritizează folosind ICE: Impact × Încredere (cât de sigur că merge la acest profil) × Ușurință (efort/cost',
@@ -1212,7 +1216,8 @@ const INSIGHT_SCHEMA = {
 
 const r2 = (n) => (n === null ? '—' : Math.round(n * 100) / 100);
 
-function buildInsightPrompt(lead, camp, metrics) {
+function buildInsightPrompt(lead, camp, metrics, prevInsight) {
+  const pib = prevInsightBlock(prevInsight);
   const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
   for (const m of metrics) {
     t.spend += Number(m.spend) || 0;
@@ -1249,6 +1254,7 @@ function buildInsightPrompt(lead, camp, metrics) {
     '',
     '== EVOLUȚIE ZILNICĂ (recent) ==',
     recent || '(fără zile introduse)',
+    ...(pib ? ['', pib] : []),
     '',
     'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test), explică-l raportându-te',
     'la ROAS/CPL/CTR și la trend, și dă acțiuni concrete. Reguli generale de bun-simț: ROAS sub 1',
@@ -1263,6 +1269,73 @@ function buildInsightPrompt(lead, camp, metrics) {
   ].join('\n');
 }
 exports.buildInsightPrompt = buildInsightPrompt;
+
+// ── Felia 4: grounding pe date REALE (best-effort). Helperi PURI (testabili e2e). Citirile care le
+//    alimentează sunt învelite în try/catch la call-site → grounding-ul nu poate rupe generarea. ──
+
+// Bucketează metricile pe lună (YYYY-MM) și întoarce cele mai recente 2 luni CU date (cur=ultima, prev=penultima).
+function monthlyMoM(metrics) {
+  const by = {};
+  for (const m of (Array.isArray(metrics) ? metrics : [])) {
+    const mo = String((m && m.date) || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(mo)) continue;
+    const b = by[mo] || (by[mo] = { spend: 0, revenue: 0, leads: 0, clicks: 0, impressions: 0 });
+    b.spend += Number(m.spend) || 0;
+    b.revenue += Number(m.revenue) || 0;
+    b.leads += Number(m.leads) || 0;
+    b.clicks += Number(m.clicks) || 0;
+    b.impressions += Number(m.impressions) || 0;
+  }
+  const months = Object.keys(by).sort();
+  if (!months.length) return null;
+  const curMonth = months[months.length - 1];
+  const prevMonth = months.length >= 2 ? months[months.length - 2] : null;
+  return { curMonth, prevMonth, cur: by[curMonth], prev: prevMonth ? by[prevMonth] : null };
+}
+exports.monthlyMoM = monthlyMoM;
+
+// (Agregarea MoM la nivel de raport se face pe UNIUNEA metricilor — un singur monthlyMoM în
+//  performClientReport — ca să nu amestece luni nealiniate între campanii.)
+
+// Linie lizibilă MoM pentru promptul de raport (gol dacă nu există date).
+function momReportLine(mom) {
+  if (!mom || !mom.cur) return '';
+  const div = (a, b) => (b > 0 ? a / b : null);
+  const roas = (x) => r2(div(Number(x.revenue) || 0, Number(x.spend) || 0));
+  const pct = (a, b) => (b > 0 ? `${a >= b ? '+' : ''}${Math.round(((a - b) / b) * 100)}%` : '—');
+  const cur = mom.cur;
+  if (!mom.prev) {
+    return `Luna ${mom.curMonth}: cheltuit ${r2(cur.spend)}€, lead-uri ${cur.leads}, venit ${r2(cur.revenue)}€, ROAS ${roas(cur)} (fără lună precedentă pentru comparație).`;
+  }
+  const prev = mom.prev;
+  return [
+    `Evoluție lună-pe-lună (${mom.prevMonth} → ${mom.curMonth}):`,
+    `- Cheltuit: ${r2(prev.spend)}€ → ${r2(cur.spend)}€ (${pct(cur.spend, prev.spend)})`,
+    `- Lead-uri: ${prev.leads} → ${cur.leads} (${pct(cur.leads, prev.leads)})`,
+    `- Venit: ${r2(prev.revenue)}€ → ${r2(cur.revenue)}€ (${pct(cur.revenue, prev.revenue)})`,
+    `- ROAS: ${roas(prev)} → ${roas(cur)}`,
+  ].join('\n');
+}
+exports.momReportLine = momReportLine;
+
+// Sumar al campaniilor LIVE ale clientului (din totals) — grounding pt. Self Marketing. Gol dacă nu există.
+function liveCampaignsBlock(campaigns) {
+  const cs = (Array.isArray(campaigns) ? campaigns : []).filter((c) => c && c.totals && Number(c.totals.spend) > 0);
+  if (!cs.length) return '';
+  return ['== DATE REALE DIN CAMPANIILE TALE ACTIVE (folosește-le, nu doar profilul declarat) ==', ...cs.slice(0, 12).map(campKpiLine)].join('\n');
+}
+exports.liveCampaignsBlock = liveCampaignsBlock;
+
+// Insight-ul ANTERIOR al campaniei (continuitate) — pt. promptul de analiză. Gol dacă nu există.
+function prevInsightBlock(prev) {
+  if (!prev || typeof prev !== 'object') return '';
+  const v = prev.verdict ? `Verdict anterior: ${prev.verdict}` : '';
+  const h = prev.headline ? `\nConcluzia anterioară: ${String(prev.headline).slice(0, 500)}` : '';
+  const a = prev.actions ? `\nAcțiuni recomandate data trecută:\n${String(prev.actions).slice(0, 1200)}` : '';
+  if (!v && !h && !a) return '';
+  return ['== ANALIZA TA ANTERIOARĂ (verifică dacă recomandările au fost aplicate și dacă au funcționat; nu repeta orbește) ==', `${v}${h}${a}`].join('\n');
+}
+exports.prevInsightBlock = prevInsightBlock;
 
 // ── Raport lunar de performanță pentru client (din toate campaniile lui) ──
 const REPORT_SCHEMA = {
@@ -1284,7 +1357,8 @@ function campKpiLine(camp) {
   return `- ${camp.name || '(fără nume)'} [${camp.platform || '-'}, ${camp.status || '-'}]: cheltuit ${r2(Number(t.spend) || 0)}€, venit ${r2(Number(t.revenue) || 0)}€, ROAS ${r2(roas)}, lead-uri ${Number(t.leads) || 0}, CPL ${r2(cpl)}€`;
 }
 
-function buildClientReportPrompt(lead, camps) {
+function buildClientReportPrompt(lead, camps, mom) {
+  const momTxt = momReportLine(mom);
   const o = { spend: 0, revenue: 0, leads: 0 };
   for (const c of camps) {
     const t = c.totals || {};
@@ -1304,12 +1378,14 @@ function buildClientReportPrompt(lead, camps) {
     '',
     '== TOTAL ==',
     `Cheltuit: ${r2(o.spend)}€ · Venit: ${r2(o.revenue)}€ · ROAS general: ${r2(div(o.revenue, o.spend))} · Lead-uri: ${o.leads}`,
+    ...(momTxt ? ['', '== TREND (lună-pe-lună) ==', momTxt] : []),
     '',
     'Cerințe: limba ROMÂNĂ, ton profesionist dar prietenos, adresat clientului (nu intern). Folosește',
     'cifrele reale. Rezumatul = imaginea de ansamblu; highlights = realizările cu cifre; recomandările',
     '= ce propunem pentru luna viitoare. Fără promisiuni nerealiste.',
   ].join('\n');
 }
+exports.buildClientReportPrompt = buildClientReportPrompt;
 
 // ── Nuclee AI reutilizabile (anti-drift): folosite de callable-urile aiAnalyzeCampaign/aiClientReport ȘI de motorul
 //    de automatizare (acțiunile campaign.recommend / report.generate). `consume` = callback de cotă apelat DUPĂ
@@ -1324,6 +1400,12 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
   const metrics = metricsSnap.docs.map((d) => d.data());
   const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
+  // Felia 4: memorie de insight — citește analiza ANTERIOARĂ (best-effort) pentru continuitate.
+  let prevInsight = null;
+  try {
+    const piSnap = await db.collection('campaignInsights').doc(campaignId).get();
+    if (piSnap.exists) prevInsight = piSnap.data() || null;
+  } catch (e) { logger.warn('prev insight read failed', { campaignId, err: String(e) }); }
   if (consume) await consume();
   const lead = leadSnap && leadSnap.exists ? (leadSnap.data() || {}) : {};
   // Fundația stratificată: persona „analist" + L2 din verticala lead-ului. Lead-ul/metricile rămân
@@ -1332,7 +1414,7 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     schema: INSIGHT_SCHEMA,
     maxTokens: 8000,
     system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry }),
-    prompt: buildInsightPrompt(lead, camp, metrics),
+    prompt: buildInsightPrompt(lead, camp, metrics, prevInsight),
   });
   const insight = {
     verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
@@ -1360,12 +1442,24 @@ async function performClientReport(db, leadId, actorUid, consume) {
   if (camps.length === 0) throw new HttpsError('failed-precondition', 'Clientul nu are campanii de raportat.');
   if (consume) await consume();
   const lead = leadSnap.data() || {};
+  // Felia 4: trend lună-pe-lună (best-effort) — citește metricile fiecărei campanii și agregă MoM.
+  let mom = null;
+  try {
+    // Citiri paralele + plafonate (max 25 campanii) ca să nu explodeze costul/latența pe lead-uri mari.
+    const metricSnaps = await Promise.all(
+      campsSnap.docs.slice(0, 25).map((d) => d.ref.collection('metrics').orderBy('date', 'desc').limit(90).get())
+    );
+    // MoM pe UNIUNEA metricilor tuturor campaniilor → cur/prev = aceleași 2 luni calendaristice reale
+    // (nu amestecă luni nealiniate între campanii, cum ar face o agregare per-campanie).
+    const allMetrics = metricSnaps.flatMap((s) => s.docs.map((x) => x.data()));
+    mom = monthlyMoM(allMetrics);
+  } catch (e) { logger.warn('report MoM failed', { leadId, err: String(e) }); }
   // Fundația stratificată: persona „account manager" + L2 din verticala clientului.
   const { out, usage } = await runAiJson({
     schema: REPORT_SCHEMA,
     maxTokens: 10000,
     system: buildSystemBlocks({ persona: PERSONAS.accountManager, industry: lead.industry }),
-    prompt: buildClientReportPrompt(lead, camps),
+    prompt: buildClientReportPrompt(lead, camps, mom),
   });
   const report = {
     summary: clampText(out.summary, 6000),
@@ -1586,11 +1680,17 @@ if (AI_ENABLED) {
       let result;
       try {
         await consumeGlobalSelfQuota(admin.firestore(), await selfGlobalPoolFor(admin.firestore(), uid, selfCfg));
+        // Felia 4: hrănește strategia cu campaniile LIVE ale clientului (best-effort; doar dacă e cont legat cu campanii).
+        let liveCampaigns = [];
+        try {
+          const cs = await admin.firestore().collection('campaigns').where('clientUid', '==', uid).limit(25).get();
+          liveCampaigns = cs.docs.map((d) => d.data());
+        } catch (e) { logger.warn('self live campaigns read failed', { uid, err: String(e) }); }
         result = await runAiJson({
           schema: STRATEGY_SCHEMA,
           maxTokens: 8000,
           system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: profile.industry }),
-          prompt: buildStrategyPrompt(profile),
+          prompt: buildStrategyPrompt(profile, liveCampaigns),
         });
       } catch (err) {
         await refundSelfQuota(uid);
@@ -1645,11 +1745,17 @@ if (AI_ENABLED) {
       let result;
       try {
         await consumeGlobalSelfQuota(admin.firestore(), await selfGlobalPoolFor(admin.firestore(), uid, selfCfg));
+        // Felia 4: hrănește oportunitățile cu campaniile LIVE ale clientului (best-effort).
+        let liveCampaigns = [];
+        try {
+          const cs = await admin.firestore().collection('campaigns').where('clientUid', '==', uid).limit(25).get();
+          liveCampaigns = cs.docs.map((d) => d.data());
+        } catch (e) { logger.warn('self live campaigns read failed', { uid, err: String(e) }); }
         result = await runAiJson({
           schema: OPPORTUNITIES_SCHEMA,
           maxTokens: 7000,
           system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: profile.industry }),
-          prompt: buildOpportunitiesPrompt(profile),
+          prompt: buildOpportunitiesPrompt(profile, liveCampaigns),
         });
       } catch (err) {
         await refundSelfQuota(uid);

@@ -2079,6 +2079,23 @@ normaliser, secretele niciodată în chat/repo.
 > NB: BENCHMARKS_RO rămân orientative — calibrarea cu date reale = task Andrei. Felia 4 roadmap: grounding big-bet (trend MoM,
 > memorie insight anterior, campaniile live ale clientului).
 
+**2026-06-23 - Task Completed — AI felia 4: big bet grounding real (date live)**
+> Model: Claude Opus 4.8 (1M context). Cel mai mare „bet" din roadmap-ul AI: generările folosesc date REALE, nu doar
+> contextul declarat. Toate citirile noi = best-effort (try/catch → nu rup generarea de bază).
+> - **Trend MoM (performClientReport):** citește metricile (Promise.all, max 25 campanii), MoM pe UNIUNEA metricilor
+>   (`monthlyMoM`) → secțiunea „TREND" în raport (cheltuit/lead-uri/venit/ROAS luna precedentă → curentă cu delte %).
+> - **Memorie de insight (performCampaignInsight):** citește campaignInsights/{id} anterior → `prevInsightBlock` în prompt
+>   (continuitate: verifică dacă recomandările trecute au fost aplicate/au funcționat). Rămâne admin-only (fără scurgere la client).
+> - **Self Marketing cu campaniile live (selfGenerateStrategy/Opportunities):** `campaigns where clientUid==uid` (limit 25,
+>   DOAR datele proprii) → `liveCampaignsBlock` în prompt; strategia/oportunitățile se bazează pe performanța reală, nu doar profil.
+> - Helperi puri: monthlyMoM/momReportLine/liveCampaignsBlock/prevInsightBlock (exportați, testați e2e TEST GND4). Prompt-builder-ele
+>   capătă param opțional nou (backward-compatible). Bug prins de e2e: buildClientReportPrompt neexportat → reparat.
+> - **Review adversarial (3 lentile):** prins bug HIGH — agregarea MoM amesteca luni nealiniate între campanii (cur=mai dintr-o
+>   campanie + cur=martie din alta, sub aceeași etichetă) → REPARAT prin MoM pe uniunea metricilor (un singur monthlyMoM). Plus
+>   MEDIUM (citiri N+1 nemărginite → Promise.all + cap 25) + LOW (query self nemărginit → limit 25). Izolare multi-tenant: OK
+>   (clientUid==uid, scris doar de Admin SDK). LOW pre-existent: fereastră clientUid stale la reconectare lead (se auto-vindecă).
+> Verificat: 18/18 suites + e2e (TEST GND4) + build. DEPLOYED: functions. Felia 5 roadmap: livrabile string→scheme tipate.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
