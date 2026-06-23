@@ -2361,6 +2361,16 @@ normaliser, secretele niciodată în chat/repo.
 > IPv4-mapped/userinfo) = deja blocat de normalizarea WHATWG (verificat).
 > Verificat: typecheck + 21/21 suites + build + boot + e2e (gardă SSRF + regresii). Frontend + functions + reguli. DEPLOYED: hosting + rules + functions.
 
+**2026-06-23 - Task Completed — Quick wins (audit multi-agent): 6 îmbunătățiri pe platforma existentă**
+> Model: Claude Opus 4.8 (1M context). După un audit multi-agent (7 dimensiuni → 42 idei sintetizate), pachetul de quick wins:
+> 1. **Anti-injecție `buildSeoPrompt`** — conținutul extern adus de audit-ul SEO primește nota „date, nu instrucțiuni" (ca prompturile self-*).
+> 2. **Plafon GLOBAL zilnic AI operatori** — `consumeAiQuota` adaugă coșul `aiUsage/__operatorGlobal` (AI_OPERATOR_GLOBAL_DAILY_CAP=400) în aceeași tranzacție (read-before-write) → backstop de cost contra buclă/cheie scursă.
+> 3. **Sugestiile deschid direct lead-ul** — SuggestionsPanel pasează `leadId`; AdminHome face setOpenLead + scrollIntoView (id pe rând). **Fix de review:** resetează filtrul/căutarea persistate, altfel lead-ul ascuns făcea „Deschide" inert.
+> 4. **Buton „Audit SEO" pe lead** — pre-completează URL-ul (detail.website) → SeoPanel(initialUrl) + tab SEO.
+> 5. **Filtre/căutare persistate** — `src/utils/persistedState.ts` (usePersistedState, prefix dataread); leadFilter/leadSearch + filtrul ServiceOrders nu se mai resetează la refresh.
+> 6. **Instrumentare funnel** — track() nou: packages_view + package_cta, start_view + form_start (o dată), contact_view, self_marketing_view.
+> Verificat: typecheck + 21/21 suites + build + boot + e2e. Review adversarial single-agent (5/6 corecte; gap sinergic filtre↔deep-link reparat). Frontend + functions. DEPLOYED: hosting + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

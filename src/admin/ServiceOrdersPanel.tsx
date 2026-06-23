@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { usePersistedState } from '../utils/persistedState';
 import { SERVICES } from '../config/services';
 import {
   coerceToServiceOrder,
@@ -23,7 +24,7 @@ const labelStyle: CSSProperties = { display: 'block', fontSize: 11, color: 'var(
 export default function ServiceOrdersPanel() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<OrderRow[]>([]);
-  const [filter, setFilter] = useState<'all' | ServiceOrderStatus>('all');
+  const [filter, setFilter] = usePersistedState<'all' | ServiceOrderStatus>('admin.svcFilter', 'all');
   const [newOpen, setNewOpen] = useState(false);
   const [deliverDraft, setDeliverDraft] = useState<Record<string, string>>({});
 

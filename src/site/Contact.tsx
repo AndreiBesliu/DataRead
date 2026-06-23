@@ -1,12 +1,15 @@
+import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
+import { track } from '../services/analytics';
 import { CONTACT_EMAIL } from '../config/site';
 
 export default function Contact() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const p = (s: string) => toLocalizedPath(s, pathLanguage(pathname));
+  useEffect(() => { track('contact_view'); }, []);
 
   return (
     <main data-page="contact" style={{ maxWidth: 720, margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}>

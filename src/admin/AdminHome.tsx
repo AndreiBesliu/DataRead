@@ -28,6 +28,7 @@ import { LeadPrediction, ClientContacts } from './PredictionPanel';
 import SuggestionsPanel from './SuggestionsPanel';
 import ServiceOrdersPanel from './ServiceOrdersPanel';
 import SeoPanel from './SeoPanel';
+import { usePersistedState } from '../utils/persistedState';
 import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
 import MarketingCenter from './MarketingCenter';
@@ -225,8 +226,10 @@ export default function AdminHome() {
   const [openLead, setOpenLead] = useState<string | null>(null);
   const [openClient, setOpenClient] = useState<string | null>(null);
   const [clientDetail, setClientDetail] = useState<OnboardingData | null | 'loading'>(null);
-  const [leadFilter, setLeadFilter] = useState<'all' | LeadStatus>('all');
-  const [leadSearch, setLeadSearch] = useState('');
+  // Filtre/căutare persistate (se păstrează la schimbarea tabului / refresh — quick win operator).
+  const [leadFilter, setLeadFilter] = usePersistedState<'all' | LeadStatus>('admin.leadFilter', 'all');
+  const [leadSearch, setLeadSearch] = usePersistedState<string>('admin.leadSearch', '');
+  const [seoPrefillUrl, setSeoPrefillUrl] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiCount, setAiCount] = useState<number | null>(null);
@@ -587,9 +590,19 @@ export default function AdminHome() {
         );
       })()}
 
-      {view === 'suggestions' && <SuggestionsPanel onNavigate={(v) => setView(v as AdminView)} />}
+      {view === 'suggestions' && <SuggestionsPanel onNavigate={(v, leadId) => {
+        setView(v as AdminView);
+        // Deep-link: sugestia poartă leadId → deschide direct lead-ul țintă + scroll (nu mai cauți manual în listă).
+        // Resetăm filtrul/căutarea PERSISTATE — altfel lead-ul țintă poate fi ascuns și „Deschide" n-ar face nimic.
+        if (v === 'leads' && leadId) {
+          setLeadFilter('all');
+          setLeadSearch('');
+          setOpenLead(leadId);
+          setTimeout(() => { try { document.getElementById('lead-' + leadId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* noop */ } }, 80);
+        }
+      }} />}
       {view === 'serviceOrders' && <ServiceOrdersPanel />}
-      {view === 'seo' && <SeoPanel />}
+      {view === 'seo' && <SeoPanel initialUrl={seoPrefillUrl} />}
       {view === 'help' && <div style={{ marginTop: 12 }}><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{t('help.title')}</h2><HelpView sections={OPERATOR_HELP} /></div>}
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'automation' && <AutomationsPanel />}
@@ -678,7 +691,7 @@ export default function AdminHome() {
                     <tbody>
                       {visible.map((l) => (
                         <Fragment key={l.id}>
-                          <tr style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : undefined}>
+                          <tr id={'lead-' + l.id} style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : undefined}>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTs(l.createdAt)}</td>
                             <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>
                               {l.data.companyName || '—'}
@@ -709,6 +722,13 @@ export default function AdminHome() {
                             <tr>
                               <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={7}>
                                 <OnboardingDetail detail={l.data} />
+                                {l.data.website ? (
+                                  <div style={{ marginTop: 10 }}>
+                                    <button className="btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setSeoPrefillUrl(l.data.website); setView('seo'); }}>
+                                      🔍 {t('admin.seo.run')} — {l.data.website}
+                                    </button>
+                                  </div>
+                                ) : null}
                                 <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                                   <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
                                     {t('admin.notesLabel')}

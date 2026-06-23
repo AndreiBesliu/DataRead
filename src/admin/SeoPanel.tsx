@@ -18,9 +18,9 @@ const SEV_COLOR: Record<SeoSeverity, string> = { critical: '#e0454f', warning: '
 /** Panou operator — modul „Automatizare SEO". Rulează un audit on-page pe un URL (callable seoAudit:
  *  fetch + extragere semnale + scor determinist + recomandări AI grounded) și arată rezultatul + istoricul.
  *  Operator-only; consumă quota AI. Monitorizarea de ranking (SERP) = felie ulterioară (chei API la Andrei). */
-export default function SeoPanel() {
+export default function SeoPanel({ initialUrl = '' }: { initialUrl?: string }) {
   const { t } = useTranslation();
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(initialUrl);
   const [keyword, setKeyword] = useState('');
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);

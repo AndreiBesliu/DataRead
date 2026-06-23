@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
+import { track } from '../services/analytics';
 import { PACKAGES, UPSELLS, type PackageDef } from '../config/packages';
 
 /** Cardul unui pachet. CTA: cu priceId setat → fluxul de cont/checkout (/app?pkg=…);
@@ -59,7 +61,7 @@ function PackageCard({ pkg }: { pkg: PackageDef }) {
 
       {/* Site fără login (decizie 11.06): CTA-ul duce la formularul public /start cu pachetul
           preselectat. Când revine self-serve-ul Stripe, ramura cu priceId → /app?pkg= se reactivează. */}
-      <Link to={`${toLocalizedPath('/start', lang)}?pkg=${pkg.id}`} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }}>
+      <Link to={`${toLocalizedPath('/start', lang)}?pkg=${pkg.id}`} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }} onClick={() => track('package_cta', { pkg: pkg.id })}>
         {t('pachete.choose', { name })}
       </Link>
     </div>
@@ -68,6 +70,7 @@ function PackageCard({ pkg }: { pkg: PackageDef }) {
 
 export default function Packages() {
   const { t } = useTranslation();
+  useEffect(() => { track('packages_view'); }, []);
 
   return (
     <main data-page="packages" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '48px 24px' }}>

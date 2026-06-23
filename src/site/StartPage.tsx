@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -40,6 +40,13 @@ export default function StartPage() {
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  // Funnel: vizualizarea paginii + prima interacțiune cu formularul (form_start o singură dată).
+  const formStarted = useRef(false);
+  useEffect(() => { track('start_view'); }, []);
+  const markFormStart = () => {
+    if (!formStarted.current) { formStarted.current = true; track('form_start'); }
+  };
+
   // ?pkg= de pe pagina de pachete preselectează pachetul de interes.
   useEffect(() => {
     const pkg = params.get('pkg');
@@ -63,6 +70,7 @@ export default function StartPage() {
   }, [data, submitted]);
 
   const set = <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) => {
+    markFormStart();
     setData((d) => ({ ...d, [k]: v }));
     setErrors((e) => {
       if (!(k in e)) return e;
@@ -72,6 +80,7 @@ export default function StartPage() {
   };
 
   const toggleObjective = (o: Objective) => {
+    markFormStart();
     setData((d) => ({
       ...d,
       objectives: d.objectives.includes(o) ? d.objectives.filter((x) => x !== o) : [...d.objectives, o],

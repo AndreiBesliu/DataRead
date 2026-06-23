@@ -2,11 +2,14 @@
  * Pagina publică „Self Marketing" — explică ce poate face clientul cu generatorul AI de strategie
  * (felia self-serve). E un explicativ + CTA către funnel-ul logat (/app/self-marketing). Tot textul prin t().
  */
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { track } from '../services/analytics';
 
 export default function SelfMarketing() {
   const { t } = useTranslation();
+  useEffect(() => { track('self_marketing_view'); }, []);
 
   const steps = ['profile', 'opportunities', 'strategy', 'details', 'execution'] as const;
   const benefits = ['angles', 'data', 'fast', 'free'] as const;

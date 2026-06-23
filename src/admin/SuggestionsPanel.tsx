@@ -24,7 +24,7 @@ const SEV_COLOR: Record<SuggestionSeverity, { bg: string; fg: string }> = {
   low: { bg: '#eef4ff', fg: '#2563eb' },
 };
 
-export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: string) => void }) {
+export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: string, leadId?: string) => void }) {
   const { t } = useTranslation();
   const [leads, setLeads] = useState<SuggestionLead[]>([]);
   const [camps, setCamps] = useState<SuggestionCampaign[]>([]);
@@ -135,7 +135,7 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{t(s.titleKey, s.params)}</div>
                 {s.detail ? <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>{s.detail}</div> : null}
               </div>
-              <button className="btn" style={{ padding: '5px 12px', fontSize: 12, whiteSpace: 'nowrap' }} onClick={() => onNavigate(s.view)}>
+              <button className="btn" style={{ padding: '5px 12px', fontSize: 12, whiteSpace: 'nowrap' }} onClick={() => onNavigate(s.view, s.leadId)}>
                 {t('admin.sugOpen')}
               </button>
             </div>
