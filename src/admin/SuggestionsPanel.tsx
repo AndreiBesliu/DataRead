@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../firebase';
-import { buildSuggestions, type SuggestionCampaign, type SuggestionLead, type SuggestionSeverity } from './suggestions';
+import { buildSuggestions, type SuggestionCampaign, type SuggestionLead, type SuggestionPrediction, type SuggestionSeverity } from './suggestions';
 
 function tsMs(v: unknown): number {
   const t = v as { toMillis?: () => number } | null;
@@ -31,6 +31,8 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
   // verdict/headline-ul AI stă în colecția admin-only `campaignInsights` (NU pe documentul campaniei,
   // citibil de client) → listener separat, indexat pe id-ul campaniei, îmbinat în useMemo.
   const [insights, setInsights] = useState<Map<string, { verdict: string; headline: string }>>(new Map());
+  // Predicții comportamentale pe lead (admin-only) — listener separat, îmbinat cu numele firmei în useMemo (F2).
+  const [preds, setPreds] = useState<Map<string, { temperature: string; conversionLikelihood: string }>>(new Map());
 
   useEffect(() => {
     const offL = onSnapshot(
@@ -79,7 +81,22 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
       },
       () => setInsights(new Map())
     );
-    return () => { offL(); offC(); offI(); };
+    const offP = onSnapshot(
+      query(collection(db, 'leadPredictions'), limit(300)),
+      (snap) => {
+        const m = new Map<string, { temperature: string; conversionLikelihood: string }>();
+        snap.forEach((d) => {
+          const x = d.data();
+          m.set(d.id, {
+            temperature: typeof x.temperature === 'string' ? x.temperature : '',
+            conversionLikelihood: typeof x.conversionLikelihood === 'string' ? x.conversionLikelihood : '',
+          });
+        });
+        setPreds(m);
+      },
+      () => setPreds(new Map())
+    );
+    return () => { offL(); offC(); offI(); offP(); };
   }, []);
 
   const suggestions = useMemo(() => {
@@ -87,8 +104,12 @@ export default function SuggestionsPanel({ onNavigate }: { onNavigate: (view: st
       const ins = insights.get(c.id);
       return ins ? { ...c, verdict: ins.verdict, headline: ins.headline } : c;
     });
-    return buildSuggestions({ leads, campaigns: enriched, nowMs: Date.now() });
-  }, [leads, camps, insights]);
+    const nameById = new Map(leads.map((l) => [l.id, l.companyName]));
+    const predictions: SuggestionPrediction[] = Array.from(preds.entries()).map(([leadId, p]) => ({
+      leadId, companyName: nameById.get(leadId) || '', temperature: p.temperature, conversionLikelihood: p.conversionLikelihood,
+    }));
+    return buildSuggestions({ leads, campaigns: enriched, predictions, nowMs: Date.now() });
+  }, [leads, camps, insights, preds]);
 
   const card: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 };
 

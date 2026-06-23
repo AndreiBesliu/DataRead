@@ -434,6 +434,21 @@ check('composePrintHtml: body cu HTML e ESCAPAT (anti injecție în documentul d
     const s = buildSuggestions({ leads: [lead({ status: 'won', reportAtMs: NOW, nextFollowUp: '' })], campaigns: [], nowMs: NOW });
     return !s.some((x) => x.kind === 'followUpDue');
   })());
+  // F2: predicții → sugestii.
+  check('sugestii: predicție fierbinte → predictionHot high', (() => {
+    const s = buildSuggestions({ leads: [], campaigns: [], predictions: [{ leadId: 'l1', companyName: 'Acme', temperature: 'hot', conversionLikelihood: 'high' }], nowMs: NOW });
+    const p = s.find((x) => x.kind === 'predictionHot');
+    return !!p && p.severity === 'high' && p.leadId === 'l1' && p.detail === 'Acme' && p.view === 'leads';
+  })());
+  check('sugestii: predicție se răcește/rece → predictionCooling medium', (() => {
+    const cooling = buildSuggestions({ leads: [], campaigns: [], predictions: [{ leadId: 'l2', companyName: 'X', temperature: 'cooling', conversionLikelihood: 'low' }], nowMs: NOW });
+    const cold = buildSuggestions({ leads: [], campaigns: [], predictions: [{ leadId: 'l3', companyName: 'Y', temperature: 'cold', conversionLikelihood: 'low' }], nowMs: NOW });
+    return cooling.some((x) => x.kind === 'predictionCooling' && x.severity === 'medium') && cold.some((x) => x.kind === 'predictionCooling');
+  })());
+  check('sugestii: predicție caldă (warm) → fără sugestie', (() => {
+    const s = buildSuggestions({ leads: [], campaigns: [], predictions: [{ leadId: 'l4', companyName: 'Z', temperature: 'warm', conversionLikelihood: 'med' }], nowMs: NOW });
+    return !s.some((x) => x.kind === 'predictionHot' || x.kind === 'predictionCooling');
+  })());
 }
 
 // ── Ghid/Documentație: acoperirea cheilor i18n din helpContent (altfel s-ar randa cheia brută) ──

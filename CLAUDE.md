@@ -379,9 +379,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     + `predictLeadBehavior`→`leadPredictions/{id}` (consumeAiQuota, gate `PREDICTION_ENABLED` sub AI_ENABLED). Reguli: read admin/write
     false (UID-ul operatorului `by` NU ajunge la client). UI `src/admin/PredictionPanel.tsx` (PredictionCard + LeadPrediction în
     expanderul de lead + ClientContacts = listă contacte per client cu „Prezice comportament", în expanderul de client din AdminHome).
+  - **F2 (ACTIV 23.06.2026):** predicțiile pe lead alimentează tab-ul „Sugestii" — `buildSuggestions` capătă `predictions[]` +
+    tipuri `predictionHot` (high) / `predictionCooling` (medium); `SuggestionsPanel` listener pe `leadPredictions`.
   - **Confidențialitate:** tot sub `clients/{uid}/**`; PII brut DOAR în submissions; prompturile primesc DOAR mascat + sumar
-    comportamental. **Faze viitoare:** F2 (sugestii din predicții), F3 (warehouse: unificare cross-identificator + events cross-LP +
-    churn/LTV), F4 (client-facing /app: mirror client-safe + consimțământ + fair-share quota + App Check).
+    comportamental. **Faze viitoare:** F3 (warehouse: unificare cross-identificator + churn/LTV), F4 (client-facing /app: mirror
+    client-safe + consimțământ + fair-share quota + App Check).
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

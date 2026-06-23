@@ -780,6 +780,8 @@ const ro = {
     sugVerdict_scale: 'Campanie de scalat',
     sugReportMissing: 'Raport lunar nelivrat luna aceasta',
     sugFollowUp: 'Follow-up CRM scadent ({{date}})',
+    sugPredHot: 'Lead fierbinte — acționează acum',
+    sugPredCooling: 'Lead se răcește — reactivează',
     lpStudio: {
       title: 'Landing Pages',
       new: 'Pagină nouă',

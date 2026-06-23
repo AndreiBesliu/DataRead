@@ -4,7 +4,7 @@
  * Firestore (leads + campaigns) în input-urile simple (ms-uri) de aici. Sortare după severitate.
  */
 
-export type SuggestionKind = 'leadUntouched' | 'leadStale' | 'campaignAction' | 'reportMissing' | 'followUpDue';
+export type SuggestionKind = 'leadUntouched' | 'leadStale' | 'campaignAction' | 'reportMissing' | 'followUpDue' | 'predictionHot' | 'predictionCooling';
 export type SuggestionSeverity = 'high' | 'medium' | 'low';
 export type SuggestionView = 'leads' | 'marketing';
 
@@ -43,6 +43,14 @@ export interface SuggestionCampaign {
   headline: string;
 }
 
+/** Predicție comportamentală pe un lead (din leadPredictions) — F2: o transformăm în sugestie operator. */
+export interface SuggestionPrediction {
+  leadId: string;
+  companyName: string;
+  temperature: string; // '' | 'hot' | 'warm' | 'cooling' | 'cold'
+  conversionLikelihood: string; // '' | 'low' | 'med' | 'high'
+}
+
 export const SUG_THRESHOLDS = { newDays: 2, contactedDays: 14 };
 const DAY_MS = 86_400_000;
 const SEV_RANK: Record<SuggestionSeverity, number> = { high: 0, medium: 1, low: 2 };
@@ -53,9 +61,10 @@ function monthKey(ms: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-export function buildSuggestions(input: { leads: SuggestionLead[]; campaigns: SuggestionCampaign[]; nowMs: number }): Suggestion[] {
+export function buildSuggestions(input: { leads: SuggestionLead[]; campaigns: SuggestionCampaign[]; predictions?: SuggestionPrediction[]; nowMs: number }): Suggestion[] {
   const leads = Array.isArray(input.leads) ? input.leads : [];
   const campaigns = Array.isArray(input.campaigns) ? input.campaigns : [];
+  const predictions = Array.isArray(input.predictions) ? input.predictions : [];
   const nowMs = input.nowMs;
   const out: Suggestion[] = [];
 
@@ -93,6 +102,17 @@ export function buildSuggestions(input: { leads: SuggestionLead[]; campaigns: Su
         campaignId: c.id,
         leadId: c.leadId,
       });
+    }
+  }
+
+  // 2b) Predicție comportamentală pe lead (F2): fierbinte → acționează acum (high); se răcește/rece → reactivează (medium).
+  // Predicțiile sunt generate la cerere de operator → sugestia apare doar pentru lead-urile cu o predicție deja făcută.
+  for (const p of predictions) {
+    if (!p.leadId) continue;
+    if (p.temperature === 'hot') {
+      out.push({ id: `predictionHot:${p.leadId}`, kind: 'predictionHot', severity: 'high', titleKey: 'admin.sugPredHot', params: {}, detail: p.companyName || p.leadId, view: 'leads', leadId: p.leadId });
+    } else if (p.temperature === 'cooling' || p.temperature === 'cold') {
+      out.push({ id: `predictionCooling:${p.leadId}`, kind: 'predictionCooling', severity: 'medium', titleKey: 'admin.sugPredCooling', params: {}, detail: p.companyName || p.leadId, view: 'leads', leadId: p.leadId });
     }
   }
 

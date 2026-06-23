@@ -2188,6 +2188,13 @@ normaliser, secretele niciodată în chat/repo.
 > Review adversarial (PII în prompt + securitate callable + paritate/UI). DEPLOYED: functions + hosting. Faze rămase: 2 (sugestii),
 > 3 (warehouse: unificare identitate + events cross-LP + churn/LTV), 4 (client-facing /app cu consimțământ + fair-share).
 
+**2026-06-23 - Task Completed — Predicție F2: sugestii din predicții (operator)**
+> Model: Claude Opus 4.8 (1M context). Predicțiile pe lead alimentează acum tab-ul „Sugestii". `buildSuggestions` (pur)
+> capătă input `predictions[]` + două tipuri noi: `predictionHot` (temperature hot → high, „acționează acum") și
+> `predictionCooling` (cooling/cold → medium, „reactivează"); warm → fără sugestie (zgomot). `SuggestionsPanel` are
+> listener nou pe `leadPredictions` (300), îmbinat cu numele firmei din leads în useMemo. Pur frontend (fără functions/rules).
+> Verificat: typecheck + 18/18 suites (3 teste noi în test-landing) + build + boot. DEPLOYED: hosting. Următor: F3 (coadă merge).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
