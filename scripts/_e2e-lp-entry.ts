@@ -12,5 +12,7 @@ export { coerceToSelfMarketingConfig, selfPoolFor, SELF_MKT_CONFIG_DEFAULT, SELF
 export { INDUSTRIES } from '../src/types/onboarding';
 // Paritate TS↔JS pt. livrabilele structurate (felia 5a): coerce TS vs clampDeliverables JS.
 export { coerceToDeliverables, coerceToMarketingRequest } from '../src/types/request';
+// Paritate TS↔JS pt. acțiunile de insight tipate (felia 5b): coerceToInsight TS vs clampInsightActions JS.
+export { coerceToInsight, coerceInsightAction } from '../src/analytics/kpi';
 // Pentru paritatea TS↔JS a chrome-ului default (PUBLIC_CHROME_DEFAULT == DEFAULT_SITE_CHROME din functions).
 export { PUBLIC_CHROME_DEFAULT } from '../src/config/publicChrome';

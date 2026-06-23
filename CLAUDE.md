@@ -349,6 +349,17 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   păstrează valoarea brută prin coerce, afișează prin `deliverablesToSections`. Reguli NESCHIMBATE (requests = write:false
   admin-only, fără validare de formă pe deliverables). Review adversarial 3 lentile → 0 defecte. Amânat: 5b
   (`insight.actions[]`), 5c (raport `kpis[]/highlights[]/recommendations[]`).
+- **Insight de campanie TIPAT (ACTIV 23.06.2026, felia 5b):** acțiunile recomandate din analiza AI (`campaignInsights/{id}`)
+  au trecut de la blob string la `InsightAction[]{changeType,target,magnitude}` (enum-uri în `src/analytics/kpi.ts`:
+  changeType scale/reduce/pause/keep/test, target budget/audience/creative/placement/bid, magnitude small/medium/large; cap 8).
+  `verdict` (scale/maintain/pause/test) rămâne axă SEPARATĂ. `coerceToInsight` păstrează null-pe-verdict-invalid + clean break pe
+  actions (string vechi → `[]`). `INSIGHT_SCHEMA.actions` = array-de-obiecte cu `additionalProperties:false` (modelul NU mai poate
+  da proză — narativul stă în `reasoning`); `clampInsightActions` (port 1:1, paritate e2e TEST INS); `performCampaignInsight` scrie
+  `schema:2`; `migrateCampaignInsights` → `schema:2, actions:[]`. UI: `MarketingCenter` randează acțiunile ca CHIPS. Triggerul
+  `onCampaignAutomation` + `buildSuggestions` rămân pe `verdict` (a pune actions[] în ctx → oscilație). Insight-urile vechi (schema 1)
+  arată „0 acțiuni" până la regenerare. **Roadmap „în vizor" (PART 2 plan): funcție AI de PREDICȚIE COMPORTAMENTALĂ** (analizează
+  clienții CLIENȚILOR noștri, prezice comportament din istoria acumulată, eventual client-facing în /app) — cere fundație nouă de
+  date (`clients/{uid}/contacts` + events, identitate hash-uită multi-tenant) + callable de predicție; staged, NEÎNCEPUT.
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

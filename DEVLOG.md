@@ -2124,6 +2124,34 @@ normaliser, secretele niciodată în chat/repo.
 >   array-aware + LPSRC adVariants) + build + boot-smoke. Review adversarial (3 lentile: regresie/paritate/merge-privacy) cu
 >   verificare per finding. DEPLOYED: functions + hosting. Felii rămase: 5b (insight.actions[]), 5c (raport kpis[]/highlights[]).
 
+**2026-06-23 - Task Started — AI felia 5b: insight de campanie actions string → actions[] tipat**
+> Model: Claude Opus 4.8 (1M context). Incrementul 5b din roadmap-ul AI. `campaignInsights.actions` e azi blob string
+> („3-5 acțiuni numerotate") → îl transformăm în `InsightAction[]{changeType,target,magnitude}` (rețeta felia 5a), pentru
+> chips în UI + pregătire ca declanșatoare de automatizare/sugestii. Clean break: insight-uri vechi (string) → `[]` prin coerce.
+
+**2026-06-23 - Task Completed — AI felia 5b: insight de campanie actions string → actions[] tipat**
+> Model: Claude Opus 4.8 (1M context). Acțiunile recomandate ale analizei de campanie au trecut de la blob string la
+> SCHEMĂ TIPATĂ (`InsightAction[]`), pe rețeta dovedită la 5a. `verdict` (scale/maintain/pause/test) rămâne — axă separată.
+> - **src/analytics/kpi.ts:** enum-uri exportate `INSIGHT_CHANGE_TYPES` (scale/reduce/pause/keep/test, fallback keep) /
+>   `INSIGHT_TARGETS` (budget/audience/creative/placement/bid, fallback budget) / `INSIGHT_MAGNITUDES` (small/medium/large,
+>   fallback medium); `AiInsight.actions: string → InsightAction[]`; `coerceInsightAction` (enum cu fallback); `coerceToInsight`
+>   PĂSTREAZĂ null-pe-verdict-invalid (UI tratează null = fără insight) + clean break pe actions (string/non-array → `[]`); NOU
+>   `insightActionsToText` (flatten → text numerotat pt. copy/PDF).
+> - **functions/index.js:** `INSIGHT_SCHEMA.actions` → array-de-obiecte (3 enum-uri, required, `additionalProperties:false` ⇒
+>   modelul NU mai poate da proză); NOU `clampInsightActions` (port 1:1, exportat) lângă clampDeliverables; `performCampaignInsight`
+>   scrie `schema:2, actions: clampInsightActions(out)`; `buildInsightPrompt` cere acum 3-5 acțiuni STRUCTURATE (changeType+target+
+>   magnitude), nu proză (narativul stă în `reasoning`); `migrateCampaignInsights` → `schema:2, actions:[]` (clean break, fără re-parsare).
+> - **MarketingCenter.tsx:** acțiunile randate ca CHIPS (changeType colorat + target + magnitude), nu proză; `reasoning` rămâne text.
+> - **Riscul principal (regresia string→array):** orice `{insight.actions}` randat ca string → `[object Object]`; reparat (chips
+>   + niciodată `.trim()/.slice()/.startsWith()` pe array). Singurii consumatori: kpi.ts (coerce) + MarketingCenter (chips);
+>   onCampaignAutomation/SuggestionsPanel citesc doar verdict/headline (neatinse).
+> - **Anti-drift:** tabele enum/plafon JS marcate „PARITATE"; e2e `TEST INS` verifică clampInsightActions JS == coerceToInsight TS
+>   pe cazuri adversariale (string→[], cap 8, enum-fallback) + că FIECARE enum din INSIGHT_SCHEMA e acceptat de coerce (schema↔coerce).
+> Verificat: typecheck + 18/18 suites (test-normalisers + test-analytics actualizat) + e2e (TEST INS + MIG actualizat) + build +
+>   boot-smoke. Review adversarial (regresie + paritate/schema) cu verificare per finding. DEPLOYED: functions + hosting (rules
+>   neschimbate). NB: insight-urile vechi (schema 1, string) arată „0 acțiuni" până la regenerare (clean break, precedent 5a).
+>   Felii rămase: predicție comportamentală (PART 2 din plan), 5c (raport kpis[]/highlights[]/recommendations[]).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

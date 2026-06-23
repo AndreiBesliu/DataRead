@@ -689,13 +689,16 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
   ok(lcb.includes('DATE REALE DIN CAMPANIILE TALE') && lcb.includes('C1'), 'liveCampaignsBlock: sumar campanii cu spend');
   ok(fns.liveCampaignsBlock([]) === '' && fns.liveCampaignsBlock([{ name: 'X', totals: { spend: 0 } }]) === '', 'liveCampaignsBlock: fără spend → gol');
 
-  ok(fns.prevInsightBlock({ verdict: 'scale', headline: 'merge bine', actions: '1. crește bugetul' }).includes('ANALIZA TA ANTERIOARĂ'),
-    'prevInsightBlock: insight anterior formatat');
+  // Felia 5b: prevInsight.actions e ARRAY tipat (forma reală persistată în campaignInsights). NU trebuie să apară „[object Object]".
+  const prevBlk = fns.prevInsightBlock({ verdict: 'scale', headline: 'merge bine', actions: [{ changeType: 'scale', target: 'budget', magnitude: 'large' }] });
+  ok(prevBlk.includes('ANALIZA TA ANTERIOARĂ'), 'prevInsightBlock: insight anterior formatat');
+  ok(!prevBlk.includes('[object Object]') && prevBlk.includes('crește bugetul'), 'prevInsightBlock: acțiuni array aplatizate lizibil (fără [object Object])');
+  ok(fns.prevInsightBlock({ verdict: 'scale', actions: [] }).includes('Acțiuni recomandate') === false, 'prevInsightBlock: actions=[] → fără secțiune de acțiuni (guard pe length)');
   ok(fns.prevInsightBlock(null) === '', 'prevInsightBlock: null → gol');
 
   // Prompt builders cu noile param + backward-compat (fără param → fără bloc).
-  const insP = fns.buildInsightPrompt({ companyName: 'Y', industry: 'retail' }, { name: 'C' }, [], { verdict: 'test', headline: 'h', actions: 'a' });
-  ok(insP.includes('ANALIZA TA ANTERIOARĂ'), 'buildInsightPrompt: prevInsight inclus');
+  const insP = fns.buildInsightPrompt({ companyName: 'Y', industry: 'retail' }, { name: 'C' }, [], { verdict: 'test', headline: 'h', actions: [{ changeType: 'pause', target: 'creative', magnitude: 'small' }] });
+  ok(insP.includes('ANALIZA TA ANTERIOARĂ') && !insP.includes('[object Object]'), 'buildInsightPrompt: prevInsight inclus (array aplatizat, fără [object Object])');
   ok(!fns.buildInsightPrompt({ companyName: 'Y' }, { name: 'C' }, []).includes('ANALIZA TA ANTERIOARĂ'), 'buildInsightPrompt: fără prev → fără bloc (compat)');
 
   const rep = fns.buildClientReportPrompt({ companyName: 'Y' }, [{ name: 'C', totals: { spend: 100, revenue: 200, leads: 3 } }], mom);
@@ -1058,6 +1061,35 @@ console.log('\nDELIV) livrabile structurate — paritate clamp JS ↔ coerce TS'
   ok(allMatch, 'clampDeliverables JS == coerceToDeliverables TS (subset pe tip) pe cazuri adversariale');
   ok(!('notes' in fns.clampDeliverables('campaign', { notes: 'x' })), 'clampDeliverables exclude notes (păstrat de set+merge)');
   ok(fns.clampDeliverables('content', { calendar: 'blob' }).calendar.length === 0, 'format vechi string → listă goală (clean break)');
+}
+
+// ── TEST INS: acțiuni de insight tipate (felia 5b) — paritate clampInsightActions (JS) ↔ coerceToInsight (TS). ──
+console.log('\nINS) insight actions tipate — paritate clamp JS ↔ coerce TS');
+{
+  const cases = [
+    [{ changeType: 'scale', target: 'budget', magnitude: 'large' }, { changeType: 'bad', target: 'x', magnitude: 'huge' }, 'nu-i obiect'],
+    Array(20).fill({ changeType: 'keep', target: 'bid', magnitude: 'small' }), // cap la max
+    'string vechi nu array', // clean break → []
+    [],
+  ];
+  let allMatch = true;
+  for (const acts of cases) {
+    const js = fns.clampInsightActions({ actions: acts });
+    const ts = C.coerceToInsight({ verdict: 'scale', actions: acts }).actions;
+    if (JSON.stringify(js) !== JSON.stringify(ts)) { allMatch = false; console.error('  divergență', JSON.stringify(js), '!=', JSON.stringify(ts)); }
+  }
+  ok(allMatch, 'clampInsightActions JS == coerceToInsight().actions TS pe cazuri adversariale (string→[], cap, enum-fallback)');
+  ok(fns.clampInsightActions({ actions: 'blob vechi' }).length === 0, 'format vechi (string) → listă goală (clean break)');
+  ok(fns.clampInsightActions({ actions: Array(20).fill({}) }).length === 8, 'cap acțiuni la 8');
+  // Aserțiuni de formă + anti-drift schema↔coerce.
+  const sa = fns.INSIGHT_SCHEMA.properties.actions;
+  ok(sa.type === 'array', 'INSIGHT_SCHEMA.actions = array');
+  ok(JSON.stringify(sa.items.required) === JSON.stringify(['changeType', 'target', 'magnitude']), 'items required = cele 3 câmpuri');
+  ok(sa.items.additionalProperties === false, 'items additionalProperties:false (respinge proza)');
+  const enumOk = sa.items.properties.changeType.enum.every((v) => C.coerceInsightAction({ changeType: v, target: 'budget', magnitude: 'small' }).changeType === v)
+    && sa.items.properties.target.enum.every((v) => C.coerceInsightAction({ changeType: 'keep', target: v, magnitude: 'small' }).target === v)
+    && sa.items.properties.magnitude.enum.every((v) => C.coerceInsightAction({ changeType: 'keep', target: 'budget', magnitude: v }).magnitude === v);
+  ok(enumOk, 'fiecare enum din INSIGHT_SCHEMA e acceptat de coerceInsightAction (schema↔coerce, fără drift)');
 }
 
 // ── TEST W: A/B testing „pe sloturi" — helpers puri + serveLp (split/sticky/cookie/abStats) + submit atribuit. ──
@@ -1494,7 +1526,8 @@ console.log('\nMIG) performMigrateCampaignInsights — relocare + scrub leak aiI
   const res = await fns.performMigrateCampaignInsights(db);
   ok(res.migrated === 1 && res.scrubbed === 1, 'MIG: o campanie migrată + curățată (cea fără insight sărită)');
   const ins = store.get('campaignInsights/c1');
-  ok(ins && ins.verdict === 'scale' && ins.headline === 'Merge bine' && ins.reasoning === 'ROAS mare' && ins.actions === 'Crește bugetul', 'MIG: campaignInsights are verdict/headline/reasoning/actions');
+  // Felia 5b clean break: migrarea NU re-parsează vechiul `actions` (string) → schema 2 cu actions:[].
+  ok(ins && ins.schema === 2 && ins.verdict === 'scale' && ins.headline === 'Merge bine' && ins.reasoning === 'ROAS mare' && Array.isArray(ins.actions) && ins.actions.length === 0, 'MIG: campaignInsights schema 2 (verdict/headline/reasoning + actions:[] clean break)');
   ok(ins && ins.clientUid === 'u1' && ins.platform === 'meta' && ins.leadId === 'L1' && ins.by === 'operator9', 'MIG: denormalizări clientUid/platform/leadId/by prezente (consumate de triggere)');
   const c1 = store.get('campaigns/c1');
   ok(c1 && !('aiInsight' in c1) && !('aiInsightAt' in c1) && !('aiInsightBy' in c1), 'MIG: câmpurile scurse ȘTERSE de pe campaigns/{id} (leak închis)');

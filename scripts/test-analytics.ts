@@ -112,13 +112,13 @@ check('campanie: totals coerce-uit din doc', (() => {
 // AI insight coerce.
 check('insight: null → null', coerceToInsight(null) === null);
 check('insight: verdict invalid → null', coerceToInsight({ verdict: 'explode', headline: 'x' }) === null);
-check('insight: valid trece', (() => {
-  const i = coerceToInsight({ verdict: 'scale', headline: 'Merge bine', reasoning: 'ROAS 3.5', actions: '1. crește bugetul' });
-  return i?.verdict === 'scale' && i.headline === 'Merge bine' && i.actions.startsWith('1.');
+check('insight: valid trece (actions = array tipat, felia 5b)', (() => {
+  const i = coerceToInsight({ verdict: 'scale', headline: 'Merge bine', reasoning: 'ROAS 3.5', actions: [{ changeType: 'scale', target: 'budget', magnitude: 'medium' }] });
+  return i?.verdict === 'scale' && i.headline === 'Merge bine' && Array.isArray(i.actions) && i.actions.length === 1 && i.actions[0].changeType === 'scale';
 })());
-check('insight: câmpuri lipsă → string gol, nu crash', (() => {
+check('insight: câmpuri lipsă → string gol + listă goală, nu crash', (() => {
   const i = coerceToInsight({ verdict: 'pause' });
-  return i?.verdict === 'pause' && i.headline === '' && i.reasoning === '';
+  return i?.verdict === 'pause' && i.headline === '' && i.reasoning === '' && Array.isArray(i.actions) && i.actions.length === 0;
 })());
 
 // Raport client coerce.

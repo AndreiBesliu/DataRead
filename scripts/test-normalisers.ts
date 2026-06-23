@@ -134,6 +134,43 @@ check('request: valori valide trec', (() => {
 })());
 check('request: campaignStructure (proză) tăiat la plafon', coerceToMarketingRequest({ deliverables: { campaignStructure: 'x'.repeat(20000) } }).deliverables.campaignStructure.length === 8000);
 
+// ── coerceToInsight + acțiuni tipate (felia 5b) ───────────────────────────────────────────────
+import { coerceToInsight, coerceInsightAction, insightActionsToText, INSIGHT_CHANGE_TYPES, INSIGHT_TARGETS, INSIGHT_MAGNITUDES, INSIGHT_ACTIONS_MAX, INSIGHT_TEXT_MAX } from '../src/analytics/kpi';
+
+check('insight: null/non-obiect → null', coerceToInsight(null) === null && coerceToInsight('x') === null);
+check('insight: verdict invalid → null (UI tratează null = fără insight)', coerceToInsight({ verdict: 'mega', actions: [] }) === null);
+check('insight: format vechi (actions string) → listă goală (clean break, fără parsare)', (() => {
+  const ins = coerceToInsight({ verdict: 'scale', headline: 'H', reasoning: 'R', actions: '1. fă ceva\n2. altceva' });
+  return !!ins && Array.isArray(ins.actions) && ins.actions.length === 0;
+})());
+check('insight: acțiuni valide păstrate', (() => {
+  const ins = coerceToInsight({ verdict: 'test', actions: [{ changeType: 'scale', target: 'budget', magnitude: 'large' }] });
+  return !!ins && ins.actions.length === 1 && ins.actions[0].changeType === 'scale' && ins.actions[0].target === 'budget' && ins.actions[0].magnitude === 'large';
+})());
+check('insight: enum invalid / non-obiect → defaults (keep/budget/medium)', (() => {
+  const a1 = coerceInsightAction({ changeType: 'boom', target: 'galaxy', magnitude: 'huge' });
+  const a2 = coerceInsightAction('nope');
+  return a1.changeType === 'keep' && a1.target === 'budget' && a1.magnitude === 'medium'
+    && a2.changeType === 'keep' && a2.target === 'budget' && a2.magnitude === 'medium';
+})());
+check('insight: cap acțiuni la max', (() => {
+  const ins = coerceToInsight({ verdict: 'maintain', actions: Array(20).fill({ changeType: 'keep', target: 'bid', magnitude: 'small' }) });
+  return !!ins && ins.actions.length === INSIGHT_ACTIONS_MAX;
+})());
+check('insight: headline/reasoning tăiate la plafon', (() => {
+  const ins = coerceToInsight({ verdict: 'pause', headline: 'h'.repeat(9000), reasoning: 'r'.repeat(9000), actions: [] });
+  return !!ins && ins.headline.length === INSIGHT_TEXT_MAX && ins.reasoning.length === INSIGHT_TEXT_MAX;
+})());
+check('insight: insightActionsToText → linii numerotate cu chei enum', (() => {
+  const txt = insightActionsToText((k) => k, [{ changeType: 'scale', target: 'budget', magnitude: 'large' }, { changeType: 'pause', target: 'creative', magnitude: 'small' }]);
+  const lines = txt.split('\n');
+  return lines.length === 2 && lines[0].startsWith('1. ') && lines[0].includes('admin.insChange_scale') && lines[1].startsWith('2. ');
+})());
+// Acoperire chei i18n pt. enum-urile de insight (ro primar; en prin typecheck).
+for (const c of INSIGHT_CHANGE_TYPES) check(`cheie ro insChange: ${c}`, roKeyExists(`admin.insChange_${c}`));
+for (const tgt of INSIGHT_TARGETS) check(`cheie ro insTarget: ${tgt}`, roKeyExists(`admin.insTarget_${tgt}`));
+for (const m of INSIGHT_MAGNITUDES) check(`cheie ro insMag: ${m}`, roKeyExists(`admin.insMag_${m}`));
+
 // ── coerceToOnboardingDraft (calea localStorage) ─────────────────────────────────────────────
 check('draft: null → null', coerceToOnboardingDraft(null) === null);
 check('draft: JSON stricat → null, fără throw', coerceToOnboardingDraft('{broken json!') === null);

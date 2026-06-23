@@ -170,19 +170,59 @@ export function kpisByPlatform(items: Array<{ platform: Platform; totals: Totals
 export const VERDICTS = ['scale', 'maintain', 'pause', 'test'] as const;
 export type Verdict = (typeof VERDICTS)[number];
 
+// Felia 5b: acțiunile recomandate au devenit SCHEMĂ TIPATĂ (array de obiecte) — chips în UI + pregătire
+// pentru declanșatoare de automatizare/sugestii. `verdict` = axă separată (recomandarea globală).
+export const INSIGHT_CHANGE_TYPES = ['scale', 'reduce', 'pause', 'keep', 'test'] as const;
+export type InsightChangeType = (typeof INSIGHT_CHANGE_TYPES)[number];
+export const INSIGHT_TARGETS = ['budget', 'audience', 'creative', 'placement', 'bid'] as const;
+export type InsightTarget = (typeof INSIGHT_TARGETS)[number];
+export const INSIGHT_MAGNITUDES = ['small', 'medium', 'large'] as const;
+export type InsightMagnitude = (typeof INSIGHT_MAGNITUDES)[number];
+export const INSIGHT_ACTIONS_MAX = 8;
+export const INSIGHT_TEXT_MAX = 4000;
+
+export interface InsightAction {
+  changeType: InsightChangeType;
+  target: InsightTarget;
+  magnitude: InsightMagnitude;
+}
+
 export interface AiInsight {
   verdict: Verdict;
   headline: string;
   reasoning: string;
-  actions: string;
+  actions: InsightAction[];
+}
+
+function inInsightEnum<T extends string>(list: readonly T[], v: unknown, fb: T): T {
+  return list.includes(v as T) ? (v as T) : fb;
+}
+
+/** Normalizează o acțiune recomandată (enum cu fallback) — pe modelul coerceAdVariant din request.ts. */
+export function coerceInsightAction(v: unknown): InsightAction {
+  const d = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  return {
+    changeType: inInsightEnum(INSIGHT_CHANGE_TYPES, d.changeType, 'keep'),
+    target: inInsightEnum(INSIGHT_TARGETS, d.target, 'budget'),
+    magnitude: inInsightEnum(INSIGHT_MAGNITUDES, d.magnitude, 'medium'),
+  };
 }
 
 export function coerceToInsight(v: unknown): AiInsight | null {
   if (typeof v !== 'object' || v === null) return null;
   const d = v as Record<string, unknown>;
   if (!VERDICTS.includes(d.verdict as Verdict)) return null;
-  const s = (x: unknown) => (typeof x === 'string' ? x.slice(0, 4000) : '');
-  return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions: s(d.actions) };
+  const s = (x: unknown) => (typeof x === 'string' ? x.slice(0, INSIGHT_TEXT_MAX) : '');
+  // Clean break: format vechi (string) / non-array → listă goală, fără throw/parsare.
+  const actions = Array.isArray(d.actions) ? d.actions.slice(0, INSIGHT_ACTIONS_MAX).map(coerceInsightAction) : [];
+  return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions };
+}
+
+/** Flatten acțiunile → text numerotat pt. copy/PDF (reutilizat de MarketingCenter; pe modelul deliverablesToSections). */
+export function insightActionsToText(t: (k: string) => string, actions: InsightAction[]): string {
+  return actions
+    .map((a, i) => `${i + 1}. ${t('admin.insChange_' + a.changeType)} · ${t('admin.insTarget_' + a.target)} · ${t('admin.insMag_' + a.magnitude)}`)
+    .join('\n');
 }
 
 // Raportul lunar de performanță prezentat clientului (generat de AI din campaniile lui).

@@ -514,6 +514,29 @@ function clampDeliverables(kind, out) {
 }
 exports.clampDeliverables = clampDeliverables;
 
+// Acțiuni de insight tipate (felia 5b) — PARITATE cu src/analytics/kpi.ts. Drift prins de e2e (TEST INS).
+const INSIGHT_CHANGE_TYPES = ['scale', 'reduce', 'pause', 'keep', 'test'];
+const INSIGHT_TARGETS = ['budget', 'audience', 'creative', 'placement', 'bid'];
+const INSIGHT_MAGNITUDES = ['small', 'medium', 'large'];
+const INSIGHT_ACTIONS_MAX = 8;
+
+// Clamp al acțiunilor de insight AI — port 1:1 al coerceInsightAction din kpi.ts (enum cu fallback,
+// listă tăiată la plafon). Întoarce DOAR array-ul de acțiuni; restul câmpurilor insight rămân string.
+function clampInsightActions(out) {
+  const o = out && typeof out === 'object' ? out : {};
+  const arr = Array.isArray(o.actions) ? o.actions : [];
+  const inEnum = (list, v, fb) => (list.includes(v) ? v : fb);
+  return arr.slice(0, INSIGHT_ACTIONS_MAX).map((x) => {
+    const a = x && typeof x === 'object' ? x : {};
+    return {
+      changeType: inEnum(INSIGHT_CHANGE_TYPES, a.changeType, 'keep'),
+      target: inEnum(INSIGHT_TARGETS, a.target, 'budget'),
+      magnitude: inEnum(INSIGHT_MAGNITUDES, a.magnitude, 'medium'),
+    };
+  });
+}
+exports.clampInsightActions = clampInsightActions;
+
 const OBJECTIVE_RO = { leads: 'lead-uri / cereri de ofertă', sales: 'vânzări online', awareness: 'notorietate / brand', traffic: 'trafic pe site', other: 'alt obiectiv' };
 
 function leadContextBlock(lead) {
@@ -1280,11 +1303,25 @@ const INSIGHT_SCHEMA = {
     verdict: { type: 'string', enum: ['scale', 'maintain', 'pause', 'test'], description: 'Recomandarea principală: scale (scalează), maintain (menține), pause (oprește), test (testează variante).' },
     headline: { type: 'string', description: 'O propoziție scurtă în română cu concluzia.' },
     reasoning: { type: 'string', description: '2-4 fraze în română care justifică verdictul pe baza cifrelor concrete (ROAS, CPL, CTR).' },
-    actions: { type: 'string', description: '3-5 acțiuni concrete în română, câte una pe linie, numerotate.' },
+    actions: {
+      type: 'array',
+      description: '3-5 acțiuni concrete de optimizare, ordonate de la cea mai importantă. Fiecare = obiect structurat (ce schimbi, pe ce, cât de mult). Raționamentul detaliat stă în `reasoning`.',
+      items: {
+        type: 'object',
+        properties: {
+          changeType: { type: 'string', enum: ['scale', 'reduce', 'pause', 'keep', 'test'], description: 'Tipul schimbării: scale (crește), reduce (scade), pause (oprește), keep (menține), test (testează).' },
+          target: { type: 'string', enum: ['budget', 'audience', 'creative', 'placement', 'bid'], description: 'Pârghia vizată: budget (buget), audience (audiență/targetare), creative (reclame), placement (plasări), bid (licitare).' },
+          magnitude: { type: 'string', enum: ['small', 'medium', 'large'], description: 'Amploarea schimbării: small (mică), medium (medie), large (mare).' },
+        },
+        required: ['changeType', 'target', 'magnitude'],
+        additionalProperties: false,
+      },
+    },
   },
   required: ['verdict', 'headline', 'reasoning', 'actions'],
   additionalProperties: false,
 };
+exports.INSIGHT_SCHEMA = INSIGHT_SCHEMA; // pt. aserțiuni de formă în e2e (TEST INS)
 
 const r2 = (n) => (n === null ? '—' : Math.round(n * 100) / 100);
 
@@ -1328,10 +1365,13 @@ function buildInsightPrompt(lead, camp, metrics, prevInsight) {
     recent || '(fără zile introduse)',
     ...(pib ? ['', pib] : []),
     '',
-    'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test), explică-l raportându-te',
-    'la ROAS/CPL/CTR și la trend, și dă acțiuni concrete. Reguli generale de bun-simț: ROAS sub 1',
-    '= se pierde bani (pauză sau test); ROAS sănătos și stabil = scalează gradual; CTR mic = problemă',
-    'de creativ/audiență; CPL în creștere = oboseală de reclamă.',
+    'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test) și explică-l în `reasoning`',
+    'raportându-te la ROAS/CPL/CTR și la trend. În `actions` dă 3-5 acțiuni STRUCTURATE de optimizare,',
+    'ordonate de la cea mai importantă — fiecare e un obiect cu: changeType (scale/reduce/pause/keep/test),',
+    'target (budget/audience/creative/placement/bid) și magnitude (small/medium/large). NU scrie acțiunile',
+    'ca proză sau text liber — doar cele trei câmpuri din enum. Detaliile narative stau în `reasoning`.',
+    'Reguli generale de bun-simț: ROAS sub 1 = se pierde bani (pause sau test); ROAS sănătos și stabil =',
+    'scale gradual pe budget; CTR mic = problemă de creative/audience; CPL în creștere = oboseală de reclamă.',
     'Compară fiecare KPI cu reperele de industrie din Fundație (dacă sunt furnizate) și spune dacă e peste/',
     'sub/în normă. Localizează UNDE se rupe pâlnia (impresii → click → lead → client) prin metrica potrivită',
     'și recomandă fix-ul pentru exact acel punct, nu generic.',
@@ -1398,12 +1438,25 @@ function liveCampaignsBlock(campaigns) {
 }
 exports.liveCampaignsBlock = liveCampaignsBlock;
 
+// Etichete RO scurte pt. acțiunile tipate (felia 5b) — JS-ul din functions nu are i18n (t()).
+const PREV_CHANGE_RO = { scale: 'crește', reduce: 'scade', pause: 'oprește', keep: 'menține', test: 'testează' };
+const PREV_TARGET_RO = { budget: 'bugetul', audience: 'audiența', creative: 'reclamele', placement: 'plasările', bid: 'licitarea' };
+const PREV_MAG_RO = { small: 'puțin', medium: 'moderat', large: 'mult' };
+
 // Insight-ul ANTERIOR al campaniei (continuitate) — pt. promptul de analiză. Gol dacă nu există.
 function prevInsightBlock(prev) {
   if (!prev || typeof prev !== 'object') return '';
   const v = prev.verdict ? `Verdict anterior: ${prev.verdict}` : '';
   const h = prev.headline ? `\nConcluzia anterioară: ${String(prev.headline).slice(0, 500)}` : '';
-  const a = prev.actions ? `\nAcțiuni recomandate data trecută:\n${String(prev.actions).slice(0, 1200)}` : '';
+  // Felia 5b: `actions` e ARRAY tipat → aplatizăm în text lizibil (NU String(array) → „[object Object]").
+  // Defensiv: dacă vin string-uri legacy (schema 1), le păstrăm ca atare.
+  const acts = Array.isArray(prev.actions)
+    ? prev.actions.slice(0, 8).map((x) => {
+        const o = x && typeof x === 'object' ? x : {};
+        return `- ${PREV_CHANGE_RO[o.changeType] || o.changeType || 'modifică'} ${PREV_TARGET_RO[o.target] || o.target || ''} (${PREV_MAG_RO[o.magnitude] || o.magnitude || ''})`;
+      }).join('\n')
+    : (typeof prev.actions === 'string' ? prev.actions.slice(0, 1200) : '');
+  const a = acts ? `\nAcțiuni recomandate data trecută:\n${acts}` : '';
   if (!v && !h && !a) return '';
   return ['== ANALIZA TA ANTERIOARĂ (verifică dacă recomandările au fost aplicate și dacă au funcționat; nu repeta orbește) ==', `${v}${h}${a}`].join('\n');
 }
@@ -1492,13 +1545,13 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
     headline: clampText(out.headline, 4000),
     reasoning: clampText(out.reasoning, 4000),
-    actions: clampText(out.actions, 4000),
+    actions: clampInsightActions(out), // felia 5b: array tipat {changeType,target,magnitude}, NU string
   };
   // Analiza AI = judecată INTERNĂ a operatorului (verdict/reasoning + UID-ul lui). NU se scrie pe campaigns/{id}
   // (citibilă de client) — ci pe campaignInsights/{id} (admin-only), ca să nu se scurgă către client. Denormalizăm
   // leadId/clientUid/platform pentru triggerul de automatizare + listenerele admin (fără citire suplimentară a campaniei).
   await db.collection('campaignInsights').doc(campaignId).set({
-    schema: 1, verdict: insight.verdict, headline: insight.headline, reasoning: insight.reasoning, actions: insight.actions,
+    schema: 2, verdict: insight.verdict, headline: insight.headline, reasoning: insight.reasoning, actions: insight.actions,
     leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
     at: admin.firestore.FieldValue.serverTimestamp(), by: actorUid,
   }, { merge: true });
@@ -3084,11 +3137,11 @@ async function performMigrateCampaignInsights(db) {
       // Oglindește în colecția admin-only (merge: nu suprascrie un insight mai nou scris deja de codul nou).
       const verdict = ['scale', 'maintain', 'pause', 'test'].includes(ins.verdict) ? ins.verdict : 'maintain';
       ops.push(db.collection('campaignInsights').doc(d.id).set({
-        schema: 1,
+        schema: 2,
         verdict,
         headline: String(ins.headline || '').slice(0, 4000),
         reasoning: String(ins.reasoning || '').slice(0, 4000),
-        actions: String(ins.actions || '').slice(0, 4000),
+        actions: [], // felia 5b clean break: vechiul `actions` (string) NU se re-parsează → listă goală până la regenerare
         leadId: String(camp.leadId || ''),
         clientUid: String(camp.clientUid || ''),
         platform: String(camp.platform || ''),

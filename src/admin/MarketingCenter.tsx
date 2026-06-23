@@ -41,6 +41,7 @@ import {
   type CampaignDef,
   type CampaignStatus,
   type DailyMetric,
+  type InsightChangeType,
   type Kpis,
   type Platform,
   type Verdict,
@@ -48,6 +49,9 @@ import {
 
 const VERDICT_KEY: Record<Verdict, string> = { scale: 'admin.verdictScale', maintain: 'admin.verdictMaintain', pause: 'admin.verdictPause', test: 'admin.verdictTest' };
 const VERDICT_COLOR: Record<Verdict, string> = { scale: '#1e7e34', maintain: '#2563eb', pause: '#c0392b', test: '#b07b1e' };
+// Felia 5b: acțiunile tipate randate ca chips. changeType colorat (oglindă VERDICT_COLOR); target/magnitude = chips neutre.
+const CHANGE_KEY: Record<InsightChangeType, string> = { scale: 'admin.insChange_scale', reduce: 'admin.insChange_reduce', pause: 'admin.insChange_pause', keep: 'admin.insChange_keep', test: 'admin.insChange_test' };
+const CHANGE_COLOR: Record<InsightChangeType, string> = { scale: '#1e7e34', reduce: '#b07b1e', pause: '#c0392b', keep: '#2563eb', test: '#7c3aed' };
 
 const PLATFORM_KEY: Record<Platform, string> = { meta: 'admin.platMeta', google: 'admin.platGoogle', tiktok: 'admin.platTiktok', other: 'admin.platOther' };
 const PLATFORM_SHORT: Record<Platform, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
@@ -353,7 +357,18 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.aiInsightAt')} {fmtTs(insightAt)}</span>
           </div>
           <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 8px', whiteSpace: 'pre-wrap' }}>{insight.reasoning}</p>
-          <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{insight.actions}</div>
+          {insight.actions.length > 0 && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              {insight.actions.map((a, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 12 }}>
+                  <span style={{ color: 'var(--fg-1)', fontWeight: 700, minWidth: 16 }}>{i + 1}.</span>
+                  <span style={{ background: CHANGE_COLOR[a.changeType], color: '#fff', fontWeight: 700, borderRadius: 5, padding: '2px 9px', textTransform: 'uppercase', letterSpacing: 0.3 }}>{t(CHANGE_KEY[a.changeType])}</span>
+                  <span style={{ border: '1px solid var(--border)', borderRadius: 5, padding: '2px 9px' }}>{t('admin.insTarget_' + a.target)}</span>
+                  <span style={{ border: '1px solid var(--border)', borderRadius: 5, padding: '2px 9px', color: 'var(--fg-1)' }}>{t('admin.insMag_' + a.magnitude)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
