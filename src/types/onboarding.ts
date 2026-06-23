@@ -5,6 +5,7 @@
  * testată headless în scripts/test-onboarding-validate.ts.
  */
 import { isValidPackageId, type PackageId } from '../config/packages';
+import { isValidServiceId, type ServiceId } from '../config/services';
 
 export const ONBOARDING_SCHEMA = 1;
 export const ONBOARDING_DRAFT_KEY = 'dataread.onboardingDraft.v1';
@@ -45,6 +46,8 @@ export interface OnboardingData {
   tiktok: string;
   description: string;
   packageInterest: PackageId | null;
+  /** Serviciul de interes din catalogul /servicii (?service=…) — null dacă lead-ul vine din alt flux. */
+  serviceInterest: ServiceId | null;
 }
 
 export function emptyOnboarding(): OnboardingData {
@@ -65,6 +68,7 @@ export function emptyOnboarding(): OnboardingData {
     tiktok: '',
     description: '',
     packageInterest: null,
+    serviceInterest: null,
   };
 }
 
@@ -98,6 +102,7 @@ export function coerceToOnboarding(data: unknown): OnboardingData {
     tiktok: str(d.tiktok, 200),
     description: str(d.description, 2000),
     packageInterest: isValidPackageId(d.packageInterest) ? d.packageInterest : null,
+    serviceInterest: isValidServiceId(d.serviceInterest) ? d.serviceInterest : null,
   };
 }
 

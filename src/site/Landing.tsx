@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
 import { track } from '../services/analytics';
+import { SERVICES } from '../config/services';
 
 /** Iconurile serviciilor din banner (chart / target / funnel / rachetă) — SVG inline roșu. */
 function ServiceIcon({ kind }: { kind: 1 | 2 | 3 | 4 }) {
@@ -112,6 +113,21 @@ export default function Landing() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Teaser catalog servicii → /servicii (toate cele 7 servicii). */}
+      <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '52px 24px 8px', textAlign: 'center' }}>
+        <h2 className="section-title" style={{ fontSize: 28 }}>{t('services.kicker')}</h2>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', margin: '24px 0 22px' }}>
+          {SERVICES.map((s) => (
+            <span key={s.id} style={{ fontSize: 13, fontWeight: 700, color: '#dbe4f5', border: '1px solid var(--border)', borderRadius: 999, padding: '7px 15px' }}>
+              <span aria-hidden style={{ marginRight: 6 }}>{s.emoji}</span>{t(`services.${s.id}.name`)}
+            </span>
+          ))}
+        </div>
+        <Link to={p('/servicii')} className="btn btn-blue" style={{ fontSize: 15, padding: '12px 24px' }}>
+          {t('nav.services')} →
+        </Link>
       </section>
 
       {/* Cum funcționează. */}

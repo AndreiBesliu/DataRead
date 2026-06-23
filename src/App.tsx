@@ -12,6 +12,7 @@ import Packages from './site/Packages';
 import StartPage from './site/StartPage';
 import SelfMarketing from './site/SelfMarketing';
 import SelfMarketingPackages from './site/SelfMarketingPackages';
+import Services from './site/Services';
 import Contact from './site/Contact';
 import Legal from './site/Legal';
 // Rutele auth-gated (NU sunt prerenderizate) = lazy → ies din bundle-ul principal, se încarcă la cerere.
@@ -48,6 +49,7 @@ function NotFound() {
 const PAGE_FOR_SLUG: Record<string, ReactElement> = {
   '/': <Landing />,
   '/pachete': <Packages />,
+  '/servicii': <Services />,
   '/self-marketing': <SelfMarketing />,
   '/self-marketing/pachete': <SelfMarketingPackages />,
   '/start': <StartPage />,

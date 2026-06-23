@@ -49,7 +49,7 @@ service cloud.firestore {
       allow create: if request.resource.data.keys().hasOnly(
           ['schema', 'companyName', 'cui', 'website', 'contactName', 'contactEmail', 'contactPhone',
            'industry', 'industryOther', 'objectives', 'adBudget', 'facebook', 'instagram', 'tiktok',
-           'description', 'packageInterest', 'locale', 'status', 'createdAt']
+           'description', 'packageInterest', 'serviceInterest', 'locale', 'status', 'createdAt']
         )
         && request.resource.data.schema == 1
         && request.resource.data.status == 'new'
@@ -71,6 +71,8 @@ service cloud.firestore {
         && (!('instagram' in request.resource.data) || (request.resource.data.instagram is string && request.resource.data.instagram.size() <= 200))
         && (!('tiktok' in request.resource.data) || (request.resource.data.tiktok is string && request.resource.data.tiktok.size() <= 200))
         && (!('packageInterest' in request.resource.data) || (request.resource.data.packageInterest is string && request.resource.data.packageInterest.size() <= 60))
+        // serviceInterest e mereu prezent din formular (null sau ServiceId) — SDK-ul scrie null ca field, deci cheia există mereu.
+        && (!('serviceInterest' in request.resource.data) || request.resource.data.serviceInterest == null || (request.resource.data.serviceInterest is string && request.resource.data.serviceInterest.size() <= 40))
         && (!('locale' in request.resource.data) || (request.resource.data.locale is string && request.resource.data.locale.size() <= 10));
 
       // Cererile de marketing ale lead-ului (Verticala 1) — exclusiv zona operatorilor.
@@ -272,7 +274,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(
             ['schema', 'companyName', 'cui', 'website', 'contactName', 'contactEmail', 'contactPhone',
              'industry', 'industryOther', 'objectives', 'adBudget', 'facebook', 'instagram', 'tiktok',
-             'description', 'packageInterest', 'locale', 'submittedAt', 'updatedAt']
+             'description', 'packageInterest', 'serviceInterest', 'locale', 'submittedAt', 'updatedAt']
           )
           && request.resource.data.schema == 1
           && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120

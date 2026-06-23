@@ -138,6 +138,8 @@ function OnboardingDetail({ detail }: { detail: OnboardingData }) {
       <dd style={{ margin: 0 }}>{[detail.facebook, detail.instagram, detail.tiktok].filter(Boolean).join(' · ') || '—'}</dd>
       <dt style={{ fontWeight: 700 }}>{t('admin.fPackage')}</dt>
       <dd style={{ margin: 0 }}>{detail.packageInterest ? t(`pachete.${detail.packageInterest}.name`) : '—'}</dd>
+      <dt style={{ fontWeight: 700 }}>{t('admin.fService')}</dt>
+      <dd style={{ margin: 0 }}>{detail.serviceInterest ? t(`services.${detail.serviceInterest}.name`) : '—'}</dd>
       <dt style={{ fontWeight: 700 }}>{t('admin.fDescription')}</dt>
       <dd style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{detail.description || '—'}</dd>
     </dl>
@@ -413,7 +415,7 @@ export default function AdminHome() {
     const header = [
       t('admin.colDate'), t('admin.colCompany'), t('admin.fCui'), t('admin.fWebsite'),
       t('admin.fContact'), t('admin.colEmail'), t('admin.colPhone'), t('admin.fIndustry'),
-      t('admin.fObjectives'), t('admin.fBudget'), t('admin.fPackage'), t('admin.colStatus'),
+      t('admin.fObjectives'), t('admin.fBudget'), t('admin.fPackage'), t('admin.fService'), t('admin.colStatus'),
       t('admin.notesLabel'), t('admin.fDescription'),
     ];
     const lines = rows.map((l) =>
@@ -429,6 +431,7 @@ export default function AdminHome() {
         l.data.objectives.map((o) => t(`onboarding.objective.${o}`)).join(', '),
         l.data.adBudget ? t(`onboarding.budget.${l.data.adBudget}`) : '',
         l.data.packageInterest ? t(`pachete.${l.data.packageInterest}.name`) : '',
+        l.data.serviceInterest ? t(`services.${l.data.serviceInterest}.name`) : '',
         t(STATUS_KEY[l.status]),
         l.notes,
         l.data.description,
@@ -674,6 +677,7 @@ export default function AdminHome() {
                             <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>
                               {l.data.companyName || '—'}
                               {(l.data as unknown as Record<string, unknown>).source === 'self-discovery' ? <span title={t('admin.leadSelfDiscovery')} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--accent)', borderRadius: 4, padding: '1px 5px' }}>🔎 Self</span> : null}
+                              {l.data.serviceInterest ? <span title={t('admin.fService')} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: 'var(--fg-1)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{t(`services.${l.data.serviceInterest}.name`)}</span> : null}
                             </td>
                             <td style={td}>{l.data.contactEmail || '—'}</td>
                             <td style={td}>{l.data.contactPhone || '—'}</td>

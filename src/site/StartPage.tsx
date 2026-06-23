@@ -7,6 +7,7 @@ import i18n from '../i18n';
 import { track } from '../services/analytics';
 import { reportError } from '../services/errorReporting';
 import { isValidPackageId } from '../config/packages';
+import { isValidServiceId } from '../config/services';
 import {
   coerceToOnboardingDraft,
   emptyOnboarding,
@@ -43,6 +44,12 @@ export default function StartPage() {
   useEffect(() => {
     const pkg = params.get('pkg');
     if (isValidPackageId(pkg)) setData((d) => ({ ...d, packageInterest: pkg }));
+  }, [params]);
+
+  // ?service= din pagina /servicii etichetează lead-ul cu serviciul cerut.
+  useEffect(() => {
+    const svc = params.get('service');
+    if (isValidServiceId(svc)) setData((d) => ({ ...d, serviceInterest: svc }));
   }, [params]);
 
   // Autosave draft local.
@@ -101,7 +108,7 @@ export default function StartPage() {
         /* private mode */
       }
       setSubmitted(true);
-      track('lead_submitted', { pkg: clean.packageInterest ?? 'none' });
+      track('lead_submitted', { pkg: clean.packageInterest ?? 'none', service: clean.serviceInterest ?? 'none' });
       window.scrollTo({ top: 0 });
     } catch (err) {
       reportError(err, { kind: 'lead-submit' });
@@ -132,7 +139,14 @@ export default function StartPage() {
   return (
     <main data-page="start" style={{ maxWidth: 760, margin: '0 auto', padding: '40px 24px' }}>
       <h1 className="section-title" style={{ fontSize: 30 }}>{t('start.title')}</h1>
-      <p style={{ color: 'var(--fg-1)', textAlign: 'center', margin: '18px 0 26px' }}>{t('start.intro')}</p>
+      <p style={{ color: 'var(--fg-1)', textAlign: 'center', margin: '18px 0 16px' }}>{t('start.intro')}</p>
+      {data.serviceInterest && (
+        <p style={{ textAlign: 'center', margin: '0 0 22px' }}>
+          <span style={{ display: 'inline-block', fontSize: 13, fontWeight: 700, color: '#dbe4f5', border: '1px solid var(--border)', borderRadius: 999, padding: '6px 14px' }}>
+            {t('start.serviceInterest', { name: t(`services.${data.serviceInterest}.name`) })}
+          </span>
+        </p>
+      )}
 
       <form onSubmit={submit} className="card" style={{ display: 'grid', gap: 14 }}>
         <OnboardingFields data={data} errors={errors} set={set} toggleObjective={toggleObjective} />

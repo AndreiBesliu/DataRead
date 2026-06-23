@@ -24,6 +24,9 @@ const ro = {
     selfPackagesTitle: 'Pachete Self Marketing — DataRead',
     selfPackagesDescription:
       'Pachete de credite pentru generarea de strategii AI: o explorare = 1 credit. Începe cu explorările gratuite.',
+    servicesTitle: 'Servicii — DataRead',
+    servicesDescription:
+      'Audit, SaaS & platforme, automatizări, creare site web, Self Marketing, automatizare SEO și SMS + email marketing. Soluții digitale care aduc creștere.',
     contactTitle: 'Contact — DataRead',
     contactDescription: 'Hai să vorbim despre marketingul firmei tale. Scrie-ne și revenim rapid.',
     termsTitle: 'Termeni și condiții — DataRead',
@@ -33,6 +36,7 @@ const ro = {
   },
   nav: {
     packages: 'Pachete',
+    services: 'Servicii',
     selfMarketing: 'Self Marketing',
     contact: 'Contact',
     signIn: 'Intră în cont',
@@ -40,6 +44,90 @@ const ro = {
     admin: 'Admin',
     login: 'Autentificare',
     logout: 'Ieși',
+  },
+  services: {
+    kicker: 'Soluții digitale inteligente',
+    heroTitle: 'Orientați pe date. Focusați pe rezultate.',
+    heroBody:
+      'Transformăm datele, tehnologia și procesele în soluții inteligente care aduc eficiență, scalabilitate și creștere sustenabilă. Alege un serviciu și cerem împreună următorul pas.',
+    // Pastilele de valoare din infografie.
+    pill1: 'Soluții scalabile',
+    pill2: 'Tehnologie inteligentă',
+    pill3: 'Procese optimizate',
+    pill4: 'Rezultate măsurabile',
+    // CTA-uri pe card.
+    ctaLead: 'Solicită ofertă',
+    ctaTry: 'Încearcă acum',
+    liveBadge: 'Disponibil acum',
+    finalTitle: 'Să creștem împreună',
+    finalBody: 'Spune-ne ce serviciu te interesează și revenim cu un plan concret pentru firma ta.',
+    finalCta: 'Începe acum',
+    // 1. Audit (Analiză)
+    audit: {
+      name: 'Audit (Analiză)',
+      tagline: 'Înțelegem unde ești și unde poți crește.',
+      b1: 'Analiză completă a datelor și proceselor',
+      b2: 'Audit de marketing și vânzări',
+      b3: 'Identificarea oportunităților de creștere',
+      b4: 'Rapoarte clare și acționabile',
+    },
+    // 2. SaaS și platforme
+    saas: {
+      name: 'SaaS și platforme',
+      tagline: 'Construim platforme web care scalează cu tine.',
+      b1: 'Soluții SaaS personalizate',
+      b2: 'Platforme web scalabile',
+      b3: 'Dashboard-uri și raportare avansată',
+      b4: 'Integrare API și sisteme externe',
+    },
+    // 3. Automatizări / optimizări
+    automation: {
+      name: 'Automatizări și optimizări',
+      tagline: 'Mai puțină muncă manuală, mai multă eficiență.',
+      b1: 'Automatizări de procese și workflow-uri',
+      b2: 'CRM & pipeline automatizat',
+      b3: 'Optimizarea proceselor de business',
+      b4: 'Reducerea costurilor și creșterea eficienței',
+    },
+    // 4. Creare site web (CMS)
+    web: {
+      name: 'Creare site web (CMS)',
+      tagline: 'Site-uri și magazine care chiar convertesc.',
+      b1: 'Site-uri de prezentare',
+      b2: 'Magazine online',
+      b3: 'Landing pages care convertesc',
+      b4: 'CMS (WordPress, custom etc.)',
+      b5: 'Design modern & UX performant',
+    },
+    // 5. Self Marketing (produs live)
+    self: {
+      name: 'Self Marketing',
+      tagline: 'Platformă all-in-one: strategia ta de marketing cu AI.',
+      b1: 'Platformă all-in-one pentru reclame',
+      b2: 'Strategii personalizate',
+      b3: 'Planificare & optimizare campanii',
+      b4: 'Analiză performanță în timp real',
+      b5: 'Ghidare pas cu pas',
+    },
+    // 6. Automatizare SEO
+    seo: {
+      name: 'Automatizare SEO',
+      tagline: 'Trafic organic care crește lună de lună.',
+      b1: 'Audit SEO automatizat',
+      b2: 'Monitorizare cuvinte cheie',
+      b3: 'Optimizare on-page & tehnică',
+      b4: 'Rapoarte SEO automate',
+      b5: 'Creșterea traficului organic',
+    },
+    // 7. SMS + email marketing
+    sms: {
+      name: 'SMS + email marketing',
+      tagline: 'Campanii automate care aduc clienții înapoi.',
+      b1: 'Campanii automate prin email & SMS',
+      b2: 'Segmentare inteligentă',
+      b3: 'Funnel-uri de nurturing',
+      b4: 'Creșterea retenției și a conversiilor',
+    },
   },
   selfMarketing: {
     // Pagina publică explicativă
@@ -258,6 +346,7 @@ const ro = {
   start: {
     title: 'Hai să începem',
     intro: 'Spune-ne despre firma ta în două minute. Nu ai nevoie de cont — îți pregătim strategia și te contactăm noi.',
+    serviceInterest: 'Serviciu de interes: {{name}}',
     submit: 'Trimite cererea',
     saving: 'Se trimite…',
     submitted: 'Cererea a fost trimisă ✓',
@@ -772,6 +861,7 @@ const ro = {
       pg_termeni: 'Termeni',
       pg_confid: 'Confidențialitate',
       pg_app: 'Portal client',
+      pg_servicii: 'Servicii',
       chrome: {
         title: 'Header & Footer',
         intro: 'Proiectează O SINGURĂ DATĂ antetul și subsolul site-ului — se aplică automat pe toate paginile noastre (paginile site + cele servite la /pagina/). Landing page-urile de campanie (/p/) NU sunt afectate.',
@@ -1481,6 +1571,7 @@ const ro = {
     fSocial: 'Social',
     fDescription: 'Descriere',
     fPackage: 'Pachet de interes',
+    fService: 'Serviciu de interes',
   },
   onboarding: {
     title: 'Spune-ne despre firma ta',

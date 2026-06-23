@@ -25,6 +25,7 @@ import { PAGE_THEMES_SCHEMA, coerceToPageThemes, type PageKey } from '../types/p
 const PLATFORM_PAGES = [
   { key: 'home', path: '/' },
   { key: 'pachete', path: '/pachete' },
+  { key: 'servicii', path: '/servicii' },
   { key: 'self', path: '/self-marketing' },
   { key: 'start', path: '/start' },
   { key: 'contact', path: '/contact' },

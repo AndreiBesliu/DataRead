@@ -16,7 +16,7 @@ console.log('SITE CHROME — header/footer global');
 // Snapshot copt valid.
 check('snapshot: schema 1', PUBLIC_CHROME_DEFAULT.schema === SITE_CHROME_SCHEMA);
 check('snapshot: brand DataRead', PUBLIC_CHROME_DEFAULT.brandName === 'DataRead');
-check('snapshot: nav are 3 linkuri interne', PUBLIC_CHROME_DEFAULT.nav.length === 3 && PUBLIC_CHROME_DEFAULT.nav.every((n) => n.href.startsWith('/')));
+check('snapshot: nav are 4 linkuri interne', PUBLIC_CHROME_DEFAULT.nav.length === 4 && PUBLIC_CHROME_DEFAULT.nav.every((n) => n.href.startsWith('/')));
 check('snapshot: CTA spre /start', PUBLIC_CHROME_DEFAULT.ctaHref === '/start');
 check('snapshot: footer are linkuri', PUBLIC_CHROME_DEFAULT.footerLinks.length >= 1);
 

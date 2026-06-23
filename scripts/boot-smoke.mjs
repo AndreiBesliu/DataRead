@@ -26,6 +26,7 @@ const CORRUPT_KEYS = [
 const PROFILES = [
   { name: 'vizitator curat /', path: '/', storage: { ...BASE }, expectSelector: '[data-page="landing"]' },
   { name: '/pachete are 3 carduri', path: '/pachete', storage: { ...BASE }, expectSelector: '[data-testid="package-card"]', minCount: 3 },
+  { name: '/servicii afișează catalogul', path: '/servicii', storage: { ...BASE }, expectSelector: '[data-page="services"]' },
   { name: 'formularul public /start', path: '/start', storage: { ...BASE }, expectSelector: '[data-page="start"]' },
   {
     name: '/start cu draft de lead corupt',

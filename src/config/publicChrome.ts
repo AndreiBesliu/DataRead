@@ -12,6 +12,7 @@ export const PUBLIC_CHROME_DEFAULT: SiteChrome = {
   taglineRo: 'Date. Strategie. Creștere.',
   taglineEn: 'Data. Strategy. Growth.',
   nav: [
+    { labelRo: 'Servicii', labelEn: 'Services', href: '/servicii' },
     { labelRo: 'Pachete', labelEn: 'Packages', href: '/pachete' },
     { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing' },
     { labelRo: 'Contact', labelEn: 'Contact', href: '/contact' },

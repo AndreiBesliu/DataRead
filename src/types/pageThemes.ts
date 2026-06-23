@@ -9,13 +9,14 @@ import { coerceToCustomTheme, type CustomTheme } from '../theme/themes';
 export const PAGE_THEMES_SCHEMA = 1;
 
 /** Cheile de pagină — corespund rutelor + listei din SiteAdminPanel (PLATFORM_PAGES). */
-export const PAGE_KEYS = ['home', 'pachete', 'self', 'start', 'contact', 'termeni', 'confid', 'app'] as const;
+export const PAGE_KEYS = ['home', 'pachete', 'servicii', 'self', 'start', 'contact', 'termeni', 'confid', 'app'] as const;
 export type PageKey = (typeof PAGE_KEYS)[number];
 
 /** slug (path, fără prefix de limbă) → cheia de pagină. Slug-urile necunoscute → undefined (fără override). */
 export const PAGE_KEY_BY_SLUG: Record<string, PageKey> = {
   '/': 'home',
   '/pachete': 'pachete',
+  '/servicii': 'servicii',
   '/self-marketing': 'self',
   '/start': 'start',
   '/contact': 'contact',

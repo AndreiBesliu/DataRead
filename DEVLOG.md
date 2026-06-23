@@ -2272,6 +2272,30 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 18/18 suites + build + boot (test NOU `/app?preview=1 → shell tematizat (fără login)`). Review adversarial
 > (bypass auth/scurgere date + corectitudine hooks/i18n). Frontend-only. DEPLOYED: hosting.
 
+**2026-06-23 - Task Completed — Catalog Servicii (Felia 1): pagină /servicii + cerere etichetată pe serviciu**
+> Model: Claude Opus 4.8 (1M context). Integrarea celor 7 servicii din infografia DataRead (Audit, SaaS & platforme,
+> Automatizări, Creare site web, Self Marketing, Automatizare SEO, SMS+Email). Felia 1 = prezentare + intake; modulele
+> software lipsă (SEO, SMS/Email) = felii ulterioare.
+> - **`src/config/services.ts` (NOU):** sursa unică — SERVICE_IDS (7), ServiceDef{emoji,bulletCount,cta:'lead'|'self'},
+>   isValidServiceId/getService/serviceBulletKeys/serviceNameKey. CTA: self → produs live (/self-marketing), restul → cerere
+>   etichetată (/start?service=id).
+> - **`src/site/Services.tsx` (NOU):** pagină publică /servicii (data-page="services") — hero + 4 pastile de valoare + grilă 7
+>   carduri (emoji/nume/tagline/bullet-uri din imagine) + CTA pe card + CTA final. Prerenderizată (rută publică).
+> - **Tag de serviciu pe lead:** OnboardingData.serviceInterest (opțional, nullable, coerce-uit prin isValidServiceId — nu sparge
+>   lead-urile vechi). StartPage citește ?service= + chip „Serviciu de interes". AdminHome: linie în detaliu + coloană CSV + chip
+>   în tabel (lângă „🔎 Self").
+> - **Integrare:** publicRoutes /servicii (+EN, prerender+sitemap), App.tsx PAGE_FOR_SLUG, default chrome nav (Servicii primul;
+>   niciun doc publicChrome în Firestore → default-ul e live), teaser pe homepage, pageThemes PAGE_KEYS+slug 'servicii' (temabilă),
+>   SiteAdminPanel PLATFORM_PAGES (apare în preview + editor temă). i18n complet ro+en (services.*, nav.services, seo.services*,
+>   admin.fService, start.serviceInterest, pg_servicii).
+> Verificat: typecheck + 20/20 suites + build + prerender (18 pagini, sitemap 14 URL) + boot (test NOU /servicii).
+> **Review adversarial — bug HIGH real prins & reparat:** câmpul nou `serviceInterest` (mereu prezent ca `null` — SDK-ul
+> serializează null ca field) NU era în whitelist-urile `hasOnly([...])` din firestore.rules → ar fi respins TOATE lead-urile
+> publice ȘI onboarding-ul de client (nu doar /servicii). Build/typecheck nu prind (eșec runtime de reguli). Fix: adăugat
+> `serviceInterest` în ambele whitelist-uri (leads + onboarding) + gardă null/string≤40 pe leads. **Plasă anti-regresie:**
+> `scripts/test-rules.ts` (NOU) leagă cheile emptyOnboarding() de ambele whitelist-uri — pică dacă un câmp nou e uitat din reguli.
+> Frontend + REGULI. DEPLOYED: hosting + firestore rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
