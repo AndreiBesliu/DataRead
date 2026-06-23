@@ -387,9 +387,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     atinge câmpurile de merge). Combinare manuală: `mergeContactDocs` (pur) + `performMergeContacts` (mută events, sursă→tombstone
     `mergedInto`) + callable admin `mergeContacts`; `onLpLeadStateWrite` urmează `mergedInto`. UI: `ClientContacts` ascunde
     tombstone-urile + „Combină duplicatul". Reguli `contactAlias` read+write false. (churn/LTV rămâne blocat — fără evenimente de valoare.)
+  - **F4 (ACTIV 23.06.2026) — client-facing:** clientul vede în /app predicții despre PROPRIII lui clienți. Trigger
+    `onContactPredictionWrite` oglindește `contactPredictions/{id}`→`clients/{uid}/predictions/{id}` CLIENT-SAFE (clampPrediction,
+    fără `by`/clientUid). UI `ContactPredictions` în AppHome (read-only, `predictionToSections`). Reguli `clients/{uid}/predictions`
+    read owner+admin/write false. Self-serve `selfPredictContact` DORMANT (`CLIENT_PREDICTION_ENABLED=false` — Andrei pornește după
+    GDPR): clientUid=token, App Check + email-verified + consimțământ (optOut/tombstone) + throttle ≥6h + fair-share self quota.
   - **Confidențialitate:** tot sub `clients/{uid}/**`; PII brut DOAR în submissions; prompturile primesc DOAR mascat + sumar
-    comportamental. **Faze viitoare:** F3 (warehouse: unificare cross-identificator + churn/LTV), F4 (client-facing /app: mirror
-    client-safe + consimțământ + fair-share quota + App Check).
+    comportamental. **Rămas pe Andrei:** pornește `CLIENT_PREDICTION_ENABLED` după consimțământ GDPR; churn/LTV când apar
+    evenimente de valoare contact↔factură.
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

@@ -173,6 +173,12 @@ service cloud.firestore {
       match /contactAlias/{hash} {
         allow read, write: if false;
       }
+      // Predicții comportamentale despre consumatorii clientului (F4) — oglindite CLIENT-SAFE de onContactPredictionWrite
+      // (fără UID-ul operatorului). Clientul le citește; scrierea e EXCLUSIV server-side (Admin SDK).
+      match /predictions/{contactId} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false;
+      }
 
       // Notificări + task-uri generate de automatizările client-scope (scope:'client'). Scrise EXCLUSIV de motor
       // (Admin SDK). Clientul își vede DOAR pe ale lui (izolare multi-tenant); poate marca un task ca rezolvat.

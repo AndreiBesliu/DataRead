@@ -2214,6 +2214,22 @@ normaliser, secretele niciodată în chat/repo.
 > combinată" (anti dublă-numărare). Teste e2e adăugate pt. ambele. DEPLOYED: functions + hosting + rules. churn/LTV rămâne
 > blocat (lipsesc evenimente de valoare contact↔factură). Următor: F4 (client-facing /app).
 
+**2026-06-23 - Task Completed — Predicție F4: client-facing /app (predicții despre clienții clientului)**
+> Model: Claude Opus 4.8 (1M context). Ultima felie a viziunii: clientul vede în /app predicții despre PROPRIII lui clienți.
+> - **Mirror client-safe:** trigger `onContactPredictionWrite` oglindește `contactPredictions/{id}` (admin-only, cu `by`
+>   operator) în `clients/{uid}/predictions/{id}` prin `clampPrediction` (păstrează DOAR câmpurile de predicție — fără `by`/
+>   clientUid/kind). Gestionează și ștergerea. Reguli: read owner+admin, write false (doar Admin SDK).
+> - **UI /app:** secțiune `ContactPredictions` în AppHome — contactele clientului (mascate, non-tombstone) + predicția
+>   oglindită, randată prin `predictionToSections` (read-only).
+> - **Self-serve DORMANT:** callable `selfPredictContact` (clientul prezice un contact propriu) — gate `CLIENT_PREDICTION_ENABLED=false`
+>   (Andrei pornește după consimțământ/acorduri GDPR). Izolare: clientUid = token (niciodată input). Garduri: App Check +
+>   `assertEmailVerified` + consimțământ (refuz pe `optOut`/tombstone) + throttle re-predicție ≥6h + cotă fair-share self
+>   (consumeSelfQuota + consumeGlobalSelfQuota + refundSelfQuota la eșec) — același tipar ca `selfGenerate*`.
+> Verificat: typecheck + 18/18 suites + e2e (clampPrediction client-safe: fără by/clientUid/kind) + build + boot. Review
+> adversarial (mirror/privacy + selfPredict gating/izolare). DEPLOYED: functions + hosting + rules.
+> **Viziunea predicției comportamentale e completă (F0→F4).** Rămas pe Andrei: pornește `CLIENT_PREDICTION_ENABLED` după GDPR;
+> churn/LTV când apar evenimente de valoare contact↔factură.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

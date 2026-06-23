@@ -1147,6 +1147,9 @@ console.log('\nPRED) predicție — paritate clamp JS ↔ coerce TS + profil mas
     && sp.nextBestActions.items.properties.action.enum.every((v) => C.coerceToPrediction({ nextBestActions: [{ action: v, detail: '', whenDays: 0 }] }).nextBestActions[0].action === v);
   ok(enumOk, 'fiecare enum din PREDICTION_SCHEMA e acceptat de coerceToPrediction (schema↔coerce, fără drift)');
   ok(sp.nextBestActions.items.additionalProperties === false && fns.PREDICTION_SCHEMA.additionalProperties === false, 'PREDICTION_SCHEMA additionalProperties:false');
+  // F4: clampPrediction = forma CLIENT-SAFE oglindită în /app — NU conține `by` (UID operator) / clientUid / kind.
+  const safe = fns.clampPrediction({ conversionLikelihood: 'high', temperature: 'hot', confidence: 'high', reasoning: 'r', nextBestActions: [], caveats: 'c', dataGaps: [], by: 'operator9', clientUid: 'u1', kind: 'contact' });
+  ok(!('by' in safe) && !('clientUid' in safe) && !('kind' in safe) && safe.conversionLikelihood === 'high', 'clampPrediction: client-safe (fără by/clientUid/kind) — baza mirror-ului F4');
   // profil mascat: NU conține PII brut (doar mascat + sumar comportamental)
   const contact = { emailMasked: 'a***@x.ro', phoneMasked: '', identityKind: 'email', lifecycle: 'contactat', rollup: { submissions: 2, firstSeen: 1, lastSeen: 2, lastSlug: 'promo' } };
   const events = [{ type: 'form_submit', at: 1, slug: 'promo', utm: { source: 'fb' } }, { type: 'status_change', at: 2, detail: 'contactat' }];

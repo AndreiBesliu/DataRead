@@ -45,7 +45,7 @@ export const OPERATOR_HELP: HelpSection[] = [
 export const CLIENT_HELP: HelpSection[] = [
   sec('clAccount', 2),
   sec('clSelf', 7),
-  sec('clPerformance', 2),
+  sec('clPerformance', 3),
   sec('clReport', 2),
   sec('clDeliverables', 2),
   sec('clLp', 3),

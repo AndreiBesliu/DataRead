@@ -403,6 +403,33 @@ exports.onLpLeadStateWrite = onDocumentWritten({ document: 'clients/{uid}/lpLead
   }
 });
 
+// ── F4: oglindește predicția de contact (admin-only, cu `by` operator) în subarborele clientului, CLIENT-SAFE.
+//    clampPrediction păstrează DOAR câmpurile de predicție (fără `by`/clientUid) → clientul vede predicția despre
+//    propriul consumator, fără să afle operatorul. Scrisă EXCLUSIV de Admin SDK (reguli: read owner+admin, write false). ──
+exports.onContactPredictionWrite = onDocumentWritten({ document: 'contactPredictions/{contactId}', region: REGION }, async (event) => {
+  const { contactId } = event.params;
+  try {
+    const db = admin.firestore();
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    if (!after) {
+      const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+      const cuid = before && typeof before.clientUid === 'string' ? before.clientUid : '';
+      if (cuid) await db.collection('clients').doc(cuid).collection('predictions').doc(contactId).delete().catch(() => {});
+      return;
+    }
+    const clientUid = typeof after.clientUid === 'string' ? after.clientUid : '';
+    if (!clientUid) return;
+    if (!(await clientExists(db, clientUid))) return;
+    // clampPrediction = exact câmpurile client-safe (fără `by`/clientUid/kind). Adăugăm doar `at` pt. afișare.
+    await db.collection('clients').doc(clientUid).collection('predictions').doc(contactId).set({
+      ...clampPrediction(after),
+      at: after.at || admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    logger.error('onContactPredictionWrite mirror failed', { contactId, err: String(err) });
+  }
+});
+
 // ── Sincronizare clientUid lead → campanii. Campania denormalizează clientUid-ul lead-ului (pentru
 // regulile multi-tenant + jobul de ingestie care mapează campania → credențiala clientului). Când
 // adminul conectează/reconectează/deconectează lead-ul la un cont (leads/{id}.clientUid se schimbă),
@@ -446,6 +473,9 @@ const { defineSecret } = require('firebase-functions/params');
 
 const AI_ENABLED = true; // activat 12.06.2026 — ANTHROPIC_API_KEY e în Secret Manager (v1)
 const PREDICTION_ENABLED = true; // Predicție comportamentală (Faza 1) — gate în plus sub AI_ENABLED; flip+deploy oprește.
+// F4: predicția SELF-SERVE în portalul clientului (clientul prezice comportamentul PROPRIILOR clienți). DORMANT
+// până aranjează Andrei consimțământul/acordurile GDPR la nivel de formular. Mirror-ul read-only e mereu activ.
+const CLIENT_PREDICTION_ENABLED = false;
 // Enforcement App Check pe callable-urile client-facing (selfGenerateStrategy/Details) — la Functions se face
 // ÎN COD (nu există toggle în consolă). Activat 16.06.2026 după ce App Check a ajuns la ~99-100% verified.
 // Rollback de urgență: pune false + `npm run deploy:functions` (sau dezactivează cheia reCAPTCHA în client).
@@ -2143,6 +2173,43 @@ if (AI_ENABLED) {
       const { leadId } = request.data || {};
       if (typeof leadId !== 'string' || !leadId) throw new HttpsError('invalid-argument', 'leadId e obligatoriu.');
       return await performPrediction(admin.firestore(), { kind: 'lead', leadId, actorUid: request.auth.uid, consume: () => consumeAiQuota(request.auth.uid) });
+    }
+  );
+
+  // F4: predicție SELF-SERVE — clientul prezice comportamentul PROPRIULUI consumator (contact). DORMANT (CLIENT_PREDICTION_ENABLED).
+  // Subiectul e MEREU sub clients/{auth.uid} (clientUid = token, niciodată input) → izolare strictă. Cotă fair-share + throttle + consimțământ.
+  exports.selfPredictContact = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      assertAuth(request);
+      const uid = request.auth.uid;
+      if (!CLIENT_PREDICTION_ENABLED) throw new HttpsError('failed-precondition', 'Predicția în portal nu e activată încă.');
+      const contactId = String((request.data || {}).contactId || '');
+      if (!contactId) throw new HttpsError('invalid-argument', 'contactId e obligatoriu.');
+      const db = admin.firestore();
+      const cSnap = await db.collection('clients').doc(uid).collection('contacts').doc(contactId).get();
+      if (!cSnap.exists) throw new HttpsError('not-found', 'Contactul nu există.');
+      const c = cSnap.data() || {};
+      if (c.optOut === true) throw new HttpsError('failed-precondition', 'Acest contact a refuzat profilarea (opt-out).');
+      if (c.mergedInto) throw new HttpsError('failed-precondition', 'Contact combinat.');
+      // Throttle: re-predicție pentru același contact cel mult o dată la 6h (anti-click-spam de cost).
+      const pSnap = await db.collection('contactPredictions').doc(contactId).get();
+      if (pSnap.exists) {
+        const at = (pSnap.data() || {}).at;
+        const atMs = at && typeof at.toMillis === 'function' ? at.toMillis() : 0;
+        if (atMs && Date.now() - atMs < 6 * 3600 * 1000) throw new HttpsError('resource-exhausted', 'Ai generat recent o predicție pentru acest contact. Reîncearcă mai târziu.');
+      }
+      const selfCfg = await readSelfMarketingConfig(db);
+      assertEmailVerified(request, selfCfg);
+      await consumeSelfQuota(uid);
+      try {
+        await consumeGlobalSelfQuota(db, await selfGlobalPoolFor(db, uid, selfCfg));
+        // clientUid = uid (din token) → clientul poate prezice DOAR contactele LUI. Mirror-ul surfacează rezultatul în /app.
+        return await performPrediction(db, { kind: 'contact', clientUid: uid, contactId, actorUid: uid });
+      } catch (err) {
+        await refundSelfQuota(uid);
+        throw err;
+      }
     }
   );
 

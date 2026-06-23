@@ -20,6 +20,8 @@ import { reportError } from '../services/errorReporting';
 import type { ClientProfile } from '../types/client';
 import { getPackage, isValidPackageId } from '../config/packages';
 import { coerceToCampaign, coerceToReport, kpisFromTotals, type CampaignDef, type ClientReport } from '../analytics/kpi';
+import { coerceToContact, contactDisplay, type Contact } from '../types/contact';
+import { coerceToPrediction, predictionToSections, type Prediction } from '../types/prediction';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
 
 const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
@@ -617,6 +619,67 @@ function InvoicesPortal({ uid }: { uid: string }) {
   );
 }
 
+/** F4: predicții comportamentale despre PROPRIII clienți (consumatori), oglindite client-safe de functions în
+ *  clients/{uid}/predictions (fără UID-ul operatorului). Read-only — generate de agenție (sau, când e activat, de client). */
+function ContactPredictions({ uid }: { uid: string }) {
+  const { t } = useTranslation();
+  const tr = (k: string, opts?: Record<string, unknown>) => t(k, opts) as string;
+  const [contacts, setContacts] = useState<Array<{ id: string; data: Contact }> | null>(null);
+  const [preds, setPreds] = useState<Record<string, Prediction>>({});
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    const off1 = onSnapshot(
+      query(collection(db, 'clients', uid, 'contacts'), orderBy('rollup.lastSeen', 'desc'), limit(100)),
+      (snap) => setContacts(snap.docs.map((d) => ({ id: d.id, data: coerceToContact(d.data()) }))),
+      () => setContacts([])
+    );
+    const off2 = onSnapshot(
+      collection(db, 'clients', uid, 'predictions'),
+      (snap) => { const m: Record<string, Prediction> = {}; snap.forEach((d) => { m[d.id] = coerceToPrediction(d.data()); }); setPreds(m); },
+      () => setPreds({})
+    );
+    return () => { off1(); off2(); };
+  }, [uid]);
+
+  if (contacts === null) return null;
+  const visible = contacts.filter(({ data }) => !data.mergedInto);
+  if (visible.length === 0) return null;
+
+  return (
+    <section style={{ marginTop: 28 }}>
+      <h2 style={{ fontSize: 20, marginBottom: 4 }}>{t('appHome.contactsTitle')}</h2>
+      <p style={{ color: 'var(--fg-1)', fontSize: 13, margin: '0 0 12px' }}>{t('appHome.contactsHint')}</p>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {visible.map(({ id, data }) => {
+          const p = preds[id];
+          const isOpen = open === id;
+          return (
+            <div key={id} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14 }}>{contactDisplay(data) || t('appHome.contactAnon')}</strong>
+                <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t(`appHome.ls_${data.lifecycle}`)} · {data.rollup.submissions} {t('appHome.contactInteractions')}</span>
+                {p && <button className="btn" style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }} onClick={() => setOpen(isOpen ? null : id)}>{isOpen ? t('appHome.predHide') : t('appHome.predShow')}</button>}
+              </div>
+              {p && isOpen && (
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {predictionToSections(tr, p).map((s) => (
+                    <div key={s.label}>
+                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)' }}>{s.label}</div>
+                      <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{s.body}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!p && <div style={{ fontSize: 12, color: 'var(--fg-1)', marginTop: 4 }}>{t('appHome.predNone')}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function AppHome() {
   const { t } = useTranslation();
   const { user, initializing, signOutUser } = useAuthStore();
@@ -768,6 +831,8 @@ export default function AppHome() {
 
       {/* Portalul de marketing — datele reale ale clientului (read-only). */}
       <MarketingPortal uid={user.uid} />
+      {/* F4: predicții comportamentale despre PROPRIII clienți (oglindite client-safe, read-only). */}
+      <ContactPredictions uid={user.uid} />
       {/* Landing Pages ale clientului — performanță + lead-uri capturate (scoped prin rules). */}
       <LandingPagesPortal uid={user.uid} />
       {/* Automatizări client-scope — notificări + task-uri generate de motor pe contul lui. */}
