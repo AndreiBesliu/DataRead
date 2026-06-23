@@ -192,6 +192,10 @@ check('contact: rollup corupt → 0/empty (nu NaN/throw)', (() => {
   return c.rollup.submissions === 0 && c.rollup.firstSeen === 0 && c.rollup.lastSeen === 0 && c.rollup.lastSlug === '';
 })());
 check('contact: mascare email/telefon', () => maskEmail('Andrei@Gmail.com') === 'a***@gmail.com' && maskPhone('+40 712 345 789') === '***789' && maskEmail('not-an-email') === '' && maskPhone('12') === '');
+check('contact: mergeWith/mergedInto coerce (F3)', (() => {
+  const c = coerceToContact({ mergeWith: ['x', 42, '', 'y'], mergedInto: 'Z' });
+  return c.mergeWith.length === 2 && c.mergeWith[0] === 'x' && c.mergeWith[1] === 'y' && c.mergedInto === 'Z' && coerceToContact({}).mergeWith.length === 0 && coerceToContact({}).mergedInto === '';
+})());
 check('contact: normalizare email/telefon', () => normalizeEmail('  X@Y.RO ') === 'x@y.ro' && normalizePhone('+40-712.345.789').length === 9 && normalizeEmail('nope') === '');
 
 check('contactEvent: non-obiect → default form_submit at 0', (() => {

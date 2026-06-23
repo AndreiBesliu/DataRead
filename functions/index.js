@@ -312,16 +312,33 @@ exports.onSubmissionCreate = onDocumentCreated({ document: 'landingPages/{slug}/
     if (!(await clientExists(db, clientUid))) return;
     const fields = lp.form && Array.isArray(lp.form.fields) ? lp.form.fields : [];
     const id = extractContactIdentity(sub.values, fields);
-    const contactId = id.kind === 'anon' ? `sub_${subId}` : identityHash(clientUid, id.kind, id.value);
+    const emailHash = id.email ? identityHash(clientUid, 'email', id.email) : '';
+    const phoneHash = id.phone ? identityHash(clientUid, 'phone', id.phone) : '';
+    const clientRef = db.collection('clients').doc(clientUid);
+    const contactsCol = clientRef.collection('contacts');
+    // contactId: email = canonic; telefon-only = rutat prin alias (auto-unificare F3) dacă a fost văzut lângă un email; altfel anonim.
+    let contactId;
+    if (emailHash) {
+      contactId = emailHash;
+    } else if (phoneHash) {
+      const al = await clientRef.collection('contactAlias').doc(phoneHash).get();
+      const aliasTo = al.exists ? (al.data() || {}).contactId : '';
+      contactId = typeof aliasTo === 'string' && aliasTo ? aliasTo : phoneHash;
+    } else {
+      contactId = `sub_${subId}`;
+    }
+    contactId = await liveContactId(contactsCol, contactId); // F3: nu scrie pe un contact combinat (urmează mergedInto)
     const nowMs = sub.createdAt && typeof sub.createdAt.toMillis === 'function' ? sub.createdAt.toMillis() : Date.now();
     const utm = sub.utm && typeof sub.utm === 'object' ? sub.utm : {};
-    const cRef = db.collection('clients').doc(clientUid).collection('contacts').doc(contactId);
+    const cRef = contactsCol.doc(contactId);
     await db.runTransaction(async (tx) => {
       const cSnap = await tx.get(cRef);
       const prev = cSnap.exists ? (cSnap.data() || {}) : null;
       const prevRollup = prev && prev.rollup && typeof prev.rollup === 'object' ? prev.rollup : {};
-      const shaped = clampContact({
-        identityKind: id.kind,
+      // Patch DOAR pe câmpurile de ingestie — NU atinge mergeCandidate/mergeWith/mergedInto (merge:true le păstrează).
+      tx.set(cRef, {
+        schema: 1,
+        identityKind: (prev && prev.identityKind) || id.kind,
         emailMasked: id.emailMasked || (prev && prev.emailMasked) || '',
         phoneMasked: id.phoneMasked || (prev && prev.phoneMasked) || '',
         lifecycle: (prev && prev.lifecycle) || 'nou',
@@ -331,10 +348,6 @@ exports.onSubmissionCreate = onDocumentCreated({ document: 'landingPages/{slug}/
           lastSeen: nowMs,
           lastSlug: slug,
         },
-        mergeCandidate: !!(prev && prev.mergeCandidate),
-      });
-      tx.set(cRef, {
-        ...shaped,
         createdAt: (prev && prev.createdAt) || admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -342,8 +355,20 @@ exports.onSubmissionCreate = onDocumentCreated({ document: 'landingPages/{slug}/
         type: 'form_submit', at: nowMs, submissionId: subId, slug, detail: '',
         utm: { source: utm.source, medium: utm.medium, campaign: utm.campaign },
       }));
-      tx.set(db.collection('clients').doc(clientUid).collection('contactRefs').doc(subId), { contactId, at: nowMs });
+      tx.set(clientRef.collection('contactRefs').doc(subId), { contactId, at: nowMs });
     });
+    // F3 — alias + detecție duplicat (best-effort, după tranzacție): dacă submission-ul are ȘI email ȘI telefon,
+    // viitoarele telefon-only rutează la contactul de email; dacă exista deja un contact separat pe telefon → merge-candidate.
+    if (emailHash && phoneHash) {
+      const ts = admin.firestore.FieldValue.serverTimestamp();
+      await clientRef.collection('contactAlias').doc(phoneHash).set({ contactId: emailHash, at: nowMs }, { merge: true });
+      const other = await contactsCol.doc(phoneHash).get();
+      if (other.exists && !(other.data() || {}).merged && phoneHash !== emailHash) {
+        const arr = admin.firestore.FieldValue.arrayUnion;
+        await contactsCol.doc(emailHash).set({ mergeCandidate: true, mergeWith: arr(phoneHash), updatedAt: ts }, { merge: true });
+        await contactsCol.doc(phoneHash).set({ mergeCandidate: true, mergeWith: arr(emailHash), updatedAt: ts }, { merge: true });
+      }
+    }
   } catch (err) {
     logger.error('onSubmissionCreate ingest failed', { slug, subId, err: String(err) });
   }
@@ -363,9 +388,12 @@ exports.onLpLeadStateWrite = onDocumentWritten({ document: 'clients/{uid}/lpLead
     if (before && before.status === after.status) return; // doar la schimbare reală de status
     const db = admin.firestore();
     const refSnap = await db.collection('clients').doc(uid).collection('contactRefs').doc(subId).get();
-    const contactId = refSnap.exists ? (refSnap.data() || {}).contactId : '';
-    if (!contactId || typeof contactId !== 'string') return; // submission neîngerat → nimic de actualizat
-    const cRef = db.collection('clients').doc(uid).collection('contacts').doc(contactId);
+    const refContactId = refSnap.exists ? (refSnap.data() || {}).contactId : '';
+    if (!refContactId || typeof refContactId !== 'string') return; // submission neîngerat → nimic de actualizat
+    const contactsCol = db.collection('clients').doc(uid).collection('contacts');
+    // F3: urmează lanțul de tombstone (mergedInto) → scrie pe contactul VIU, nu pe unul combinat.
+    const contactId = await liveContactId(contactsCol, refContactId);
+    const cRef = contactsCol.doc(contactId);
     await cRef.set({ lifecycle: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     await cRef.collection('events').doc().set(clampContactEvent({
       type: 'status_change', at: Date.now(), submissionId: subId, slug: typeof after.slug === 'string' ? after.slug : '', detail: status, utm: {},
@@ -656,6 +684,19 @@ exports.maskEmailJs = maskEmailJs;
 exports.maskPhoneJs = maskPhoneJs;
 exports.identityHash = identityHash;
 
+// Urmează lanțul de tombstone-uri (mergedInto) până la contactul VIU (max 5 hopuri). F3: ingestia + status nu
+// trebuie să scrie NICIODATĂ pe un contact combinat (ascuns) — alias-urile/refs pot indica spre tombstone-uri.
+async function liveContactId(contactsCol, startId) {
+  let id = startId;
+  for (let i = 0; i < 5; i++) {
+    const snap = await contactsCol.doc(id).get();
+    const mi = snap.exists ? (snap.data() || {}).mergedInto : '';
+    if (typeof mi === 'string' && mi && mi !== id) id = mi; else break;
+  }
+  return id;
+}
+exports.liveContactId = liveContactId;
+
 // Extrage identitatea (email preferat, telefon fallback) din valorile unui submission, folosind TIPURILE câmpurilor
 // LP (field.type email/tel) cu fallback euristic pe NUME (ca mapSubmissionToLead). Întoarce forma normalizată + mascată.
 function extractContactIdentity(values, fields) {
@@ -667,9 +708,12 @@ function extractContactIdentity(values, fields) {
   const rawPhone = byType('tel') || byName(/phone|tel|telefon/);
   const email = normEmailJs(rawEmail);
   const phone = normPhoneJs(rawPhone);
-  if (email) return { kind: 'email', value: email, emailMasked: maskEmailJs(rawEmail), phoneMasked: maskPhoneJs(rawPhone) };
-  if (phone) return { kind: 'phone', value: phone, emailMasked: '', phoneMasked: maskPhoneJs(rawPhone) };
-  return { kind: 'anon', value: '', emailMasked: '', phoneMasked: '' };
+  const emailMasked = maskEmailJs(rawEmail);
+  const phoneMasked = maskPhoneJs(rawPhone);
+  // `email`/`phone` = normalizate (pt. hashuri F3); kind/value = identitatea PRIMARĂ (email preferat).
+  if (email) return { kind: 'email', value: email, email, phone, emailMasked, phoneMasked };
+  if (phone) return { kind: 'phone', value: phone, email: '', phone, emailMasked: '', phoneMasked };
+  return { kind: 'anon', value: '', email: '', phone: '', emailMasked: '', phoneMasked: '' };
 }
 exports.extractContactIdentity = extractContactIdentity;
 
@@ -690,8 +734,79 @@ function clampContact(raw) {
     lifecycle: LIFE.includes(d.lifecycle) ? d.lifecycle : 'nou',
     rollup: { submissions: Math.floor(n(r.submissions)), firstSeen: n(r.firstSeen), lastSeen: n(r.lastSeen), lastSlug: s(r.lastSlug, 80) },
     mergeCandidate: d.mergeCandidate === true,
+    mergeWith: (Array.isArray(d.mergeWith) ? d.mergeWith : []).filter((x) => typeof x === 'string' && x).slice(0, 10),
+    mergedInto: typeof d.mergedInto === 'string' ? d.mergedInto.slice(0, 60) : '',
   };
 }
+// Merge a doi contacți (F3) — PUR. Combină rollup (sumă submissions, min firstSeen, max lastSeen), păstrează
+// identitatea + cel mai avansat lifecycle; rezultatul curăță mergeCandidate/mergeWith. Paritate cu UI prin clampContact.
+const LIFECYCLE_RANK = { nou: 0, pierdut: 1, contactat: 2, calificat: 3, castigat: 4 };
+function mergeContactDocs(target, source) {
+  const t = target && typeof target === 'object' ? target : {};
+  const sc = source && typeof source === 'object' ? source : {};
+  const tr = t.rollup && typeof t.rollup === 'object' ? t.rollup : {};
+  const sr = sc.rollup && typeof sc.rollup === 'object' ? sc.rollup : {};
+  const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : 0);
+  const firsts = [num(tr.firstSeen), num(sr.firstSeen)].filter((x) => x > 0);
+  const tLast = num(tr.lastSeen), sLast = num(sr.lastSeen);
+  const lifeRank = (l) => (LIFECYCLE_RANK[l] !== undefined ? LIFECYCLE_RANK[l] : 0);
+  const lifecycle = lifeRank(sc.lifecycle) > lifeRank(t.lifecycle) ? sc.lifecycle : t.lifecycle;
+  return clampContact({
+    identityKind: t.identityKind || sc.identityKind,
+    emailMasked: t.emailMasked || sc.emailMasked,
+    phoneMasked: t.phoneMasked || sc.phoneMasked,
+    lifecycle,
+    rollup: {
+      submissions: (num(tr.submissions)) + (num(sr.submissions)),
+      firstSeen: firsts.length ? Math.min(...firsts) : 0,
+      lastSeen: Math.max(tLast, sLast),
+      lastSlug: sLast > tLast ? sr.lastSlug : tr.lastSlug,
+    },
+    mergeCandidate: false,
+    mergeWith: [],
+  });
+}
+exports.mergeContactDocs = mergeContactDocs;
+
+// Combină contactul `fromId` în `toId` (sub clients/{uid}): mută evenimentele, însumează rollup, marchează sursa
+// ca tombstone (mergedInto) pentru redirect la ingestie. Admin SDK (fără tranzacție — get/set/add; volum mic).
+async function performMergeContacts(db, opts) {
+  const clientUid = String((opts && opts.clientUid) || '');
+  const fromId = String((opts && opts.fromId) || '');
+  const toId = String((opts && opts.toId) || '');
+  if (!clientUid || !fromId || !toId || fromId === toId) throw new HttpsError('invalid-argument', 'clientUid, fromId, toId valide și diferite sunt obligatorii.');
+  const col = db.collection('clients').doc(clientUid).collection('contacts');
+  const [fromSnap, toSnap] = await Promise.all([col.doc(fromId).get(), col.doc(toId).get()]);
+  if (!fromSnap.exists || !toSnap.exists) throw new HttpsError('not-found', 'Unul dintre contacte nu există.');
+  const fromData = fromSnap.data() || {};
+  const toData = toSnap.data() || {};
+  // Garduri: nu combina un contact deja combinat (ar dubla rollup-ul); nici ținta să nu fie tombstone.
+  if (fromData.mergedInto || fromData.merged) throw new HttpsError('failed-precondition', 'Sursa a fost deja combinată.');
+  if (toData.mergedInto || toData.merged) throw new HttpsError('failed-precondition', 'Ținta a fost deja combinată.');
+  const merged = mergeContactDocs(toData, fromData);
+  // Păstrează CEILALȚI candidați de merge ai țintei (scoate doar sursa combinată acum) — nu goli toată coada (fix LOW review).
+  const remaining = (Array.isArray(toData.mergeWith) ? toData.mergeWith : []).filter((x) => typeof x === 'string' && x && x !== fromId && x !== toId);
+  merged.mergeWith = remaining;
+  merged.mergeCandidate = remaining.length > 0;
+  // Mută evenimentele sursei la țintă.
+  const evSnap = await col.doc(fromId).collection('events').get();
+  for (const e of evSnap.docs) await col.doc(toId).collection('events').add(clampContactEvent(e.data()));
+  // Țintă = merged (păstrează createdAt; updatedAt nou). Sursă = tombstone redirect.
+  await col.doc(toId).set(Object.assign({}, merged, { updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+  await col.doc(fromId).set({ merged: true, mergedInto: toId, mergeCandidate: false, mergeWith: [], updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  logger.info('contacts merged', { clientUid, fromId, toId, movedEvents: evSnap.size });
+  return { ok: true, movedEvents: evSnap.size };
+}
+exports.performMergeContacts = performMergeContacts;
+
+// Callable admin pt. combinarea manuală a două contacte duplicate (din coada de merge-candidates). Fără AI/secrete.
+exports.mergeContacts = onCall({ region: REGION, enforceAppCheck: APP_CHECK_ENFORCED }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+  if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot combina contacte.');
+  const { clientUid, fromId, toId } = request.data || {};
+  return await performMergeContacts(admin.firestore(), { clientUid, fromId, toId });
+});
+
 function clampContactEvent(raw) {
   const d = raw && typeof raw === 'object' ? raw : {};
   const TYPES = ['form_submit', 'status_change'];

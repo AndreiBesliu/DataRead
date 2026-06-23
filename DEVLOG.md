@@ -2195,6 +2195,25 @@ normaliser, secretele niciodată în chat/repo.
 > listener nou pe `leadPredictions` (300), îmbinat cu numele firmei din leads în useMemo. Pur frontend (fără functions/rules).
 > Verificat: typecheck + 18/18 suites (3 teste noi în test-landing) + build + boot. DEPLOYED: hosting. Următor: F3 (coadă merge).
 
+**2026-06-23 - Task Completed — Predicție F3: unificare identitate + coadă merge-candidates**
+> Model: Claude Opus 4.8 (1M context). Maturarea „warehouse"-ului de contacte.
+> - **Auto-unificare prin alias:** când un submission are ȘI email ȘI telefon, scriem `clients/{uid}/contactAlias/{phoneHash}=
+>   {contactId: emailHash}` (server-only) → viitoarele submission-uri DOAR-cu-telefon rutează la contactul de email
+>   (`onSubmissionCreate` citește aliasul). identityKind se păstrează (nu flipează la 'phone' când rutează în contactul de email).
+> - **Detecție duplicat retroactiv:** dacă exista deja un contact separat pe telefon înainte de submission-ul combinat →
+>   `mergeCandidate=true` + `mergeWith` (arrayUnion) pe AMBELE. Patch-ul de ingestie NU atinge mergeCandidate/mergeWith/mergedInto
+>   (merge:true le păstrează — fix anti-clobber).
+> - **Combinare manuală:** `mergeContactDocs` (pur: rollup sumă/min firstSeen/max lastSeen, cel mai avansat lifecycle, identitate
+>   unită, curăță flagul) + `performMergeContacts` (mută evenimentele, sursă→tombstone `mergedInto`) + callable admin `mergeContacts`.
+>   `onLpLeadStateWrite` urmează `mergedInto` (status scris pe contactul supraviețuitor). `contact.ts` capătă `mergeWith[]`/`mergedInto`.
+> - **UI:** `ClientContacts` ascunde tombstone-urile + buton „Combină duplicatul" pe candidați. Reguli: `contactAlias` read+write false.
+> Verificat: typecheck + 18/18 suites + e2e TEST MERGE (merge math + orchestrare pe stub + tombstone redirect) + build + boot.
+> Review adversarial → 1 HIGH + 1 LOW prinse+reparate: (HIGH) ingestia putea scrie pe un contact-tombstone (alias/refs spre
+> contacte combinate) → helper NOU `liveContactId` urmează lanțul `mergedInto` în onSubmissionCreate + onLpLeadStateWrite;
+> (LOW) merge-ul golea tot `mergeWith` pe țintă → acum scoate doar sursa, păstrează ceilalți candidați; + gardă „sursă deja
+> combinată" (anti dublă-numărare). Teste e2e adăugate pt. ambele. DEPLOYED: functions + hosting + rules. churn/LTV rămâne
+> blocat (lipsesc evenimente de valoare contact↔factură). Următor: F4 (client-facing /app).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -151,18 +151,31 @@ export function ClientContacts({ uid }: { uid: string }) {
     finally { setBusy(null); }
   };
 
+  // F3: combină un duplicat (mergeWith[0]) în contactul curent. Listener-ul aduce starea actualizată.
+  const merge = async (toId: string, fromId: string) => {
+    if (!fromId || !window.confirm(t('admin.contactMergeConfirm'))) return;
+    setBusy(toId); setErrKey(null);
+    try {
+      await httpsCallable<{ clientUid: string; fromId: string; toId: string }, unknown>(functions, 'mergeContacts')({ clientUid: uid, fromId, toId });
+    } catch (e) { console.warn('mergeContacts failed:', e); setErrKey(predErrKey(e)); }
+    finally { setBusy(null); }
+  };
+
   if (contacts === null) return null;
+  // Ascunde tombstone-urile (contacte combinate în altele).
+  const visible = contacts.filter(({ data }) => !data.mergedInto);
 
   return (
     <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-      <strong style={{ fontSize: 13 }}>👥 {t('admin.contactsTitle')}{contacts.length > 0 ? ` (${contacts.length})` : ''}</strong>
+      <strong style={{ fontSize: 13 }}>👥 {t('admin.contactsTitle')}{visible.length > 0 ? ` (${visible.length})` : ''}</strong>
       <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '2px 0 8px' }}>{t('admin.contactsHint')}</p>
       {errKey && <div role="alert" style={{ fontSize: 12, color: '#c0392b', marginBottom: 6 }}>{t(errKey)}</div>}
-      {contacts.length === 0 && <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: 0 }}>{t('admin.contactsEmpty')}</p>}
+      {visible.length === 0 && <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: 0 }}>{t('admin.contactsEmpty')}</p>}
       <div style={{ display: 'grid', gap: 6 }}>
-        {contacts.map(({ id, data }) => {
+        {visible.map(({ id, data }) => {
           const pr = preds[id];
           const isOpen = open === id;
+          const dupId = data.mergeCandidate && data.mergeWith.length > 0 ? data.mergeWith[0] : '';
           return (
             <div key={id} style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -171,8 +184,10 @@ export function ClientContacts({ uid }: { uid: string }) {
                   {t(`appHome.ls_${data.lifecycle}`)}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{data.rollup.submissions} {t('admin.contactSubmissions')} · {t('admin.contactLast')} {fmtMs(data.rollup.lastSeen, i18n.language)}</span>
+                {dupId && <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, borderRadius: 4, padding: '1px 7px', background: '#fff4e5', color: '#b25e09' }}>{t('admin.contactDup')}</span>}
                 {pr && <button style={{ ...genBtn, marginLeft: 'auto', padding: '2px 8px' }} onClick={() => setOpen(isOpen ? null : id)}>{isOpen ? '▾' : '▸'} {t('admin.predTitle')}</button>}
-                <button style={{ ...genBtn, marginLeft: pr ? 0 : 'auto', padding: '4px 10px' }} disabled={busy === id} onClick={() => void generate(id)}>
+                {dupId && <button style={{ ...genBtn, marginLeft: pr ? 0 : 'auto', padding: '4px 10px' }} disabled={busy === id} onClick={() => void merge(id, dupId)}>{t('admin.contactMerge')}</button>}
+                <button style={{ ...genBtn, marginLeft: pr || dupId ? 0 : 'auto', padding: '4px 10px' }} disabled={busy === id} onClick={() => void generate(id)}>
                   {busy === id ? t('admin.predBusy') : pr ? t('admin.predRegenerate') : t('admin.predGenerate')}
                 </button>
               </div>

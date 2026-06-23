@@ -1159,6 +1159,50 @@ console.log('\nPRED) predicție — paritate clamp JS ↔ coerce TS + profil mas
   ok(prompt.includes('a***@x.ro') && prompt.includes('prezice') && !prompt.includes('@gmail'), 'buildPredictionPrompt: conține profilul mascat, fără PII brut');
 }
 
+// ── TEST MERGE: F3 — combinarea contactelor duplicate (mergeContactDocs pur + performMergeContacts pe stub). ──
+console.log('\nMERGE) contacte duplicate — merge math + orchestrare');
+{
+  const tgt = { identityKind: 'email', emailMasked: 'a***@x.ro', phoneMasked: '', lifecycle: 'contactat', rollup: { submissions: 2, firstSeen: 100, lastSeen: 200, lastSlug: 'p1' }, mergeCandidate: true, mergeWith: ['B'] };
+  const src = { identityKind: 'phone', emailMasked: '', phoneMasked: '***789', lifecycle: 'calificat', rollup: { submissions: 3, firstSeen: 50, lastSeen: 300, lastSlug: 'p2' }, mergeCandidate: true };
+  const m = fns.mergeContactDocs(tgt, src);
+  ok(m.rollup.submissions === 5 && m.rollup.firstSeen === 50 && m.rollup.lastSeen === 300 && m.rollup.lastSlug === 'p2', 'mergeContactDocs: rollup combinat (sumă/min/max)');
+  ok(m.lifecycle === 'calificat', 'mergeContactDocs: cel mai avansat lifecycle câștigă');
+  ok(m.emailMasked === 'a***@x.ro' && m.phoneMasked === '***789', 'mergeContactDocs: identitatea unită (email + telefon)');
+  ok(m.mergeCandidate === false && m.mergeWith.length === 0, 'mergeContactDocs: curăță flagul de merge');
+  // Orchestrare pe stub (makeMigStore): mută evenimentele + tombstone redirect.
+  const { db, store } = makeMigStore({
+    'clients/u1/contacts/A': { schema: 1, identityKind: 'email', emailMasked: 'a***@x.ro', phoneMasked: '', lifecycle: 'contactat', rollup: { submissions: 1, firstSeen: 100, lastSeen: 100, lastSlug: 'p1' }, mergeCandidate: true, mergeWith: ['B'] },
+    'clients/u1/contacts/B': { schema: 1, identityKind: 'phone', emailMasked: '', phoneMasked: '***789', lifecycle: 'calificat', rollup: { submissions: 2, firstSeen: 50, lastSeen: 300, lastSlug: 'p2' }, mergeCandidate: true, mergeWith: ['A'] },
+    'clients/u1/contacts/B/events/e1': { schema: 1, type: 'form_submit', at: 50, submissionId: 's0', slug: 'p2', detail: '', utm: {} },
+  });
+  const res = await fns.performMergeContacts(db, { clientUid: 'u1', fromId: 'B', toId: 'A' });
+  ok(res.ok && res.movedEvents === 1, 'performMergeContacts: 1 eveniment mutat');
+  const A = store.get('clients/u1/contacts/A');
+  ok(A.rollup.submissions === 3 && A.lifecycle === 'calificat' && A.phoneMasked === '***789' && A.mergeCandidate === false, 'performMergeContacts: A combinat corect');
+  const B = store.get('clients/u1/contacts/B');
+  ok(B.merged === true && B.mergedInto === 'A' && B.mergeCandidate === false, 'performMergeContacts: B tombstone → redirect A');
+  let movedToA = false; for (const k of store.keys()) if (k.startsWith('clients/u1/contacts/A/events/')) movedToA = true;
+  ok(movedToA, 'performMergeContacts: evenimentul există acum sub A');
+  let threw = false; try { await fns.performMergeContacts(db, { clientUid: 'u1', fromId: 'X', toId: 'X' }); } catch { threw = true; }
+  ok(threw, 'performMergeContacts: fromId===toId → eroare');
+  // Gardă: B e acum tombstone (combinat) → re-combinarea lui aruncă (anti dublă-numărare rollup).
+  let threw2 = false; try { await fns.performMergeContacts(db, { clientUid: 'u1', fromId: 'B', toId: 'A' }); } catch { threw2 = true; }
+  ok(threw2, 'performMergeContacts: sursă deja combinată → eroare');
+  // liveContactId: urmează lanțul de tombstone (fix HIGH review — ingestia nu scrie pe contacte combinate).
+  const lc = makeMigStore({ 'clients/u1/contacts/EH': { mergedInto: 'PH' }, 'clients/u1/contacts/PH': { lifecycle: 'calificat' } });
+  const lcCol = lc.db.collection('clients').doc('u1').collection('contacts');
+  ok((await fns.liveContactId(lcCol, 'EH')) === 'PH', 'liveContactId: urmează tombstone EH→PH');
+  ok((await fns.liveContactId(lcCol, 'PH')) === 'PH', 'liveContactId: contact viu → el însuși');
+  // Păstrarea celorlalți candidați de merge (fix LOW review): A are [B,C]; după merge B→A rămâne C.
+  const mw = makeMigStore({
+    'clients/u1/contacts/A': { schema: 1, lifecycle: 'nou', rollup: { submissions: 1, firstSeen: 1, lastSeen: 1, lastSlug: '' }, mergeCandidate: true, mergeWith: ['B', 'C'] },
+    'clients/u1/contacts/B': { schema: 1, lifecycle: 'nou', rollup: { submissions: 1, firstSeen: 1, lastSeen: 1, lastSlug: '' }, mergeCandidate: true, mergeWith: ['A'] },
+  });
+  await fns.performMergeContacts(mw.db, { clientUid: 'u1', fromId: 'B', toId: 'A' });
+  const A2 = mw.store.get('clients/u1/contacts/A');
+  ok(A2.mergeWith.length === 1 && A2.mergeWith[0] === 'C' && A2.mergeCandidate === true, 'performMergeContacts: păstrează ceilalți candidați (C) după merge B');
+}
+
 // ── TEST W: A/B testing „pe sloturi" — helpers puri + serveLp (split/sticky/cookie/abStats) + submit atribuit. ──
 console.log('\nW) A/B testing — helpers + serveLp split/sticky + abStats');
 {

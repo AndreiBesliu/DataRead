@@ -35,7 +35,12 @@ export interface Contact {
   phoneMasked: string;
   lifecycle: ContactLifecycle;
   rollup: ContactRollup;
+  /** F3: contact posibil duplicat (același om cu email pe o pagină, telefon pe alta) → de combinat manual. */
   mergeCandidate: boolean;
+  /** F3: id-uri de contacte candidate la combinare cu acesta (operatorul confirmă). */
+  mergeWith: string[];
+  /** F3: dacă contactul a fost COMBINAT într-altul, id-ul țintă (tombstone — ascuns în UI, redirect la ingestie). */
+  mergedInto: string;
 }
 
 // ── Helperi puri de identitate (normalizare + mascare). Port JS în functions (paritate e2e). ──
@@ -96,6 +101,8 @@ export function coerceToContact(raw: unknown): Contact {
     lifecycle: LP_LEAD_STATUSES.includes(d.lifecycle as ContactLifecycle) ? (d.lifecycle as ContactLifecycle) : CONTACT_LIFECYCLE_DEFAULT,
     rollup: coerceRollup(d.rollup),
     mergeCandidate: d.mergeCandidate === true,
+    mergeWith: (Array.isArray(d.mergeWith) ? d.mergeWith : []).filter((x): x is string => typeof x === 'string' && !!x).slice(0, 10),
+    mergedInto: typeof d.mergedInto === 'string' ? d.mergedInto.slice(0, 60) : '',
   };
 }
 

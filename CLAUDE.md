@@ -381,6 +381,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     expanderul de lead + ClientContacts = listă contacte per client cu „Prezice comportament", în expanderul de client din AdminHome).
   - **F2 (ACTIV 23.06.2026):** predicțiile pe lead alimentează tab-ul „Sugestii" — `buildSuggestions` capătă `predictions[]` +
     tipuri `predictionHot` (high) / `predictionCooling` (medium); `SuggestionsPanel` listener pe `leadPredictions`.
+  - **F3 (ACTIV 23.06.2026) — unificare identitate + coadă merge:** auto-unificare prin alias server-only
+    `clients/{uid}/contactAlias/{phoneHash}={contactId}` (submission cu email+telefon → viitoarele telefon-only rutează la
+    contactul de email); detecție duplicat retroactiv → `mergeCandidate`/`mergeWith[]` pe ambele (patch-ul de ingestie NU
+    atinge câmpurile de merge). Combinare manuală: `mergeContactDocs` (pur) + `performMergeContacts` (mută events, sursă→tombstone
+    `mergedInto`) + callable admin `mergeContacts`; `onLpLeadStateWrite` urmează `mergedInto`. UI: `ClientContacts` ascunde
+    tombstone-urile + „Combină duplicatul". Reguli `contactAlias` read+write false. (churn/LTV rămâne blocat — fără evenimente de valoare.)
   - **Confidențialitate:** tot sub `clients/{uid}/**`; PII brut DOAR în submissions; prompturile primesc DOAR mascat + sumar
     comportamental. **Faze viitoare:** F3 (warehouse: unificare cross-identificator + churn/LTV), F4 (client-facing /app: mirror
     client-safe + consimțământ + fair-share quota + App Check).

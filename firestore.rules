@@ -169,6 +169,10 @@ service cloud.firestore {
       match /contactRefs/{subId} {
         allow read, write: if false;
       }
+      // Index server-only de unificare a identității (F3): hash-telefon → contactId de email (auto-unificare). Server-only.
+      match /contactAlias/{hash} {
+        allow read, write: if false;
+      }
 
       // Notificări + task-uri generate de automatizările client-scope (scope:'client'). Scrise EXCLUSIV de motor
       // (Admin SDK). Clientul își vede DOAR pe ale lui (izolare multi-tenant); poate marca un task ca rezolvat.
