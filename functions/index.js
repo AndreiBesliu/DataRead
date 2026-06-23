@@ -455,7 +455,38 @@ function leadContextBlock(lead) {
     `Website: ${l.website || '-'}`,
     `Social: ${[l.facebook, l.instagram, l.tiktok].filter(Boolean).join(', ') || '-'}`,
     `Obiectivele declarate ale firmei: ${objectives || '-'}`,
+    `Buget de reclame declarat: ${AD_BUDGET_RO[l.adBudget] || 'nespecificat'}`,
   ].join('\n');
+}
+
+// Truncare „grațioasă" a textului liber AI: taie pe graniță de propoziție/cuvânt înainte de `max`,
+// nu la mijloc de cuvânt. Sub `max` → neschimbat. Plasă de siguranță (lungimea o dau schema + promptul).
+function clampText(s, max) {
+  const str = String(s == null ? '' : s);
+  if (str.length <= max) return str;
+  const cut = str.slice(0, max);
+  const lastDot = cut.lastIndexOf('. ');
+  if (lastDot >= max * 0.6) return cut.slice(0, lastDot + 1);
+  const lastNl = cut.lastIndexOf('\n');
+  if (lastNl >= max * 0.6) return cut.slice(0, lastNl).trimEnd();
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace >= max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd() + '…';
+}
+exports.clampText = clampText;
+
+// Carry-over: dacă lead-ul are recomandări de canale (pasul „Oportunități"), le rezumă în promptul de
+// campanie ca generarea să se alinieze la ele (coerență între pași). Gol dacă nu există recomandări.
+function channelRecsBlock(lead) {
+  const recs = lead && lead.channelRecommendations && Array.isArray(lead.channelRecommendations.channels)
+    ? lead.channelRecommendations.channels : [];
+  if (!recs.length) return '';
+  const lines = recs.slice(0, 6).map((c) => {
+    const x = c || {};
+    const obj = x.suggestedObjective ? ` (obiectiv: ${OBJECTIVE_RO[x.suggestedObjective] || x.suggestedObjective})` : '';
+    const offer = x.suggestedOffer ? ` — ofertă sugerată: ${x.suggestedOffer}` : '';
+    return `- ${x.title || '-'}${obj}${offer}`;
+  });
+  return ['== CANALE RECOMANDATE (din pasul „Oportunități" — aliniază campania la ele) ==', ...lines].join('\n');
 }
 
 function buildContentPrompt(lead, req) {
@@ -478,10 +509,12 @@ function buildContentPrompt(lead, req) {
 
 function buildCampaignPrompt(lead, req) {
   const r = req || {};
+  const recs = channelRecsBlock(lead);
   return [
     'Pregătește livrabilele unei campanii de marketing pentru clientul de mai jos.',
     '',
     leadContextBlock(lead),
+    ...(recs ? ['', recs] : []),
     '',
     '== CEREREA DE CAMPANIE ==',
     `Titlu: ${r.title || '-'}`,
@@ -494,6 +527,7 @@ function buildCampaignPrompt(lead, req) {
     'Meta. Structura campaniei realistă pentru bugetul dat.',
   ].join('\n');
 }
+exports.buildCampaignPrompt = buildCampaignPrompt;
 
 const AD_BUDGET_RO = {
   under250: 'sub 250 €/lună',
@@ -511,7 +545,6 @@ function buildChannelsPrompt(lead) {
     'Recomandă 4-6 OPORTUNITĂȚI de canale de marketing pentru firma de mai jos, în limba ROMÂNĂ.',
     '',
     leadContextBlock(l),
-    `Buget de reclame declarat: ${AD_BUDGET_RO[l.adBudget] || 'nespecificat'}`,
     '',
     'Pentru FIECARE oportunitate dă: un titlu specific firmei (nu generic), nivelul de impact estimat',
     '(ridicat / mediu-ridicat / mediu / scazut) cu o frază de justificare, o descriere de 2-3 fraze',
@@ -1144,7 +1177,7 @@ async function runAiJson({ schema, system, prompt, maxTokens = 6000 }) {
     throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
   }
   if (response.stop_reason === 'refusal') {
-    throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează contextul.');
+    throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea. Verifică dacă oferta/contextul conține elemente sensibile (promisiuni medicale/financiare, conținut interzis sau formulări înșelătoare) și reformulează mai neutru.');
   }
   const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
   let out;
@@ -1213,9 +1246,13 @@ function buildInsightPrompt(lead, camp, metrics) {
     'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test), explică-l raportându-te',
     'la ROAS/CPL/CTR și la trend, și dă acțiuni concrete. Reguli generale de bun-simț: ROAS sub 1',
     '= se pierde bani (pauză sau test); ROAS sănătos și stabil = scalează gradual; CTR mic = problemă',
-    'de creativ/audiență; CPL în creștere = oboseală de reclamă. Totul în limba ROMÂNĂ.',
+    'de creativ/audiență; CPL în creștere = oboseală de reclamă.',
+    'IMPORTANT — calibrează verdictul DUPĂ obiectivele declarate ale firmei (vezi mai sus): pentru',
+    'awareness/trafic contează reach/CPM/CTR și NU penaliza un ROAS mic (nu e campanie de vânzare directă);',
+    'pentru lead-uri contează CPL și rata de lead; pentru vânzări contează ROAS și AOV. Totul în limba ROMÂNĂ.',
   ].join('\n');
 }
+exports.buildInsightPrompt = buildInsightPrompt;
 
 // ── Raport lunar de performanță pentru client (din toate campaniile lui) ──
 const REPORT_SCHEMA = {
@@ -1289,9 +1326,9 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   });
   const insight = {
     verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
-    headline: String(out.headline || '').slice(0, 4000),
-    reasoning: String(out.reasoning || '').slice(0, 4000),
-    actions: String(out.actions || '').slice(0, 4000),
+    headline: clampText(out.headline, 4000),
+    reasoning: clampText(out.reasoning, 4000),
+    actions: clampText(out.actions, 4000),
   };
   // Analiza AI = judecată INTERNĂ a operatorului (verdict/reasoning + UID-ul lui). NU se scrie pe campaigns/{id}
   // (citibilă de client) — ci pe campaignInsights/{id} (admin-only), ca să nu se scurgă către client. Denormalizăm
@@ -1321,9 +1358,9 @@ async function performClientReport(db, leadId, actorUid, consume) {
     prompt: buildClientReportPrompt(lead, camps),
   });
   const report = {
-    summary: String(out.summary || '').slice(0, 6000),
-    highlights: String(out.highlights || '').slice(0, 6000),
-    recommendations: String(out.recommendations || '').slice(0, 6000),
+    summary: clampText(out.summary, 6000),
+    highlights: clampText(out.highlights, 6000),
+    recommendations: clampText(out.recommendations, 6000),
   };
   const reportAt = admin.firestore.FieldValue.serverTimestamp();
   await db.collection('leads').doc(leadId).set({ marketingReport: report, marketingReportAt: reportAt, marketingReportBy: actorUid }, { merge: true });
@@ -1417,7 +1454,7 @@ if (AI_ENABLED) {
       });
 
       const deliverables = {};
-      for (const k of KIND_FIELDS[kind]) deliverables[k] = String(out[k] || '').slice(0, 8000);
+      for (const k of KIND_FIELDS[kind]) deliverables[k] = clampText(out[k], 8000);
 
       // Plasa de siguranță: înainte să suprascriem, starea curentă (dacă are conținut) devine o
       // versiune în istoric — o regenerare nu pierde niciodată munca anterioară (AI sau manuală).
@@ -1553,7 +1590,7 @@ if (AI_ENABLED) {
 
       // Clamp — plafoanele se DERIVĂ din STRATEGY_DIRECTION_LIMITS (paritate cu coerceToSelfStrategy din TS).
       const L = STRATEGY_DIRECTION_LIMITS;
-      const sl = (v, max) => String(v == null ? '' : v).slice(0, max);
+      const sl = (v, max) => clampText(v, max);
       const directions = (Array.isArray(out.directions) ? out.directions : []).slice(0, 6).map((d) => {
         const x = d || {};
         return {
@@ -1610,7 +1647,7 @@ if (AI_ENABLED) {
       }
       const { out, usage } = result;
       const L = OPPORTUNITY_LIMITS;
-      const sl = (v, max) => String(v == null ? '' : v).slice(0, max);
+      const sl = (v, max) => clampText(v, max);
       const order = { high: 0, medium: 1, low: 2 };
       const items = (Array.isArray(out.items) ? out.items : []).map((o) => {
         const x = o || {};
@@ -1671,7 +1708,7 @@ if (AI_ENABLED) {
       const { out, usage } = result;
 
       const L = DETAILS_LIMITS;
-      const sl = (v, max) => String(v == null ? '' : v).slice(0, max);
+      const sl = (v, max) => clampText(v, max);
       const details = {
         schema: 1,
         directionTitle: sl(direction.title, L.directionTitle),
@@ -1734,7 +1771,7 @@ if (AI_ENABLED) {
       const { out, usage } = result;
 
       const L = EXECUTION_LIMITS;
-      const sl = (v, max) => String(v == null ? '' : v).slice(0, max);
+      const sl = (v, max) => clampText(v, max);
       const weeks = (Array.isArray(out.weeks) ? out.weeks : []).slice(0, 6).map((w) => {
         const x = w || {};
         return { title: sl(x.title, L.weekTitle), focus: sl(x.focus, L.focus), actions: sl(x.actions, L.actions), kpi: sl(x.kpi, L.kpi) };

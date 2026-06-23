@@ -599,6 +599,40 @@ console.log('\nFND) Fundația stratificată — buildSystemBlocks (cache_control
   ok(typeof fns.buildL1Text === 'function' && fns.buildL1Text().length >= 16384, 'L1 ≥ 16384 caractere (clear 4096 tokeni)');
 }
 
+// ── TEST GND: quick wins grounding (felia 2) — clampText, carry-over canale, regula de obiectiv, adBudget. ──
+console.log('\nGND) Quick wins grounding — clampText + carry-over + obiectiv + adBudget');
+{
+  // clampText: sub max neschimbat; peste max → prefix curat (nu taie la mijloc de cuvânt), length ≤ max, fără spațiu final.
+  ok(fns.clampText('text scurt', 100) === 'text scurt', 'clampText: sub max → neschimbat');
+  ok(fns.clampText(null, 10) === '' && fns.clampText(undefined, 10) === '', 'clampText: null/undefined → gol');
+  const longTxt = 'Propoziția unu este aici. Propoziția doi este ceva mai lungă și continuă. O coadă finală foarte lungă care depășește limita impusă de plafon.';
+  const c = fns.clampText(longTxt, 60);
+  ok(c.length <= 60, 'clampText: rezultat ≤ max');
+  ok(c.length < longTxt.length, 'clampText: chiar a truncat');
+  ok(!/\s$/.test(c), 'clampText: fără spațiu la final');
+  ok(longTxt.startsWith(c.replace(/…$/, '')), 'clampText: rezultatul e prefix curat (nu taie cuvânt)');
+
+  // Carry-over channelRecommendations → buildCampaignPrompt.
+  const leadRecs = { companyName: 'Cofetăria Dulce', industry: 'horeca', objectives: ['leads'], adBudget: 'b500_1000',
+    channelRecommendations: { schema: 1, channels: [{ title: 'Google Search pe intenție locală', suggestedObjective: 'leads', suggestedOffer: 'Tort de probă -20%' }] } };
+  const cp = fns.buildCampaignPrompt(leadRecs, { title: 'Promo toamnă', offer: 'Torturi de sezon' });
+  ok(cp.includes('CANALE RECOMANDATE') && cp.includes('Google Search pe intenție locală'), 'campaign: carry-over canale recomandate');
+  ok(cp.includes('obiectiv: lead-uri') , 'campaign: obiectivul canalului inclus (lizibil)');
+  const cpNo = fns.buildCampaignPrompt({ companyName: 'X', industry: 'retail' }, { title: 'T', offer: 'O' });
+  ok(!cpNo.includes('CANALE RECOMANDATE'), 'campaign: fără recomandări → fără bloc canale');
+
+  // adBudget în leadContextBlock (vizibil în TOATE prompturile pe lead, ex. campanie).
+  ok(/500.?1000/.test(cp), 'leadContext: adBudget prezent în promptul de campanie');
+
+  // buildInsightPrompt: regula de calibrare pe obiectiv + obiectivul firmei + adBudget în context.
+  const insP = fns.buildInsightPrompt(
+    { companyName: 'Y', industry: 'retail', objectives: ['awareness'], adBudget: 'b250_500' },
+    { name: 'Camp1', platform: 'meta', status: 'active' }, []);
+  ok(insP.includes('calibrează verdictul DUPĂ obiectivele'), 'insight: regula de verdict pe obiectiv');
+  ok(insP.includes('notorietate'), 'insight: obiectivul firmei (awareness→notorietate) în context');
+  ok(insP.includes('Buget de reclame declarat') && /250.?500/.test(insP), 'insight: adBudget în context');
+}
+
 // ── TEST Q: „Self Marketing" — buildStrategyPrompt + STRATEGY_SCHEMA + coerceSelfProfileServer
 // (functions e JS netipizat → require-ul + apelul prind syntax/ReferenceError pe care build-ul nu-i vede). ──
 console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil server-side');

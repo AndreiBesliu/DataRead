@@ -2048,6 +2048,23 @@ normaliser, secretele niciodată în chat/repo.
 > Caching = prefix-match, cheiat pe conținut+model la nivel de organizație (nu „una pe API key"). BENCHMARKS_RO = orientative,
 > de calibrat cu Andrei pe date reale. Următorii pași AI: memoria project_dataread_ai_roadmap (grounding ieftin → benchmarks reali → structură livrabile).
 
+**2026-06-23 - Task Completed — AI felia 2: quick wins grounding**
+> Model: Claude Opus 4.8 (1M context). A doua felie din roadmap-ul AI: re-injectează date deja prezente ca generările să fie
+> specifice, nu generice (grounding ieftin, atinge mai multe callable-uri).
+> - **adBudget în leadContextBlock:** bugetul de reclame (AD_BUDGET_RO) e acum în TOATE prompturile pe lead (campanie/insight/
+>   raport/canale), nu doar la „Oportunități". Eliminat dublajul din buildChannelsPrompt.
+> - **Verdict pe obiectiv (buildInsightPrompt):** regulă explicită — calibrează verdictul după obiectivele firmei (awareness/
+>   trafic → reach/CPM/CTR, NU penaliza ROAS mic; leads → CPL; sales → ROAS/AOV). Campania nu are obiectiv propriu → folosim
+>   obiectivele firmei (deja în leadContextBlock).
+> - **Carry-over canale (channelRecsBlock → buildCampaignPrompt):** dacă lead-ul are channelRecommendations (din pasul
+>   „Oportunități"), promptul de campanie le rezumă (titlu + obiectiv + ofertă sugerată) ca generarea să se alinieze. Gol dacă lipsesc.
+> - **clampText (truncare grațioasă):** taie pe graniță de propoziție/cuvânt (nu slice brut la mijloc de cuvânt), aplicat pe
+>   output-urile lungi AI: campanie (8000), insight (4000), raport (6000) + cele 4 self (prin helperul `sl`). Plasă de siguranță.
+> - **Mesaj de refuz acțional** în runAiJson (sugerează ce să reformuleze).
+> - Exporturi noi pt. e2e: buildCampaignPrompt, buildInsightPrompt, clampText.
+> Verificat: 18/18 suites + e2e **TEST GND** (clampText prefix curat + carry-over + regula de obiectiv + adBudget în context) + build.
+> DEPLOYED: functions (fără frontend → fără hosting). Felia 3 roadmap: benchmarks de judecată (BENCHMARKS_RO reali + framework-uri).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

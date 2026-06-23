@@ -306,6 +306,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   cheiat pe conținut+model la nivel de organizație (nu „una pe API key"). Test pur `scripts/test-personas.ts`
   (structură + plasare cache_control + invarianți) + e2e TEST FND. Ghid operator: „Cum funcționează AI-ul" (tab Ghid,
   `opAi`). Următorii pași AI: vezi memoria `project_dataread_ai_roadmap`.
+- **Grounding quick wins AI (ACTIV 23.06.2026, felia 2):** `adBudget` mutat în `leadContextBlock` (acum în TOATE prompturile pe
+  lead: campanie/insight/raport/canale; dedus din `AD_BUDGET_RO`); `buildInsightPrompt` capătă regulă de calibrare a verdictului
+  DUPĂ obiectivul firmei (awareness/trafic → nu penaliza ROAS mic; leads → CPL; sales → ROAS/AOV); carry-over
+  `channelRecommendations` → `buildCampaignPrompt` (`channelRecsBlock`, doar când există) ca generarea să se alinieze la pasul
+  „Oportunități"; helper `clampText` (truncare pe graniță de propoziție/cuvânt, nu slice brut) aplicat pe output-urile lungi AI
+  (campanie/insight/raport + cele 4 self prin `sl`); mesaj de refuz `runAiJson` mai acțional. Toate exportate + testate e2e (TEST GND).
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie
