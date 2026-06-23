@@ -740,6 +740,8 @@ const en: typeof ro = {
       pagesEmpty: 'No site pages yet. Press “+ New page” to create one with LP Studio (served at /pagina/{slug}).',
       previewLive: 'Live preview',
       previewOf: 'Page',
+      previewSampleUser: 'client@example.com',
+      previewSample: 'Preview — real data appears in the client portal.',
       preview: 'Preview',
       openTab: 'Open',
       reloadPreview: 'Reload',

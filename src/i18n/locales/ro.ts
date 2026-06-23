@@ -747,6 +747,8 @@ const ro = {
       pagesEmpty: 'Nicio pagină de site încă. Apasă „+ Pagină nouă" ca să creezi una cu LP Studio (servită la /pagina/{slug}).',
       previewLive: 'Previzualizare live',
       previewOf: 'Pagina',
+      previewSampleUser: 'client@exemplu.ro',
+      previewSample: 'Previzualizare — datele reale apar în portalul clientului.',
       preview: 'Previzualizează',
       openTab: 'Deschide',
       reloadPreview: 'Reîncarcă',

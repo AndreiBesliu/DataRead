@@ -25,6 +25,7 @@ import { coerceToPrediction, predictionToSections, type Prediction } from '../ty
 import { customThemeStyle, type CustomTheme } from '../theme/themes';
 import { coerceToPageThemes } from '../types/pageThemes';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
+import { isPreviewSearch } from './previewMode';
 
 /** Felia A: tema portalului client (/app), dacă operatorul i-a setat un override în siteConfig/pageThemes.app.
  *  Best-effort getDoc (webdriver-guard ca boot-smoke să rămână determinist). null → aspectul default actual. */
@@ -519,6 +520,35 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Shell-ul vizual al portalului /app pentru previzualizarea din /admin (?preview=1): randează aspectul
+ *  REAL (antet + carduri) cu tema aplicată, dar FĂRĂ autentificare și FĂRĂ date de client. Scopul e doar
+ *  să vezi cum arată tema pe /app — nu te mai trimite la ecranul de login în iframe-ul de preview. */
+function AppThemePreview({ theme }: { theme: CustomTheme | null }) {
+  const { t } = useTranslation();
+  const cards = [t('appHome.onboardingTitle'), t('appHome.portalTitle'), t('appHome.portalReportTitle'), t('appHome.lpTitle')];
+  return (
+    <div style={theme ? customThemeStyle(theme) : undefined}>
+      <main data-page="app-theme-preview" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
+        <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
+          <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
+          <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSampleUser')}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+            <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('help.title')}</span>
+            <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('appHome.signOut')}</span>
+          </span>
+        </header>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {cards.map((title) => (
+            <Card key={title} title={title}>
+              <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSample')}</p>
+            </Card>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 /** Dashboardul clientului. Structura prevede de pe acum secțiunile Verticalei 1 (cereri de
  *  marketing / rezultate / AI insights) — „în curând" în v1, populate în felia 2. */
 /** Feed-ul de automatizări al clientului — notificările + task-urile generate de regulile client-scope (scope:'client')
@@ -706,8 +736,10 @@ export default function AppHome() {
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
   const appTheme = useAppPageTheme(); // Felia A: override de temă pe /app (siteConfig/pageThemes.app), dacă există.
+  const previewMode = isPreviewSearch(search); // iframe-ul de preview din /admin (?preview=1): shell tematizat, fără auth
 
   useEffect(() => {
+    if (previewMode) return; // preview: niciun watcher/init de cont (nu atingem sesiunea/datele)
     if (!user) {
       setProfile(null);
       useEntitlementStore.getState().reset();
@@ -715,7 +747,10 @@ export default function AppHome() {
     }
     useEntitlementStore.getState().init(user.uid);
     return watchClientProfile(user.uid, setProfile);
-  }, [user]);
+  }, [user, previewMode]);
+
+  // Preview din /admin: arată aspectul portalului cu tema aplicată, FĂRĂ login și fără date de client.
+  if (previewMode) return <AppThemePreview theme={appTheme} />;
 
   if (initializing) {
     return <main data-page="app-loading" style={{ padding: 64, textAlign: 'center', color: 'var(--fg-1)' }}>…</main>;

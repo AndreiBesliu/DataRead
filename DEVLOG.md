@@ -2259,6 +2259,19 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 18/18 suites (coerceToPageThemes) + build + boot. Review adversarial (hydration/prerender + reguli/editor).
 > Frontend + rules. DEPLOYED: hosting + rules. Felia B (conținut editabil per-pagină) = următoarea.
 
+**2026-06-23 - Task Completed — Fix preview /admin: „mă trimite la login" + mod preview (?preview=1)**
+> Model: Claude Opus 4.8 (1M context). Plângere: la „Previzualizează" în panoul Site, iframe-ul trimitea operatorul la login.
+> Cauză reală: iframe-ul (același origin) rula aplicația completă cuplată la auth — `/app` cerea login (afișa AuthPanel în
+> preview) și side-effect-urile Firebase Auth ale iframe-ului (ensureClientDoc ca admin + refresh token pe același IndexedDB)
+> puteau perturba sesiunea operatorului. Sandbox-ul oprea doar top-navigation, nu asta.
+> - **`src/app/previewMode.ts` (NOU):** `isPreviewSearch(search)` / `isPreviewNow()` — detectează `?preview=1`.
+> - **`AppHome.tsx`:** în mod preview randează `<AppThemePreview theme={appTheme}>` (shell tematizat real: antet + carduri demo,
+>   data-page="app-theme-preview") ÎNAINTE de gardul de auth → fără login; effect-ul de cont e sărit. FĂRĂ date de client.
+> - **`useAuthInit.ts`:** în mod preview sare ensureClientDoc + getIdTokenResult → iframe-ul nu mai scrie/împrospătează sesiunea.
+> - **`SiteAdminPanel.tsx`:** iframe-ul de preview încarcă `${path}?preview=1` (linkurile „Deschide ↗" rămân spre pagina reală autentificată).
+> Verificat: typecheck + 18/18 suites + build + boot (test NOU `/app?preview=1 → shell tematizat (fără login)`). Review adversarial
+> (bypass auth/scurgere date + corectitudine hooks/i18n). Frontend-only. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -197,12 +197,13 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
           <button type="button" onClick={reloadPreview} style={linkBtn}>↻ {t('admin.site.reloadPreview')}</button>
           <a href={previewPath} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
         </div>
-        {/* `sandbox` FĂRĂ allow-top-navigation → pagina din iframe NU poate naviga fereastra /admin (nu te mai scoate la login).
-            allow-same-origin păstrează tema + conținutul reale. Schimbarea paginii doar actualizează `src` (fără remount);
-            re-montarea (reîncărcarea) se face DOAR prin `key={previewKey}` la „Reîncarcă"/după publicare. */}
+        {/* `?preview=1` → modul preview al aplicației: /app randează un shell tematizat (FĂRĂ login) și side-effect-urile
+            Firebase Auth sunt sărite, deci iframe-ul (același origin = aceeași sesiune) NU mai scoate operatorul la login.
+            `sandbox` FĂRĂ allow-top-navigation → pagina din iframe nu poate naviga fereastra /admin. Schimbarea paginii doar
+            actualizează `src` (fără remount); re-montarea se face DOAR prin `key={previewKey}` la „Reîncarcă"/după publicare. */}
         <iframe
           key={previewKey}
-          src={previewPath}
+          src={`${previewPath}${previewPath.includes('?') ? '&' : '?'}preview=1`}
           title={t('admin.site.previewLive')}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
           style={{ width: '100%', height: 560, border: '1px solid var(--border)', borderRadius: 10, background: '#fff' }}

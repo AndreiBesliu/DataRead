@@ -4,6 +4,7 @@ import { auth } from '../firebase';
 import i18n from '../i18n';
 import { useAuthStore } from '../store/authStore';
 import { ensureClientDoc } from '../services/clients';
+import { isPreviewNow } from '../app/previewMode';
 
 /** Sincronizează starea Firebase Auth în store, o singură dată, din rădăcina aplicației.
  *  La login se asigură (idempotent) că documentul clients/{uid} există. */
@@ -20,7 +21,10 @@ export function useAuthInit(): void {
           : null
       );
       setInitializing(false);
-      if (u) {
+      // În iframe-ul de preview din /admin (?preview=1) NU atingem sesiunea: fără ensureClientDoc
+      // (ar crea/scrie clients/{uid} ca admin) și fără refresh de token (ar putea perturba sesiunea
+      // operatorului pe același origin). Doar afișare; /app randează un shell tematizat.
+      if (u && !isPreviewNow()) {
         void ensureClientDoc(u.uid, {
           email: u.email,
           displayName: u.displayName,

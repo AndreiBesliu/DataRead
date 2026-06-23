@@ -55,6 +55,8 @@ const PROFILES = [
     },
     expectSelector: '[data-page="auth"]',
   },
+  // Preview din /admin (?preview=1): /app NU mai cere login → afișează shell-ul tematizat al portalului.
+  { name: '/app?preview=1 → shell tematizat (fără login)', path: '/app?preview=1', storage: { ...BASE }, expectSelector: '[data-page="app-theme-preview"]' },
 ];
 
 // ---- Runner ------------------------------------------------------------------------------------
