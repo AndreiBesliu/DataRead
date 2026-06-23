@@ -2230,6 +2230,19 @@ normaliser, secretele niciodată în chat/repo.
 > **Viziunea predicției comportamentale e completă (F0→F4).** Rămas pe Andrei: pornește `CLIENT_PREDICTION_ENABLED` după GDPR;
 > churn/LTV când apar evenimente de valoare contact↔factură.
 
+**2026-06-23 - Task Completed — UI: reorganizare panou „Site" (Design & Pagini)**
+> Model: Claude Opus 4.8 (1M context). Optimizare UX cerută de Andrei pe tab-ul Design & Pagini → Site.
+> - **Preview LIVE al paginii reale:** iframe pe ruta aleasă (homepage implicit) + selector de pagină + „Reîncarcă" +
+>   „Deschide" în tab nou. Reflectă tema/chrome PUBLICATE; se reîncarcă automat după „Salvează & publică". (Înlocuiește
+>   focusul pe cardul demo — care rămâne ca preview INSTANT al editărilor nepublicate, în interiorul editorului.)
+> - **Toate paginile vizibile:** secțiune „Pagini platformă" (read-only) cu rutele React (Acasă/Pachete/Self Marketing/
+>   Start/Contact/Termeni/Confidențialitate/Portal client) — fiecare cu „Previzualizează" (în iframe) + „Deschide" + buton
+>   „Editează designul". Paginile editabile din LP Studio (kind:'site') rămân dedesubt.
+> - **Sistem de design COLAPSAT implicit:** editorul de temă + Header/Footer nu mai ocupă spațiu la deschidere — se deschid la
+>   cerere (toggle „Sistem de design"). Conținutul/logica de publicare neatinse.
+> Frontend-only (SiteAdminPanel.tsx + i18n ro/en). Verificat: typecheck + 18/18 suites + build. Hosting fără X-Frame-Options →
+> iframe same-origin OK. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

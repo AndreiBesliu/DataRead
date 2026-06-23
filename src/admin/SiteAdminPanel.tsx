@@ -1,10 +1,13 @@
 /**
- * Panou „Site" — administrarea designului + (în curând) a paginilor site-ului public. Felia B1: editarea
- * temei publice (culori/fonturi/imagine via ThemeControls) cu preview live + „Salvează & publică" în
- * `siteConfig/publicTheme` (Firestore). Site-ul public o aplică hibrid (snapshot copt + override runtime).
- * Decorul animat + CMS-ul de pagini (LP Studio) vin în felia B2.
+ * Panou „Site" — administrarea site-ului public. Reorganizat pentru focus pe PAGINI + PREVIEW LIVE:
+ *  1) Previzualizare LIVE a paginii reale (iframe pe ruta aleasă) — vezi efectul real, nu un card demo.
+ *  2) Lista paginilor platformei (React, read-only) + „Deschide" + buton către sistemul de design.
+ *  3) Sistemul de design (temă + header/footer) COLAPSAT implicit — ocupă spațiu doar când îl deschizi;
+ *     editezi → „Salvează & publică" → preview-ul real se reîncarcă.
+ *  4) Paginile de site editabile (LP Studio, kind:'site', servite la /pagina/{slug}).
+ * Tema publică e în `siteConfig/publicTheme`, chrome-ul în `siteConfig/publicChrome` (aplicate hibrid pe site).
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -17,6 +20,18 @@ import { SITE_PUBLIC_SCHEMA } from '../types/sitePublic';
 import { PUBLIC_CHROME_DEFAULT } from '../config/publicChrome';
 import { SITE_CHROME_SCHEMA, coerceToSiteChrome, type SiteChrome } from '../types/siteChrome';
 
+// Paginile platformei (rute React din App.tsx). Read-only aici: conținutul e în cod, ASPECTUL vine din sistemul de design.
+const PLATFORM_PAGES = [
+  { key: 'home', path: '/' },
+  { key: 'pachete', path: '/pachete' },
+  { key: 'self', path: '/self-marketing' },
+  { key: 'start', path: '/start' },
+  { key: 'contact', path: '/contact' },
+  { key: 'termeni', path: '/legal/termeni' },
+  { key: 'confid', path: '/legal/confidentialitate' },
+  { key: 'app', path: '/app' },
+] as const;
+
 export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
   const { t } = useTranslation();
   const [theme, setTheme] = useState<CustomTheme>(PUBLIC_THEME_DEFAULT);
@@ -25,6 +40,11 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
   const [chrome, setChrome] = useState<SiteChrome>(PUBLIC_CHROME_DEFAULT);
   const [chromeLoaded, setChromeLoaded] = useState(false);
   const [chromeState, setChromeState] = useState<'idle' | 'saving' | 'saved' | 'err'>('idle');
+  // Preview live + sistem de design colapsabil.
+  const [previewPath, setPreviewPath] = useState<string>('/');
+  const [previewKey, setPreviewKey] = useState(0); // bump → reîncarcă iframe-ul (după publicare)
+  const [designOpen, setDesignOpen] = useState(false);
+  const designRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return onSnapshot(
@@ -55,6 +75,8 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const reloadPreview = () => setPreviewKey((k) => k + 1);
+
   const publish = async () => {
     setState('saving');
     try {
@@ -65,6 +87,7 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
         updatedBy: adminUid,
       });
       setState('saved');
+      reloadPreview(); // tema publicată → arată-o pe pagina reală
       setTimeout(() => setState('idle'), 2500);
     } catch (e) {
       console.warn('publish public theme failed:', e);
@@ -82,6 +105,7 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
         updatedBy: adminUid,
       });
       setChromeState('saved');
+      reloadPreview();
       setTimeout(() => setChromeState('idle'), 2500);
     } catch (e) {
       console.warn('publish public chrome failed:', e);
@@ -89,56 +113,125 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
     }
   };
 
+  const openDesign = () => {
+    setDesignOpen(true);
+    setTimeout(() => designRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
   const card: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 };
+  const linkBtn: CSSProperties = { border: '1px solid var(--border)', background: 'var(--bg-0)', borderRadius: 7, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--fg-0)', textDecoration: 'none' };
+  const td: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, textAlign: 'left' };
 
   return (
     <div style={{ marginTop: 12 }}>
       <h2 style={{ fontSize: 18, margin: '0 0 4px' }}>{t('admin.site.title')}</h2>
       <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 16px' }}>{t('admin.site.intro')}</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
-        {/* Editor temă */}
-        <div style={card}>
-          <h3 style={{ fontSize: 14, margin: '0 0 4px' }}>{t('admin.site.designTitle')}</h3>
-          <ThemeControls value={theme} onChange={setTheme} withName={false} withFonts withAnimation={false} />
-          <button className="btn btn-primary" disabled={state === 'saving'} onClick={() => void publish()} style={{ marginTop: 16, padding: '9px 18px', fontSize: 14 }}>
-            {state === 'saving' ? t('admin.site.publishing') : state === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
-          </button>
-          {state === 'err' && <p role="alert" style={{ color: '#c0392b', fontSize: 12, marginTop: 8 }}>{t('admin.site.publishErr')}</p>}
-          <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 8 }}>{t('admin.site.publishHint')}</p>
+      {/* 1) Previzualizare LIVE a paginii reale (iframe). Reflectă tema/chrome PUBLICATE; se reîncarcă după publicare. */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ fontSize: 14, margin: 0 }}>{t('admin.site.previewLive')}</h3>
+          <label style={{ fontSize: 12, color: 'var(--fg-1)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {t('admin.site.previewOf')}
+            <select value={previewPath} onChange={(e) => setPreviewPath(e.target.value)} style={{ ...linkBtn, padding: '4px 8px', cursor: 'pointer' }}>
+              {PLATFORM_PAGES.map((p) => <option key={p.key} value={p.path}>{t(`admin.site.pg_${p.key}`)} ({p.path})</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={reloadPreview} style={linkBtn}>↻ {t('admin.site.reloadPreview')}</button>
+          <a href={previewPath} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
         </div>
+        <iframe
+          key={`${previewPath}-${previewKey}`}
+          src={previewPath}
+          title={t('admin.site.previewLive')}
+          style={{ width: '100%', height: 560, border: '1px solid var(--border)', borderRadius: 10, background: '#fff' }}
+        />
+      </div>
 
-        {/* Preview live (culori + fundal; fonturile se văd pe site) */}
-        <div>
-          <h3 style={{ fontSize: 14, margin: '0 0 8px', color: 'var(--fg-1)' }}>{t('admin.site.previewTitle')}</h3>
-          <div style={{ ...customThemeStyle(theme), borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', minHeight: 240, padding: 24 }}>
-            <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', fontWeight: 700 }}>{t('app.tagline')}</div>
-            <h1 style={{ fontSize: 30, margin: '8px 0 10px', color: 'var(--fg-0)' }}>{t('admin.site.sampleHeading')}</h1>
-            <p style={{ color: 'var(--fg-1)', margin: '0 0 16px', maxWidth: 520 }}>{t('admin.site.sampleText')}</p>
-            <span style={{ display: 'inline-block', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: 8, padding: '10px 22px', fontWeight: 700 }}>{t('admin.site.sampleCta')}</span>
-            <div style={{ marginTop: 18, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, maxWidth: 360 }}>
-              <strong style={{ color: 'var(--fg-0)' }}>{t('admin.site.sampleCardTitle')}</strong>
-              <p style={{ color: 'var(--fg-1)', margin: '4px 0 0', fontSize: 13 }}>{t('admin.site.sampleCardText')}</p>
+      {/* 2) Pagini platformă (read-only) + acces la sistemul de design. */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
+          <h3 style={{ fontSize: 14, margin: 0 }}>{t('admin.site.platformTitle')}</h3>
+          <button type="button" className="btn" onClick={openDesign} style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 12 }}>{t('admin.site.editDesign')}</button>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 8px' }}>{t('admin.site.platformHint')}</p>
+        <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {PLATFORM_PAGES.map((p) => (
+                <tr key={p.key} style={{ background: previewPath === p.path ? 'var(--bg-0)' : 'transparent' }}>
+                  <td style={{ ...td, fontWeight: 700 }}>{t(`admin.site.pg_${p.key}`)}</td>
+                  <td style={{ ...td, color: 'var(--fg-1)', fontFamily: 'monospace', fontSize: 12 }}>{p.path}</td>
+                  <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button type="button" onClick={() => { setPreviewPath(p.path); reloadPreview(); }} style={{ ...linkBtn, marginRight: 6 }}>{t('admin.site.preview')}</button>
+                    <a href={p.path} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 3) Sistem de design — COLAPSAT implicit (temă + header/footer). */}
+      <div ref={designRef} style={{ marginBottom: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        <button
+          type="button"
+          onClick={() => setDesignOpen((v) => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--fg-0)', fontSize: 16, fontWeight: 800 }}
+        >
+          <span style={{ color: 'var(--accent, #2563eb)' }}>{designOpen ? '▾' : '▸'}</span> {t('admin.site.designToggle')}
+        </button>
+        <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '4px 0 0' }}>{t('admin.site.designToggleHint')}</p>
+
+        {designOpen && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 20, alignItems: 'start' }}>
+              {/* Editor temă */}
+              <div style={card}>
+                <h3 style={{ fontSize: 14, margin: '0 0 4px' }}>{t('admin.site.designTitle')}</h3>
+                <ThemeControls value={theme} onChange={setTheme} withName={false} withFonts withAnimation={false} />
+                <button className="btn btn-primary" disabled={state === 'saving'} onClick={() => void publish()} style={{ marginTop: 16, padding: '9px 18px', fontSize: 14 }}>
+                  {state === 'saving' ? t('admin.site.publishing') : state === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
+                </button>
+                {state === 'err' && <p role="alert" style={{ color: '#c0392b', fontSize: 12, marginTop: 8 }}>{t('admin.site.publishErr')}</p>}
+                <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 8 }}>{t('admin.site.publishHint')}</p>
+              </div>
+
+              {/* Preview instant pe card demo (efectul editărilor NEpublicate — iframe-ul de sus arată ce e PUBLICAT). */}
+              <div>
+                <h3 style={{ fontSize: 14, margin: '0 0 8px', color: 'var(--fg-1)' }}>{t('admin.site.previewTitle')}</h3>
+                <div style={{ ...customThemeStyle(theme), borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', minHeight: 240, padding: 24 }}>
+                  <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--accent)', fontWeight: 700 }}>{t('app.tagline')}</div>
+                  <h1 style={{ fontSize: 30, margin: '8px 0 10px', color: 'var(--fg-0)' }}>{t('admin.site.sampleHeading')}</h1>
+                  <p style={{ color: 'var(--fg-1)', margin: '0 0 16px', maxWidth: 520 }}>{t('admin.site.sampleText')}</p>
+                  <span style={{ display: 'inline-block', background: 'var(--accent)', color: 'var(--accent-contrast)', borderRadius: 8, padding: '10px 22px', fontWeight: 700 }}>{t('admin.site.sampleCta')}</span>
+                  <div style={{ marginTop: 18, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, maxWidth: 360 }}>
+                    <strong style={{ color: 'var(--fg-0)' }}>{t('admin.site.sampleCardTitle')}</strong>
+                    <p style={{ color: 'var(--fg-1)', margin: '4px 0 0', fontSize: 13 }}>{t('admin.site.sampleCardText')}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Header & Footer global */}
+            <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+              <h3 style={{ fontSize: 16, margin: '0 0 4px' }}>{t('admin.site.chrome.title')}</h3>
+              <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 16px' }}>{t('admin.site.chrome.intro')}</p>
+              <ChromeEditor value={chrome} theme={theme} onChange={setChrome} />
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" disabled={chromeState === 'saving'} onClick={() => void publishChrome()} style={{ padding: '9px 18px', fontSize: 14 }}>
+                  {chromeState === 'saving' ? t('admin.site.publishing') : chromeState === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
+                </button>
+                {chromeState === 'err' && <span role="alert" style={{ color: '#c0392b', fontSize: 12 }}>{t('admin.site.publishErr')}</span>}
+                <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.site.chrome.publishHint')}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Header & Footer global — proiectat o singură dată, aplicat pe toate paginile noastre (NU pe /p/). */}
-      <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
-        <h2 style={{ fontSize: 18, margin: '0 0 4px' }}>{t('admin.site.chrome.title')}</h2>
-        <p style={{ fontSize: 13, color: 'var(--fg-1)', margin: '0 0 16px' }}>{t('admin.site.chrome.intro')}</p>
-        <ChromeEditor value={chrome} theme={theme} onChange={setChrome} />
-        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" disabled={chromeState === 'saving'} onClick={() => void publishChrome()} style={{ padding: '9px 18px', fontSize: 14 }}>
-            {chromeState === 'saving' ? t('admin.site.publishing') : chromeState === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
-          </button>
-          {chromeState === 'err' && <span role="alert" style={{ color: '#c0392b', fontSize: 12 }}>{t('admin.site.publishErr')}</span>}
-          <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.site.chrome.publishHint')}</span>
-        </div>
-      </div>
-
-      {/* Pagini de site (CMS pe LP Studio) — servite la /pagina/{slug}, temate cu tema publică. */}
+      {/* 4) Pagini de site editabile (CMS pe LP Studio) — servite la /pagina/{slug}, temate cu tema publică. */}
       <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
         <LandingStudio adminUid={adminUid} kind="site" />
       </div>
