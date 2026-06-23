@@ -1,7 +1,7 @@
 // Suite headless: chrome-ul global al site-ului (siteConfig/publicChrome) — coerce sigur (href intern,
 // plafoane, default la corupt), chromeLabel (EN→RO), internalHref (anti open-redirect) + snapshot copt valid.
 import {
-  coerceToSiteChrome, internalHref, chromeLabel, CHROME_ITEMS_MAX, SITE_CHROME_SCHEMA, type ChromeItem,
+  coerceToSiteChrome, internalHref, chromeLabel, chromeItemClass, CHROME_ITEMS_MAX, SITE_CHROME_SCHEMA, type ChromeItem,
 } from '../src/types/siteChrome';
 import { PUBLIC_CHROME_DEFAULT } from '../src/config/publicChrome';
 
@@ -81,6 +81,23 @@ check('coerce: schema mereu 1', coerceToSiteChrome({ chrome: {} }).schema === SI
   check('coerce: brand capat la 40', c.brandName.length === 40);
   check('coerce: footerTextRo capat la 200', c.footerTextRo.length === 200);
   check('coerce: label capat la 60', c.nav[0].labelRo.length === 60);
+}
+
+// Evidențiere/animație item meniu (CTA customizabil) — coerce + helper de clase.
+{
+  const c = coerceToSiteChrome({ chrome: { brandName: 'X', nav: [
+    { labelRo: 'A', labelEn: '', href: '/a', emphasis: 'gradient', anim: 'shine', color: '#aabbcc' },
+    { labelRo: 'B', labelEn: '', href: '/b', emphasis: 'turbo', anim: 'wiggle', color: 'nu-e-hex' }, // invalide
+  ] } }).chrome;
+  check('coerce: emphasis/anim/color valide păstrate', c.nav[0].emphasis === 'gradient' && c.nav[0].anim === 'shine' && c.nav[0].color === '#aabbcc');
+  check('coerce: emphasis/anim invalide → none, color invalid → ""', c.nav[1].emphasis === 'none' && c.nav[1].anim === 'none' && c.nav[1].color === '');
+  check('chromeItemClass: stilizat → navcta-* + navanim-*', chromeItemClass(c.nav[0]) === 'navcta navcta-gradient navanim-shine');
+  check('chromeItemClass: simplu → gol', chromeItemClass(c.nav[1]) === '');
+}
+// Snapshot: Self Marketing e evidențiat implicit (degradeu + sclipire).
+{
+  const sm = PUBLIC_CHROME_DEFAULT.nav.find((n) => n.href === '/self-marketing');
+  check('snapshot: Self Marketing evidențiat (gradient + shine)', !!sm && sm.emphasis === 'gradient' && sm.anim === 'shine');
 }
 
 console.log(`\nsite-chrome: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);

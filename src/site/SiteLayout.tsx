@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { persistLanguage } from '../i18n';
@@ -8,7 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { customThemeStyle } from '../theme/themes';
 import { usePagePublicTheme, PublicThemeStyle } from './PublicTheme';
 import { usePublicChrome } from './PublicChrome';
-import { chromeLabel } from '../types/siteChrome';
+import { chromeLabel, chromeItemClass } from '../types/siteChrome';
 import Seo from './Seo';
 import type { PublicRoute } from './publicRoutes';
 
@@ -55,9 +55,15 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
             </span>
           ) : null}
           <nav style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
-            {chrome.nav.map((it, i) => (
-              <Link key={i} to={p(it.href)} style={{ color: '#dbe4f5' }}>{chromeLabel(it, lang)}</Link>
-            ))}
+            {chrome.nav.map((it, i) => {
+              const cls = chromeItemClass(it); // gol = link simplu; altfel navcta-* + navanim-*
+              const style: CSSProperties = cls
+                ? (it.color ? ({ ['--navcta-color']: it.color } as CSSProperties) : {})
+                : { color: '#dbe4f5' };
+              return (
+                <Link key={i} to={p(it.href)} className={cls || undefined} style={style}>{chromeLabel(it, lang)}</Link>
+              );
+            })}
             <Link
               to={toLocalizedPath(slug, otherLang)}
               onClick={() => persistLanguage(otherLang)}

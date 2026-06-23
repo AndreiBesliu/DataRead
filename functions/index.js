@@ -3401,8 +3401,9 @@ const DEFAULT_SITE_CHROME = {
   taglineRo: 'Date. Strategie. Creștere.',
   taglineEn: 'Data. Strategy. Growth.',
   nav: [
+    { labelRo: 'Servicii', labelEn: 'Services', href: '/servicii' },
     { labelRo: 'Pachete', labelEn: 'Packages', href: '/pachete' },
-    { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing' },
+    { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing', emphasis: 'gradient', anim: 'shine' },
     { labelRo: 'Contact', labelEn: 'Contact', href: '/contact' },
   ],
   ctaLabelRo: 'Începe acum',
@@ -3456,6 +3457,10 @@ function chromeLabelJs(it, lang) {
   const en = typeof it.labelEn === 'string' ? it.labelEn : '';
   return (lang === 'en' ? en || ro : ro) || '';
 }
+// Evidențierea/animația item-urilor de meniu (port al CHROME_EMPHASES/CHROME_ANIMS din src/types/siteChrome.ts).
+const CHROME_EMPHASES_JS = ['none', 'solid', 'outline', 'glow', 'gradient'];
+const CHROME_ANIMS_JS = ['none', 'pulse', 'shine', 'bounce', 'flash'];
+const HEX6_JS = /^#[0-9a-fA-F]{6}$/;
 function chromeItemsJs(v) {
   if (!Array.isArray(v)) return [];
   return v
@@ -3464,10 +3469,34 @@ function chromeItemsJs(v) {
       labelRo: typeof d.labelRo === 'string' ? d.labelRo.slice(0, 60) : '',
       labelEn: typeof d.labelEn === 'string' ? d.labelEn.slice(0, 60) : '',
       href: chromeInternalHref(d.href),
+      emphasis: CHROME_EMPHASES_JS.includes(d.emphasis) ? d.emphasis : 'none',
+      anim: CHROME_ANIMS_JS.includes(d.anim) ? d.anim : 'none',
+      color: typeof d.color === 'string' && HEX6_JS.test(d.color) ? d.color : '',
     }))
     .filter((it) => it.labelRo || it.labelEn)
     .slice(0, CHROME_ITEMS_MAX);
 }
+// Clasele CSS (port al chromeItemClass din src/types/siteChrome.ts) — gol = link simplu.
+function chromeItemClassJs(it) {
+  const e = it.emphasis && it.emphasis !== 'none' ? `navcta navcta-${it.emphasis}` : '';
+  const a = it.anim && it.anim !== 'none' ? `navanim-${it.anim}` : '';
+  return [e, a].filter(Boolean).join(' ');
+}
+// CSS pt. evidențiere + animații — TREBUIE să rămână în paritate cu blocul `.navcta*` din src/styles.css.
+const NAVCTA_CSS =
+  '.navcta{--navcta-color:var(--accent);display:inline-block;padding:6px 14px;border-radius:8px;font-weight:700;text-decoration:none;line-height:1.2;transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}' +
+  '.navcta:hover{filter:brightness(1.08);transform:translateY(-1px)}' +
+  '.navcta-solid{background:var(--navcta-color);color:#fff}' +
+  '.navcta-outline{border:1.5px solid var(--navcta-color);color:var(--navcta-color)}' +
+  '.navcta-glow{color:var(--navcta-color);box-shadow:0 0 0 1px var(--navcta-color) inset,0 0 12px -2px var(--navcta-color)}' +
+  '.navcta-gradient{color:#fff;background:linear-gradient(100deg,var(--navcta-color),color-mix(in srgb,var(--navcta-color) 45%,#fff));background-size:200% 100%}' +
+  '.navanim-pulse{animation:navcta-pulse 1.8s ease-in-out infinite}.navanim-bounce{animation:navcta-bounce 1.8s ease-in-out infinite}' +
+  '.navanim-flash{animation:navcta-flash 2.2s ease-in-out infinite}.navanim-shine{animation:navcta-shine 2.6s linear infinite}' +
+  '@keyframes navcta-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}' +
+  '@keyframes navcta-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}' +
+  '@keyframes navcta-flash{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}' +
+  '@keyframes navcta-shine{0%{background-position:200% 0}100%{background-position:-200% 0}}' +
+  '@media(prefers-reduced-motion:reduce){.navanim-pulse,.navanim-bounce,.navanim-flash,.navanim-shine{animation:none!important}}';
 // Compune header + footer ca string-uri HTML SIGURE: etichetele ESCAPATE (lpEscape, anti-injecție), href-urile
 // validate intern + localizate după limbă (anti open-redirect). chrome null/corupt → default. Folosit DOAR la /pagina.
 function composeSiteChrome(rawChrome, lang) {
@@ -3485,12 +3514,20 @@ function composeSiteChrome(rawChrome, lang) {
   const footerLinks = chromeItemsJs(c.footerLinks);
 
   const navHtml = nav
-    .map((it) => `<a href="${href(it.href)}" style="color:var(--fg-0);text-decoration:none;font-size:14px">${lpEscape(chromeLabelJs(it, L))}</a>`)
+    .map((it) => {
+      const cls = chromeItemClassJs(it);
+      if (!cls) return `<a href="${href(it.href)}" style="color:var(--fg-0);text-decoration:none;font-size:14px">${lpEscape(chromeLabelJs(it, L))}</a>`;
+      const colorVar = it.color ? `--navcta-color:${lpEscape(it.color)}` : '';
+      return `<a href="${href(it.href)}" class="${cls}" style="font-size:14px;${colorVar}">${lpEscape(chromeLabelJs(it, L))}</a>`;
+    })
     .join('');
+  // Injectează CSS-ul de evidențiere DOAR dacă vreun item e stilizat (paritate cu .navcta* din styles.css).
+  const navCss = nav.some((it) => chromeItemClassJs(it)) ? `<style>${NAVCTA_CSS}</style>` : '';
   const ctaHtml = ctaHref && ctaLabel
     ? `<a href="${lpEscape(localizePath(ctaHref, L))}" style="background:var(--accent);color:var(--accent-contrast);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">${ctaLabel}</a>`
     : '';
   const headerHtml =
+    navCss +
     '<header style="border-bottom:1px solid var(--border);background:var(--bg-1)">' +
     '<div style="max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">' +
     `<a href="${href('/')}" style="font-size:22px;font-weight:800;color:var(--fg-0);text-decoration:none">${brand}</a>` +

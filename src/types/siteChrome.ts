@@ -10,10 +10,42 @@ import { PUBLIC_CHROME_DEFAULT } from '../config/publicChrome';
 export const SITE_CHROME_SCHEMA = 1;
 export const CHROME_ITEMS_MAX = 12;
 
+// Evidențierea opțională a unui item de meniu (CTA) + animația — customizabile din /admin (ChromeEditor).
+// 'none' = link simplu (comportamentul de dinainte). Aplicate IDENTIC în SiteLayout (React) și serveLp (functions).
+export const CHROME_EMPHASES = ['none', 'solid', 'outline', 'glow', 'gradient'] as const;
+export type ChromeEmphasis = (typeof CHROME_EMPHASES)[number];
+export const CHROME_ANIMS = ['none', 'pulse', 'shine', 'bounce', 'flash'] as const;
+export type ChromeAnim = (typeof CHROME_ANIMS)[number];
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
 export interface ChromeItem {
   labelRo: string;
   labelEn: string;
   href: string; // INTERNAL-ONLY (începe cu '/', fără '//' sau schemă) — anti open-redirect/js: în serveLp
+  /** Stil de evidențiere (implicit 'none' = link simplu). */
+  emphasis?: ChromeEmphasis;
+  /** Animație (implicit 'none'). */
+  anim?: ChromeAnim;
+  /** Culoare accent opțională (hex #rrggbb); gol → var(--accent). */
+  color?: string;
+}
+
+function emphasisOf(v: unknown): ChromeEmphasis {
+  return CHROME_EMPHASES.includes(v as ChromeEmphasis) ? (v as ChromeEmphasis) : 'none';
+}
+function animOf(v: unknown): ChromeAnim {
+  return CHROME_ANIMS.includes(v as ChromeAnim) ? (v as ChromeAnim) : 'none';
+}
+function hexOf(v: unknown): string {
+  return typeof v === 'string' && HEX6.test(v) ? v : '';
+}
+
+/** Clasele CSS pentru evidențiere + animație (gol = link simplu). Folosit de SiteLayout + ChromeEditor (preview). */
+export function chromeItemClass(it: ChromeItem): string {
+  const e = it.emphasis && it.emphasis !== 'none' ? `navcta navcta-${it.emphasis}` : '';
+  const a = it.anim && it.anim !== 'none' ? `navanim-${it.anim}` : '';
+  return [e, a].filter(Boolean).join(' ');
 }
 
 export interface SiteChrome {
@@ -45,7 +77,14 @@ function coerceItems(v: unknown): ChromeItem[] {
   return v
     .map((raw) => {
       const d = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-      return { labelRo: str(d.labelRo, 60), labelEn: str(d.labelEn, 60), href: internalHref(d.href) };
+      return {
+        labelRo: str(d.labelRo, 60),
+        labelEn: str(d.labelEn, 60),
+        href: internalHref(d.href),
+        emphasis: emphasisOf(d.emphasis),
+        anim: animOf(d.anim),
+        color: hexOf(d.color),
+      };
     })
     .filter((it) => it.labelRo || it.labelEn) // un item fără nicio etichetă nu are sens
     .slice(0, CHROME_ITEMS_MAX);

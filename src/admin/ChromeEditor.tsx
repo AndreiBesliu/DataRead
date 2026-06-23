@@ -8,7 +8,7 @@
 import { useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { customThemeStyle, type CustomTheme } from '../theme/themes';
-import { CHROME_ITEMS_MAX, chromeLabel, internalHref, type ChromeItem, type SiteChrome } from '../types/siteChrome';
+import { CHROME_ITEMS_MAX, CHROME_EMPHASES, CHROME_ANIMS, chromeLabel, chromeItemClass, internalHref, type ChromeItem, type SiteChrome } from '../types/siteChrome';
 import { toLocalizedPath } from '../i18n/routing';
 
 const inputStyle: CSSProperties = {
@@ -29,8 +29,11 @@ function Field({ label, value, onChange, placeholder, maxLength }: {
   );
 }
 
-/** Editor de listă de linkuri (nav sau footer): labelRo/labelEn/href + add/remove/reordonare, plafon comun. */
-function ItemListEditor({ items, onChange }: { items: ChromeItem[]; onChange: (next: ChromeItem[]) => void }) {
+const selectStyle: CSSProperties = { ...inputStyle, padding: '6px 8px', cursor: 'pointer' };
+
+/** Editor de listă de linkuri (nav sau footer): labelRo/labelEn/href + add/remove/reordonare, plafon comun.
+ *  `styled` (doar nav): expune stilul de evidențiere (CTA) + animația + culoarea per item. */
+function ItemListEditor({ items, onChange, styled }: { items: ChromeItem[]; onChange: (next: ChromeItem[]) => void; styled?: boolean }) {
   const { t } = useTranslation();
   const patch = (i: number, p: Partial<ChromeItem>) => onChange(items.map((it, idx) => (idx === i ? { ...it, ...p } : it)));
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
@@ -52,6 +55,29 @@ function ItemListEditor({ items, onChange }: { items: ChromeItem[]; onChange: (n
             <Field label={t('admin.site.chrome.labelEn')} value={it.labelEn} maxLength={60} onChange={(v) => patch(i, { labelEn: v })} />
           </div>
           <Field label={t('admin.site.chrome.href')} value={it.href} placeholder="/pachete" maxLength={200} onChange={(v) => patch(i, { href: v })} />
+          {styled && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 6 }}>
+              <label style={{ display: 'block' }}>
+                <span style={labelStyle}>{t('admin.site.chrome.emphasis')}</span>
+                <select style={selectStyle} value={it.emphasis || 'none'} onChange={(e) => patch(i, { emphasis: e.target.value as ChromeItem['emphasis'] })}>
+                  {CHROME_EMPHASES.map((v) => <option key={v} value={v}>{t(`admin.site.chrome.emph_${v}`)}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'block' }}>
+                <span style={labelStyle}>{t('admin.site.chrome.anim')}</span>
+                <select style={selectStyle} value={it.anim || 'none'} onChange={(e) => patch(i, { anim: e.target.value as ChromeItem['anim'] })}>
+                  {CHROME_ANIMS.map((v) => <option key={v} value={v}>{t(`admin.site.chrome.anim_${v}`)}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'block' }}>
+                <span style={labelStyle}>{t('admin.site.chrome.color')}</span>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <input type="color" value={it.color || '#2e7fff'} onChange={(e) => patch(i, { color: e.target.value })} style={{ width: 34, height: 30, padding: 0, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-0)', cursor: 'pointer' }} />
+                  {it.color ? <button type="button" className="btn" style={{ fontSize: 10, padding: '3px 6px' }} onClick={() => patch(i, { color: '' })}>{t('admin.site.chrome.colorAuto')}</button> : null}
+                </div>
+              </label>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="button" className="btn" style={{ fontSize: 11, padding: '3px 8px' }} disabled={i === 0} onClick={() => move(i, -1)}>{t('admin.site.chrome.moveUp')}</button>
             <button type="button" className="btn" style={{ fontSize: 11, padding: '3px 8px' }} disabled={i === items.length - 1} onClick={() => move(i, 1)}>{t('admin.site.chrome.moveDown')}</button>
@@ -98,7 +124,7 @@ export default function ChromeEditor({ value, theme, onChange }: {
         <section style={section}>
           <h4 style={h4}>{t('admin.site.chrome.navTitle')}</h4>
           <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '0 0 8px' }}>{t('admin.site.chrome.navHint')}</p>
-          <ItemListEditor items={value.nav} onChange={(nav) => set({ nav })} />
+          <ItemListEditor items={value.nav} onChange={(nav) => set({ nav })} styled />
         </section>
 
         <section style={section}>
@@ -139,9 +165,13 @@ export default function ChromeEditor({ value, theme, onChange }: {
               <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-0)' }}>{value.brandName}</span>
               {tagline ? <span style={{ fontSize: 10, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 }}>{tagline}</span> : null}
               <nav style={{ display: 'flex', gap: 14, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                {value.nav.map((it, i) => (
-                  <span key={i} title={lp(it.href)} style={{ color: 'var(--fg-0)', fontSize: 13 }}>{chromeLabel(it, lang)}</span>
-                ))}
+                {value.nav.map((it, i) => {
+                  const cls = chromeItemClass(it);
+                  const stl: CSSProperties = cls
+                    ? (it.color ? ({ ['--navcta-color']: it.color, fontSize: 13 } as CSSProperties) : { fontSize: 13 })
+                    : { color: 'var(--fg-0)', fontSize: 13 };
+                  return <span key={i} className={cls || undefined} title={lp(it.href)} style={stl}>{chromeLabel(it, lang)}</span>;
+                })}
                 {value.ctaHref && ctaLabel ? (
                   <span style={{ background: 'var(--accent)', color: 'var(--accent-contrast)', padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>{ctaLabel}</span>
                 ) : null}

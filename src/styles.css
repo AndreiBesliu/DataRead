@@ -324,3 +324,38 @@ h3 {
   background-position: 0 0, 0 11px, 11px -11px, -11px 0;
   border: 1px solid var(--border);
 }
+
+/* ── Evidențiere item de meniu (CTA) + animații — customizabile din /admin (ChromeEditor).
+   `--navcta-color` (setat inline din item.color) bate var(--accent). Aplicate identic în serveLp (inline). */
+.navcta {
+  --navcta-color: var(--accent);
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1.2;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.navcta-solid { background: var(--navcta-color); color: #fff; }
+.navcta-outline { border: 1.5px solid var(--navcta-color); color: var(--navcta-color); }
+.navcta-glow { color: var(--navcta-color); box-shadow: 0 0 0 1px var(--navcta-color) inset, 0 0 12px -2px var(--navcta-color); }
+.navcta-gradient {
+  color: #fff;
+  background: linear-gradient(100deg, var(--navcta-color), color-mix(in srgb, var(--navcta-color) 45%, #ffffff));
+  background-size: 200% 100%;
+}
+.navcta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+.navanim-pulse { animation: navcta-pulse 1.8s ease-in-out infinite; }
+.navanim-bounce { animation: navcta-bounce 1.8s ease-in-out infinite; }
+.navanim-flash { animation: navcta-flash 2.2s ease-in-out infinite; }
+.navanim-shine { animation: navcta-shine 2.6s linear infinite; }
+@keyframes navcta-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes navcta-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes navcta-flash { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+@keyframes navcta-shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .navanim-pulse, .navanim-bounce, .navanim-flash, .navanim-shine { animation: none !important; }
+}

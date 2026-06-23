@@ -2307,6 +2307,22 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 20/20 suites + build + boot (/app?preview=1 shell tematizat + /app auth panel intacte). Review adversarial
 > (single-agent): CLEAN — fără dublă-temare, ordine hooks ok, fără importuri orfane. Frontend-only. DEPLOYED: hosting.
 
+**2026-06-23 - Task Completed — Buton header stilizabil + animații (CTA per item de meniu, customizabil din admin)**
+> Model: Claude Opus 4.8 (1M context). Cerere: butonul „Self Marketing" din header cu stil + animații, customizabile manual.
+> Generalizat la ORICE item de meniu, editabil din /admin → Site → Header.
+> - **siteChrome.ts:** ChromeItem +emphasis (none/solid/outline/glow/gradient) +anim (none/pulse/shine/bounce/flash) +color
+>   (hex). Coerce sigur (enum-only + HEX6 → fără injecție); helper `chromeItemClass`.
+> - **styles.css:** clase `.navcta*` + keyframes `navcta-*` + gardă prefers-reduced-motion; `--navcta-color` bate var(--accent).
+> - **SiteLayout.tsx:** nav randează clasa + culoarea per item (link simplu rămâne neschimbat).
+> - **ChromeEditor.tsx:** per item de nav — select Stil + Animație + culoare (input color + „Auto"); preview live cu clasele aplicate.
+> - **functions/index.js (serveLp, paritate):** chromeItemsJs coerce emphasis/anim/color; navHtml cu clase + `--navcta-color`;
+>   `NAVCTA_CSS` injectat (identic cu styles.css) doar când există item stilizat. DEFAULT_SITE_CHROME sincronizat cu TS (+Servicii).
+> - **Default:** „Self Marketing" evidențiat (gradient + sclipire) — customizabil.
+> Securitate: color = doar #rrggbb (regex în TS+JS) + lpEscape; clasele doar din enum-uri → fără injecție CSS/HTML. Bonus: am reparat
+> driftul de paritate chrome TS↔JS introdus de felia Servicii (DEFAULT_SITE_CHROME nu avea „Servicii").
+> Verificat: typecheck + 20/20 suites + build + boot + **e2e (paritate chrome TS↔JS ✓)**. Review adversarial (injecție + paritate): CLEAN.
+> Frontend + functions. DEPLOYED: hosting + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

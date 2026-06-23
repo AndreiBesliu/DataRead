@@ -14,7 +14,8 @@ export const PUBLIC_CHROME_DEFAULT: SiteChrome = {
   nav: [
     { labelRo: 'Servicii', labelEn: 'Services', href: '/servicii' },
     { labelRo: 'Pachete', labelEn: 'Packages', href: '/pachete' },
-    { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing' },
+    // Self Marketing = produsul self-serve → evidențiat implicit (degradeu + sclipire). Customizabil din /admin → Site → Header.
+    { labelRo: 'Self Marketing', labelEn: 'Self Marketing', href: '/self-marketing', emphasis: 'gradient', anim: 'shine' },
     { labelRo: 'Contact', labelEn: 'Contact', href: '/contact' },
   ],
   ctaLabelRo: 'Începe acum',
