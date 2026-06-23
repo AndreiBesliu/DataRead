@@ -42,6 +42,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Audituri SEO on-page (modul Automatizare SEO) — scrise DOAR de callable-ul seoAudit (Admin SDK). Doar adminii citesc.
+    match /seoAudits/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Comenzi de servicii (Felia 2 catalog) — operatorul le gestionează din /admin; clientul logat își poate
     // cere singur un serviciu din /app. CLIENT-SAFE: doc fără note interne/UID operator. Adminul vede tot;
     // clientul DOAR comenzile lui (clientUid == uid). Crearea de către client e strict constrânsă (source 'client',

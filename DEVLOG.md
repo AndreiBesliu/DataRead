@@ -2340,6 +2340,27 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 20/20 suites (coerceToServiceOrder + paritate whitelist serviceOrders în test-rules) + build + boot.
 > Review adversarial (securitate reguli/izolare + corectitudine). Frontend + REGULI (fără functions). DEPLOYED: hosting + rules.
 
+**2026-06-23 - Task Completed — Modul Automatizare SEO (Felia 1): audit on-page automat (URL) + recomandări AI**
+> Model: Claude Opus 4.8 (1M context). Al treilea serviciu din catalog construit ca funcție software. Audit SEO on-page
+> AUTOMAT pe un URL + recomandări AI grounded pe semnale REALE.
+> - **`functions/index.js`:** `seoAudit` callable (operator + App Check + AI gate + quota). Gardă anti-SSRF `isPublicHttpUrl`
+>   (blochează localhost/metadata/IP private/IPv6/porturi non-standard; re-validează URL-ul FINAL după redirecturi). Fetch cu
+>   timeout 8s + plafon ~800KB + check text/html. `extractSeoSignals` (regex pur: titlu/meta/H1-H3/imagini-alt/linkuri int-ext/
+>   canonical/OG/viewport/lang/densitate cuvânt-cheie). `scoreSeoSignals` (scor 0-100 DETERMINIST + probleme critical/warning/good).
+>   `runAiJson` (SEO_RECO_SCHEMA, persona strategist) → recomandări prioritizate, grounded pe semnale+probleme; dacă AI eșuează,
+>   întoarce auditul determinist. Quota se consumă DOAR după fetch reușit. Persistă în seoAudits.
+> - **`src/types/seoAudit.ts` (NOU):** tipuri + coerceToSeoAudit (consumat de UI) + seoGrade (A-F).
+> - **`firestore.rules`:** seoAudits (admin read; write false — doar functions).
+> - **`src/admin/SeoPanel.tsx` (NOU):** tab „SEO" — URL+keyword → audit (scor+notă, semnale, probleme, recomandări AI) + istoric.
+> - i18n ro+en. Teste: e2e (SSRF guard + extract + score + prompt grounding, ~23 aserții) + test-seo (coerce+grade+i18n).
+> Monitorizare ranking SERP = felie ulterioară (necesită chei API la Andrei → dormant). Audit URL extern = SSRF-guarded (admin-only).
+> **Review adversarial (SSRF) — 3 fix-uri aplicate:** (1) MEDIUM redirect-SSRF: `redirect:'follow'` accesa ținta internă înainte de
+> re-validare → trecut pe `redirect:'manual'` cu validare per-hop (max 5); (2) bypass FQDN cu punct final (`metadata.google.internal.`
+> ocolea endsWith) → normalizez host-ul (scot punctele finale) + regresie e2e; (3) buffering nelimitat (arrayBuffer) → citire pe stream
+> cu plafon de octeți (~1MB) + check content-length. DNS-rebinding = rezidual acceptat (admin-only, documentat). Host-parsing (octal/hex/
+> IPv4-mapped/userinfo) = deja blocat de normalizarea WHATWG (verificat).
+> Verificat: typecheck + 21/21 suites + build + boot + e2e (gardă SSRF + regresii). Frontend + functions + reguli. DEPLOYED: hosting + rules + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

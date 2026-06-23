@@ -2127,7 +2127,316 @@ function automationAiAllowed(config, opts) {
 }
 exports.automationAiAllowed = automationAiAllowed;
 
+// ─────────────────────────── Modul SEO (audit on-page) ───────────────────────────
+// Gardă anti-SSRF: acceptă DOAR http/https către hosturi PUBLICE. Blochează localhost, metadata GCP,
+// IP-uri private/loopback/link-local/CGNAT, IPv6 literal, porturi non-standard și FQDN cu punct final
+// (anti-bypass `metadata.google.internal.`). seoAudit validează FIECARE hop de redirect cu această funcție
+// înainte de a-l accesa. Tool admin-only → DNS-rebinding (host public ce rezolvă la IP privat) = risc rezidual acceptat.
+function isPublicHttpUrl(raw) {
+  let u;
+  try { u = new URL(String(raw || '')); } catch (e) { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  if (u.port && u.port !== '80' && u.port !== '443') return false;
+  // Normalizează: WHATWG păstrează punctul final pe hosturi numite (FQDN), deci `metadata.google.internal.`
+  // ar trece de endsWith('.internal'). Scoatem punctele finale înainte de orice verificare (anti-bypass).
+  const host = u.hostname.toLowerCase().replace(/\.+$/, '');
+  if (!host || host === 'localhost' || host === 'metadata.google.internal' || host.endsWith('.internal') || host.endsWith('.local')) return false;
+  if (host.includes(':')) return false; // IPv6 literal — respins
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const o = m.slice(1).map(Number);
+    if (o.some((x) => x > 255)) return false;
+    const a = o[0], b = o[1];
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false; // link-local (incl. 169.254.169.254 = metadata)
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT
+  }
+  return true;
+}
+exports.isPublicHttpUrl = isPublicHttpUrl;
+
+function seoDecode(s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+function seoAttr(tag, name) {
+  const m = tag.match(new RegExp(name + '\\s*=\\s*"([^"]*)"', 'i')) || tag.match(new RegExp(name + "\\s*=\\s*'([^']*)'", 'i'));
+  return m ? m[1] : '';
+}
+function seoMeta(html, key, val) {
+  // <meta name="description" content="..."> sau <meta property="og:title" content="...">
+  const re = new RegExp('<meta[^>]*' + key + '\\s*=\\s*["\']' + val + '["\'][^>]*>', 'i');
+  const m = html.match(re);
+  if (!m) return '';
+  return seoDecode(seoAttr(m[0], 'content'));
+}
+
+// Extrage semnalele on-page REALE dintr-un HTML (pur, regex; fără DOM). Testat e2e.
+function extractSeoSignals(html, finalUrl, statusCode, keyword) {
+  const h = String(html || '');
+  const titleM = h.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = seoDecode(titleM ? titleM[1] : '');
+  const metaDescription = seoMeta(h, 'name', 'description');
+  const h1s = h.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi) || [];
+  const h1Text = seoDecode((h1s[0] || '').replace(/<[^>]+>/g, ' '));
+  const h2Count = (h.match(/<h2[\s>]/gi) || []).length;
+  const h3Count = (h.match(/<h3[\s>]/gi) || []).length;
+  const imgs = h.match(/<img[^>]*>/gi) || [];
+  const imgMissingAlt = imgs.filter((t) => !/\balt\s*=\s*["'][^"']*\S[^"']*["']/i.test(t)).length;
+  // text vizibil pentru word count: scoate script/style + tag-uri
+  const text = seoDecode(h.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
+  const words = text ? text.split(/\s+/).filter(Boolean) : [];
+  const wordCount = words.length;
+  // linkuri interne vs externe (după host-ul finalUrl)
+  let baseHost = '';
+  try { baseHost = new URL(finalUrl).hostname.toLowerCase(); } catch (e) { baseHost = ''; }
+  const hrefs = (h.match(/<a[^>]*href\s*=\s*["'][^"']*["'][^>]*>/gi) || []).map((t) => seoAttr(t, 'href'));
+  let internalLinks = 0, externalLinks = 0;
+  for (const href of hrefs) {
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) continue;
+    if (/^https?:\/\//i.test(href)) {
+      let hh = ''; try { hh = new URL(href).hostname.toLowerCase(); } catch (e) { hh = ''; }
+      if (hh && baseHost && hh === baseHost) internalLinks++; else externalLinks++;
+    } else { internalLinks++; }
+  }
+  const canonical = (() => { const m = h.match(/<link[^>]*rel\s*=\s*["']canonical["'][^>]*>/i); return m ? seoDecode(seoAttr(m[0], 'href')) : ''; })();
+  const ogTitle = seoMeta(h, 'property', 'og:title');
+  const ogDescription = seoMeta(h, 'property', 'og:description');
+  const ogImage = seoMeta(h, 'property', 'og:image');
+  const hasViewport = /<meta[^>]*name\s*=\s*["']viewport["']/i.test(h);
+  const langM = h.match(/<html[^>]*\blang\s*=\s*["']([^"']+)["']/i);
+  const lang = langM ? langM[1].slice(0, 20) : '';
+
+  const kw = String(keyword || '').toLowerCase().trim();
+  const lc = (s) => String(s || '').toLowerCase();
+  const keywordInTitle = !!kw && lc(title).includes(kw);
+  const keywordInH1 = !!kw && lc(h1Text).includes(kw);
+  const keywordInMeta = !!kw && lc(metaDescription).includes(kw);
+  let keywordDensity = 0;
+  if (kw && wordCount > 0) {
+    const kwWords = kw.split(/\s+/).filter(Boolean).length || 1;
+    const occ = lc(text).split(kw).length - 1;
+    keywordDensity = Math.round(((occ * kwWords) / wordCount) * 1000) / 10; // procent, 1 zecimală
+  }
+
+  return {
+    finalUrl: String(finalUrl || '').slice(0, 500),
+    statusCode: Number(statusCode) || 0,
+    title, titleLength: title.length,
+    metaDescription, metaDescriptionLength: metaDescription.length,
+    h1Count: h1s.length, h1Text,
+    h2Count, h3Count,
+    imgCount: imgs.length, imgMissingAlt,
+    wordCount,
+    internalLinks, externalLinks,
+    canonical, ogTitle, ogDescription, ogImage,
+    hasViewport, lang,
+    keywordInTitle, keywordInH1, keywordInMeta, keywordDensity,
+  };
+}
+exports.extractSeoSignals = extractSeoSignals;
+
+// Punctare DETERMINISTĂ on-page → { score 0-100, issues[] }. Regulile = best-practice SEO clasic. Testat e2e.
+function scoreSeoSignals(s, keyword) {
+  const issues = [];
+  let score = 100;
+  const pen = (n, severity, area, message) => { score -= n; issues.push({ severity, area, message }); };
+  const ok = (area, message) => issues.push({ severity: 'good', area, message });
+
+  if (!s.title) pen(18, 'critical', 'title', 'Pagina nu are <title>.');
+  else if (s.titleLength < 30) pen(8, 'warning', 'title', 'Titlul e prea scurt (sub 30 caractere).');
+  else if (s.titleLength > 60) pen(6, 'warning', 'title', 'Titlul e prea lung (peste 60 caractere) — riscă trunchierea în Google.');
+  else ok('title', 'Titlu de lungime bună (30–60 caractere).');
+
+  if (!s.metaDescription) pen(12, 'critical', 'meta', 'Lipsește meta description.');
+  else if (s.metaDescriptionLength < 70) pen(5, 'warning', 'meta', 'Meta description prea scurtă (sub 70 caractere).');
+  else if (s.metaDescriptionLength > 160) pen(4, 'warning', 'meta', 'Meta description prea lungă (peste 160 caractere).');
+  else ok('meta', 'Meta description de lungime bună.');
+
+  if (s.h1Count === 0) pen(12, 'critical', 'headings', 'Pagina nu are niciun H1.');
+  else if (s.h1Count > 1) pen(6, 'warning', 'headings', `Pagina are ${s.h1Count} elemente H1 (ideal: exact unul).`);
+  else ok('headings', 'Exact un H1.');
+  if (s.h2Count === 0 && s.wordCount > 300) pen(4, 'warning', 'headings', 'Conținut lung fără subtitluri H2 (structură slabă).');
+
+  if (s.wordCount < 150) pen(10, 'warning', 'content', `Conținut subțire (${s.wordCount} cuvinte) — Google preferă pagini cu substanță.`);
+  else ok('content', `Volum de conținut rezonabil (${s.wordCount} cuvinte).`);
+
+  if (s.imgCount > 0 && s.imgMissingAlt > 0) pen(Math.min(8, s.imgMissingAlt), 'warning', 'images', `${s.imgMissingAlt} din ${s.imgCount} imagini nu au atribut alt.`);
+  else if (s.imgCount > 0) ok('images', 'Toate imaginile au atribut alt.');
+
+  if (!s.canonical) pen(4, 'warning', 'technical', 'Lipsește link-ul canonical.');
+  if (!s.hasViewport) pen(6, 'critical', 'technical', 'Lipsește meta viewport (problemă pe mobil).');
+  if (!s.lang) pen(2, 'warning', 'technical', 'Lipsește atributul lang pe <html>.');
+  if (!s.ogTitle || !s.ogImage) pen(3, 'warning', 'technical', 'Lipsesc tag-uri Open Graph (og:title/og:image) — share slab pe social.');
+
+  const kw = String(keyword || '').trim();
+  if (kw) {
+    if (!s.keywordInTitle) pen(8, 'warning', 'keyword', `Cuvântul-cheie „${kw}" nu apare în titlu.`);
+    else ok('keyword', 'Cuvântul-cheie apare în titlu.');
+    if (!s.keywordInH1) pen(5, 'warning', 'keyword', `Cuvântul-cheie „${kw}" nu apare în H1.`);
+    if (!s.keywordInMeta) pen(3, 'warning', 'keyword', `Cuvântul-cheie „${kw}" nu apare în meta description.`);
+    if (s.keywordDensity > 4) pen(5, 'warning', 'keyword', `Densitate prea mare a cuvântului-cheie (${s.keywordDensity}%) — riscă „keyword stuffing".`);
+  }
+
+  return { score: Math.max(0, Math.min(100, Math.round(score))), issues: issues.slice(0, 40) };
+}
+exports.scoreSeoSignals = scoreSeoSignals;
+
+// Schema recomandărilor AI (grounded pe semnale + probleme). Structurată → fără parsing fragil.
+const SEO_RECO_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['summary', 'recommendations'],
+  properties: {
+    summary: { type: 'string', description: 'Rezumat 2-4 fraze al stării SEO on-page și a celor mai importante pârghii.' },
+    recommendations: {
+      type: 'array', maxItems: 12,
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['priority', 'title', 'detail'],
+        properties: {
+          priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+          title: { type: 'string', description: 'Acțiune concretă, scurtă (ex. „Rescrie titlul ca să includă cuvântul-cheie la început").' },
+          detail: { type: 'string', description: 'Cum + de ce, concret, aplicabil imediat.' },
+        },
+      },
+    },
+  },
+};
+
+function buildSeoPrompt(signals, issues, keyword, url) {
+  const lines = [
+    'Auditează SEO ON-PAGE pagina de mai jos și dă recomandări PRIORITIZATE, concrete, aplicabile imediat.',
+    'Bazează-te STRICT pe semnalele extrase + problemele detectate (NU inventa date despre ranking, trafic sau backlink-uri).',
+    'URL: ' + String(url || ''),
+    keyword ? ('Cuvânt-cheie țintă: ' + keyword) : 'Fără cuvânt-cheie țintă specificat.',
+    '',
+    'SEMNALE ON-PAGE (extrase real):',
+    JSON.stringify(signals, null, 2).slice(0, 4000),
+    '',
+    'PROBLEME DETECTATE DETERMINIST:',
+    (issues || []).map((i) => `- [${i.severity}/${i.area}] ${i.message}`).join('\n').slice(0, 3000),
+    '',
+    'Cere: un rezumat scurt + maxim 12 recomandări (priority high/medium/low), cele mai importante primele.',
+  ];
+  return lines.join('\n');
+}
+exports.buildSeoPrompt = buildSeoPrompt;
+
 if (AI_ENABLED) {
+  // Audit SEO on-page (modul „Automatizare SEO"). Operator-only + AI gate + quota. Ia un URL public, îl aduce
+  // (gardă SSRF + timeout + plafon de mărime), extrage semnale REALE, le punctează determinist și cere AI
+  // recomandări prioritizate grounded pe acele semnale. Persistă în seoAudits (admin-read; scris doar de aici).
+  exports.seoAudit = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      assertAdmin(request, 'Doar operatorii pot rula audituri SEO.');
+      const rawUrl = String((request.data || {}).url || '').trim();
+      const keyword = String((request.data || {}).keyword || '').slice(0, 120).trim();
+      if (!isPublicHttpUrl(rawUrl)) throw new HttpsError('invalid-argument', 'URL invalid sau nepermis (folosește un URL public http/https).');
+
+      // Fetch SSRF-safe: redirect MANUAL — validăm FIECARE hop cu isPublicHttpUrl ÎNAINTE de a-l accesa (nu doar
+      // URL-ul final post-factum), max 5 hop-uri. Timeout 8s + plafon de OCTEȚI pe stream (nu doar pe string).
+      const BYTE_CAP = 1000000; // ~1MB citiți de pe fir
+      let html = '';
+      let finalUrl = rawUrl;
+      let statusCode = 0;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        let currentUrl = rawUrl;
+        let res = null;
+        for (let hop = 0; hop < 6; hop++) {
+          if (!isPublicHttpUrl(currentUrl)) throw new HttpsError('failed-precondition', 'Pagina redirecționează către o adresă nepermisă.');
+          res = await fetch(currentUrl, { signal: controller.signal, redirect: 'manual', headers: { 'User-Agent': 'DataReadSEO/1.0 (+https://dataread.ro)', Accept: 'text/html' } });
+          if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+            if (hop === 5) throw new HttpsError('failed-precondition', 'Prea multe redirecturi.');
+            let next;
+            try { next = new URL(res.headers.get('location'), currentUrl).toString(); } catch (e) { throw new HttpsError('failed-precondition', 'Redirect invalid.'); }
+            currentUrl = next;
+            continue;
+          }
+          break;
+        }
+        finalUrl = currentUrl;
+        statusCode = res.status;
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (!ct.includes('text/html')) throw new HttpsError('failed-precondition', 'URL-ul nu returnează o pagină HTML.');
+        const cl = Number(res.headers.get('content-length') || 0);
+        if (cl && cl > BYTE_CAP) throw new HttpsError('failed-precondition', 'Pagina e prea mare pentru audit.');
+        // Citire cu plafon de octeți (oprește descărcarea peste cap — anti memory-DoS pe corp necontrolat).
+        const chunks = [];
+        let total = 0;
+        if (res.body && typeof res.body.getReader === 'function') {
+          const reader = res.body.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.length;
+            chunks.push(Buffer.from(value));
+            if (total > BYTE_CAP) break;
+          }
+        } else {
+          chunks.push(Buffer.from(await res.arrayBuffer()));
+        }
+        html = Buffer.concat(chunks).toString('utf-8').slice(0, 800000);
+      } catch (err) {
+        if (err instanceof HttpsError) throw err;
+        throw new HttpsError('failed-precondition', 'Nu am putut accesa pagina (timeout sau indisponibilă). Verifică URL-ul.');
+      } finally {
+        clearTimeout(timer);
+      }
+
+      const signals = extractSeoSignals(html, finalUrl, statusCode, keyword);
+      const { score, issues } = scoreSeoSignals(signals, keyword);
+
+      // Quota se consumă DOAR după ce pagina a fost adusă cu succes (un URL invalid/inaccesibil nu irosește quota).
+      await consumeAiQuota(request.auth.uid);
+
+      let ai = { summary: '', recommendations: [] };
+      try {
+        const { out } = await runAiJson({
+          schema: SEO_RECO_SCHEMA,
+          system: buildSystemBlocks({ persona: PERSONAS.strategist }),
+          prompt: buildSeoPrompt(signals, issues, keyword, finalUrl),
+          maxTokens: 4000,
+        });
+        ai = out || ai;
+      } catch (err) {
+        logger.warn('seo AI reco failed, returning deterministic audit only', { err: String(err).slice(0, 200) });
+      }
+
+      const PRIO = SEO_RECO_SCHEMA.properties.recommendations.items.properties.priority.enum;
+      const recommendations = (Array.isArray(ai.recommendations) ? ai.recommendations : []).slice(0, 12).map((r) => {
+        const x = r || {};
+        return {
+          priority: PRIO.includes(x.priority) ? x.priority : 'medium',
+          title: String(x.title || '').slice(0, 200),
+          detail: String(x.detail || '').slice(0, 600),
+        };
+      });
+
+      const audit = {
+        schema: 1,
+        url: rawUrl.slice(0, 500),
+        keyword,
+        score,
+        signals,
+        issues,
+        recommendations,
+        summary: String(ai.summary || '').slice(0, 2000),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: request.auth.uid,
+      };
+      const ref = await admin.firestore().collection('seoAudits').add(audit);
+      logger.info('seo audit done', { id: ref.id, url: finalUrl, score, issues: issues.length, by: request.auth.uid });
+      return { id: ref.id, score, signals, issues, recommendations, summary: audit.summary };
+    }
+  );
+
   exports.aiClientReport = onCall(
     { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
     async (request) => {

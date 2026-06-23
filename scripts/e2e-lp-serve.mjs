@@ -1746,6 +1746,58 @@ console.log('\nLPSRC) buildSourceBrief + uniqueLpSlug (Strategie/Campanie → La
   ok(s2 !== 'acme-srl' && s2.startsWith('acme-srl-'), 'LPSRC: slug ocupat → sufix aleator');
 }
 
+// ── TEST SEO: modul Automatizare SEO — gardă SSRF + extragere semnale + scor determinist (funcții JS pure). ──
+console.log('\nSEO) audit on-page — SSRF guard + extract + score');
+{
+  // Gardă SSRF: doar hosturi publice http/https; blochează intern/metadata/IP private/IPv6/porturi ciudate.
+  ok(fns.isPublicHttpUrl('https://exemplu.ro/pagina') === true, 'SEO: URL public https → permis');
+  ok(fns.isPublicHttpUrl('http://exemplu.ro') === true, 'SEO: URL public http → permis');
+  ok(fns.isPublicHttpUrl('http://localhost/x') === false, 'SEO: localhost → blocat');
+  ok(fns.isPublicHttpUrl('http://169.254.169.254/latest/meta-data') === false, 'SEO: metadata link-local → blocat');
+  ok(fns.isPublicHttpUrl('http://10.0.0.5') === false && fns.isPublicHttpUrl('http://192.168.1.1') === false && fns.isPublicHttpUrl('http://172.16.0.1') === false, 'SEO: IP-uri private → blocate');
+  ok(fns.isPublicHttpUrl('http://127.0.0.1') === false, 'SEO: loopback → blocat');
+  ok(fns.isPublicHttpUrl('https://metadata.google.internal/') === false && fns.isPublicHttpUrl('https://x.internal/') === false, 'SEO: hosturi interne → blocate');
+  ok(fns.isPublicHttpUrl('ftp://exemplu.ro') === false && fns.isPublicHttpUrl('javascript:alert(1)') === false, 'SEO: scheme non-http → blocate');
+  ok(fns.isPublicHttpUrl('https://exemplu.ro:8443') === false, 'SEO: port non-standard → blocat');
+  ok(fns.isPublicHttpUrl('https://[::1]/') === false, 'SEO: IPv6 literal → blocat');
+  // Regresie (bypass prins de review): FQDN cu punct final NU trebuie să ocolească garda numelor.
+  ok(fns.isPublicHttpUrl('http://metadata.google.internal./') === false, 'SEO: metadata cu punct final → blocat');
+  ok(fns.isPublicHttpUrl('http://localhost./') === false && fns.isPublicHttpUrl('http://x.internal./') === false, 'SEO: localhost./.internal. cu punct final → blocate');
+
+  const html = `<!doctype html><html lang="ro"><head>
+    <title>Servicii curatenie Bucuresti — Firma profesionala</title>
+    <meta name="description" content="Oferim servicii de curatenie profesionala in Bucuresti pentru birouri si apartamente, rapid si la pret corect.">
+    <meta name="viewport" content="width=device-width">
+    <link rel="canonical" href="https://exemplu.ro/curatenie">
+    <meta property="og:title" content="Curatenie Bucuresti"><meta property="og:image" content="https://exemplu.ro/og.png">
+    </head><body>
+    <h1>Curatenie Bucuresti rapida</h1><h2>Birouri</h2><h2>Apartamente</h2>
+    <p>Echipa noastra face curatenie in Bucuresti de peste 10 ani. Curatenie generala, curatenie dupa constructor, curatenie periodica.</p>
+    <img src="a.jpg" alt="echipa"><img src="b.jpg">
+    <a href="https://exemplu.ro/preturi">Preturi</a><a href="/contact">Contact</a><a href="https://altsite.ro">Partener</a>
+    </body></html>`;
+  const sig = fns.extractSeoSignals(html, 'https://exemplu.ro/curatenie', 200, 'curatenie bucuresti');
+  ok(sig.title.includes('Servicii curatenie') && sig.titleLength > 0, 'SEO: titlu extras');
+  ok(sig.metaDescriptionLength > 70 && sig.metaDescription.includes('curatenie'), 'SEO: meta description extrasa');
+  ok(sig.h1Count === 1 && sig.h2Count === 2, 'SEO: H1=1, H2=2');
+  ok(sig.imgCount === 2 && sig.imgMissingAlt === 1, 'SEO: imagini 2, una fara alt');
+  ok(sig.internalLinks === 2 && sig.externalLinks === 1, 'SEO: linkuri interne 2 / externe 1');
+  ok(sig.canonical === 'https://exemplu.ro/curatenie' && sig.hasViewport === true && sig.lang === 'ro', 'SEO: canonical + viewport + lang');
+  ok(sig.ogTitle === 'Curatenie Bucuresti' && sig.ogImage.includes('og.png'), 'SEO: Open Graph extras');
+  ok(sig.keywordInTitle === true && sig.keywordInH1 === true && sig.wordCount > 20, 'SEO: keyword in titlu si H1 + word count');
+
+  const scored = fns.scoreSeoSignals(sig, 'curatenie bucuresti');
+  ok(typeof scored.score === 'number' && scored.score >= 0 && scored.score <= 100, 'SEO: scor in 0-100');
+  ok(scored.issues.some((i) => i.area === 'images' && i.severity === 'warning'), 'SEO: problema imagine fara alt detectata');
+  ok(scored.issues.some((i) => i.severity === 'good' && i.area === 'title'), 'SEO: semnal pozitiv pe titlu');
+
+  // Pagina goala/proasta → scor mic + probleme critice.
+  const bad = fns.extractSeoSignals('<html><body><p>scurt</p></body></html>', 'https://exemplu.ro', 200, '');
+  const badScore = fns.scoreSeoSignals(bad, '');
+  ok(badScore.score < 70 && badScore.issues.some((i) => i.severity === 'critical'), 'SEO: pagina slaba → scor mic + probleme critice');
+  ok(fns.buildSeoPrompt(sig, scored.issues, 'curatenie bucuresti', 'https://exemplu.ro/curatenie').includes('SEMNALE ON-PAGE'), 'SEO: promptul include semnalele grounding');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);
