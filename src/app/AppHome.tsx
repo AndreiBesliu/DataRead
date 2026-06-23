@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coerceToDeliverables, deliverablesToSections, type RequestDeliverables, type RequestKind } from '../types/request';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
@@ -22,25 +22,11 @@ import { getPackage, isValidPackageId } from '../config/packages';
 import { coerceToCampaign, coerceToReport, kpisFromTotals, type CampaignDef, type ClientReport } from '../analytics/kpi';
 import { coerceToContact, contactDisplay, type Contact } from '../types/contact';
 import { coerceToPrediction, predictionToSections, type Prediction } from '../types/prediction';
-import { customThemeStyle, type CustomTheme } from '../theme/themes';
-import { coerceToPageThemes } from '../types/pageThemes';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
 import { isPreviewSearch } from './previewMode';
 
-/** Felia A: tema portalului client (/app), dacă operatorul i-a setat un override în siteConfig/pageThemes.app.
- *  Best-effort getDoc (webdriver-guard ca boot-smoke să rămână determinist). null → aspectul default actual. */
-function useAppPageTheme(): CustomTheme | null {
-  const [theme, setTheme] = useState<CustomTheme | null>(null);
-  useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
-    let cancelled = false;
-    getDoc(doc(db, 'siteConfig', 'pageThemes'))
-      .then((snap) => { if (!cancelled) setTheme(coerceToPageThemes(snap.exists() ? snap.data() : null).themes.app || null); })
-      .catch(() => {/* offline / interzis → aspect default */});
-    return () => { cancelled = true; };
-  }, []);
-  return theme;
-}
+// Tema portalului /app (pageThemes.app) e aplicată acum de AppThemeLayout pe TOATE rutele /app/* (un singur
+// wrapper), ca paginile imbricate să fie consistente cu /app. AppHome nu mai învelește singur conținutul.
 
 const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
 const portalMoney = (n: number) => `€${n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}`;
@@ -521,31 +507,29 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** Shell-ul vizual al portalului /app pentru previzualizarea din /admin (?preview=1): randează aspectul
- *  REAL (antet + carduri) cu tema aplicată, dar FĂRĂ autentificare și FĂRĂ date de client. Scopul e doar
- *  să vezi cum arată tema pe /app — nu te mai trimite la ecranul de login în iframe-ul de preview. */
-function AppThemePreview({ theme }: { theme: CustomTheme | null }) {
+ *  REAL (antet + carduri) dar FĂRĂ autentificare și FĂRĂ date de client. Tema e aplicată de AppThemeLayout
+ *  (wrapper-ul comun /app), deci aici nu mai învelim. Scop: vezi tema pe /app fără ecranul de login în iframe. */
+function AppThemePreview() {
   const { t } = useTranslation();
   const cards = [t('appHome.onboardingTitle'), t('appHome.portalTitle'), t('appHome.portalReportTitle'), t('appHome.lpTitle')];
   return (
-    <div style={theme ? customThemeStyle(theme) : undefined}>
-      <main data-page="app-theme-preview" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
-          <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
-          <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSampleUser')}</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
-            <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('help.title')}</span>
-            <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('appHome.signOut')}</span>
-          </span>
-        </header>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {cards.map((title) => (
-            <Card key={title} title={title}>
-              <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSample')}</p>
-            </Card>
-          ))}
-        </div>
-      </main>
-    </div>
+    <main data-page="app-theme-preview" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
+        <span style={{ color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSampleUser')}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+          <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('help.title')}</span>
+          <span className="btn" style={{ padding: '6px 12px', fontSize: 13 }}>{t('appHome.signOut')}</span>
+        </span>
+      </header>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        {cards.map((title) => (
+          <Card key={title} title={title}>
+            <p style={{ margin: 0, color: 'var(--fg-1)', fontSize: 14 }}>{t('admin.site.previewSample')}</p>
+          </Card>
+        ))}
+      </div>
+    </main>
   );
 }
 
@@ -735,7 +719,6 @@ export default function AppHome() {
   const [profile, setProfile] = useState<ClientProfile | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
-  const appTheme = useAppPageTheme(); // Felia A: override de temă pe /app (siteConfig/pageThemes.app), dacă există.
   const previewMode = isPreviewSearch(search); // iframe-ul de preview din /admin (?preview=1): shell tematizat, fără auth
 
   useEffect(() => {
@@ -749,8 +732,8 @@ export default function AppHome() {
     return watchClientProfile(user.uid, setProfile);
   }, [user, previewMode]);
 
-  // Preview din /admin: arată aspectul portalului cu tema aplicată, FĂRĂ login și fără date de client.
-  if (previewMode) return <AppThemePreview theme={appTheme} />;
+  // Preview din /admin: arată aspectul portalului (tema vine din AppThemeLayout), FĂRĂ login și fără date.
+  if (previewMode) return <AppThemePreview />;
 
   if (initializing) {
     return <main data-page="app-loading" style={{ padding: 64, textAlign: 'center', color: 'var(--fg-1)' }}>…</main>;
@@ -798,7 +781,6 @@ export default function AppHome() {
   };
 
   return (
-    <div style={appTheme ? customThemeStyle(appTheme) : undefined}>
     <main data-page="app-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
@@ -894,6 +876,5 @@ export default function AppHome() {
       {/* Facturile clientului (Verticala 2) — doar cele emise, read-only + PDF. */}
       <InvoicesPortal uid={user.uid} />
     </main>
-    </div>
   );
 }

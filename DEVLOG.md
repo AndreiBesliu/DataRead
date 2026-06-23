@@ -2296,6 +2296,17 @@ normaliser, secretele niciodată în chat/repo.
 > `scripts/test-rules.ts` (NOU) leagă cheile emptyOnboarding() de ambele whitelist-uri — pică dacă un câmp nou e uitat din reguli.
 > Frontend + REGULI. DEPLOYED: hosting + firestore rules.
 
+**2026-06-23 - Task Completed — Temă consistentă pe TOATE paginile /app/* (layout comun)**
+> Model: Claude Opus 4.8 (1M context). Plângere (screenshot): /app/self-marketing (și celelalte pagini sub /app) apăreau
+> albe — Felia A pusese tema portalului (pageThemes.app) DOAR pe /app (AppHome), nu și pe rutele imbricate.
+> - **`src/app/appPageTheme.ts` (NOU):** `useAppPageTheme()` extras din AppHome (best-effort getDoc + gardă webdriver).
+> - **`src/app/AppThemeLayout.tsx` (NOU):** layout route care aplică `customThemeStyle(pageThemes.app)` + minHeight:100vh O
+>   SINGURĂ DATĂ pe un wrapper, prin `<Outlet/>` → toate /app/* (/, /onboarding, /self-marketing, /ghid) moștenesc tema.
+> - **App.tsx:** rutele /app/* grupate sub `<Route element={<AppThemeLayout/>}>`.
+> - **AppHome.tsx:** scos wrapper-ul propriu de temă + hook-ul local (layout-ul preia); AppThemePreview nu mai învelește singur.
+> Verificat: typecheck + 20/20 suites + build + boot (/app?preview=1 shell tematizat + /app auth panel intacte). Review adversarial
+> (single-agent): CLEAN — fără dublă-temare, ordine hooks ok, fără importuri orfane. Frontend-only. DEPLOYED: hosting.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

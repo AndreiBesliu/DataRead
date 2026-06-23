@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, type ReactElement } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import AppThemeLayout from './app/AppThemeLayout';
 import { useTranslation } from 'react-i18next';
 import i18n, { storedLanguage } from './i18n';
 import { resolveInitialLanguage, toLocalizedPath } from './i18n/routing';
@@ -79,10 +80,13 @@ function AppShell() {
       {PUBLIC_ROUTES.map((r) => (
         <Route key={`en:${r.slug}`} path={toLocalizedPath(r.slug, 'en')} element={publicElement(r)} />
       ))}
-      <Route path="/app" element={<AppHome />} />
-      <Route path="/app/onboarding" element={<OnboardingForm />} />
-      <Route path="/app/self-marketing" element={<SelfMarketingFunnel />} />
-      <Route path="/app/ghid" element={<HelpHome />} />
+      {/* Toate paginile /app/* moștenesc tema portalului (pageThemes.app) prin AppThemeLayout → aspect consistent. */}
+      <Route element={<AppThemeLayout />}>
+        <Route path="/app" element={<AppHome />} />
+        <Route path="/app/onboarding" element={<OnboardingForm />} />
+        <Route path="/app/self-marketing" element={<SelfMarketingFunnel />} />
+        <Route path="/app/ghid" element={<HelpHome />} />
+      </Route>
       <Route path="/admin" element={<AdminHome />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
