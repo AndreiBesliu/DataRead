@@ -29,7 +29,7 @@ const PLATFORM_PAGES = [
   { key: 'contact', path: '/contact' },
   { key: 'termeni', path: '/legal/termeni' },
   { key: 'confid', path: '/legal/confidentialitate' },
-  { key: 'app', path: '/app' },
+  { key: 'app', path: '/app', ownTheme: true }, // portal autentificat — temă PROPRIE, nu cea publică
 ] as const;
 
 export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
@@ -140,10 +140,14 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
           <button type="button" onClick={reloadPreview} style={linkBtn}>↻ {t('admin.site.reloadPreview')}</button>
           <a href={previewPath} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
         </div>
+        {/* `sandbox` FĂRĂ allow-top-navigation → pagina din iframe NU poate naviga fereastra /admin (nu te mai scoate la login).
+            allow-same-origin păstrează tema + conținutul reale. Schimbarea paginii doar actualizează `src` (fără remount);
+            re-montarea (reîncărcarea) se face DOAR prin `key={previewKey}` la „Reîncarcă"/după publicare. */}
         <iframe
-          key={`${previewPath}-${previewKey}`}
+          key={previewKey}
           src={previewPath}
           title={t('admin.site.previewLive')}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
           style={{ width: '100%', height: 560, border: '1px solid var(--border)', borderRadius: 10, background: '#fff' }}
         />
       </div>
@@ -160,10 +164,15 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
             <tbody>
               {PLATFORM_PAGES.map((p) => (
                 <tr key={p.key} style={{ background: previewPath === p.path ? 'var(--bg-0)' : 'transparent' }}>
-                  <td style={{ ...td, fontWeight: 700 }}>{t(`admin.site.pg_${p.key}`)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>
+                    {t(`admin.site.pg_${p.key}`)}
+                    {'ownTheme' in p && p.ownTheme && (
+                      <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, borderRadius: 4, padding: '1px 7px', background: '#fff4e5', color: '#b25e09' }}>{t('admin.site.ownTheme')}</span>
+                    )}
+                  </td>
                   <td style={{ ...td, color: 'var(--fg-1)', fontFamily: 'monospace', fontSize: 12 }}>{p.path}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button type="button" onClick={() => { setPreviewPath(p.path); reloadPreview(); }} style={{ ...linkBtn, marginRight: 6 }}>{t('admin.site.preview')}</button>
+                    <button type="button" onClick={() => setPreviewPath(p.path)} style={{ ...linkBtn, marginRight: 6 }}>{t('admin.site.preview')}</button>
                     <a href={p.path} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
                   </td>
                 </tr>
