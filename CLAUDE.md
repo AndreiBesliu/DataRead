@@ -312,6 +312,12 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `channelRecommendations` → `buildCampaignPrompt` (`channelRecsBlock`, doar când există) ca generarea să se alinieze la pasul
   „Oportunități"; helper `clampText` (truncare pe graniță de propoziție/cuvânt, nu slice brut) aplicat pe output-urile lungi AI
   (campanie/insight/raport + cele 4 self prin `sl`); mesaj de refuz `runAiJson` mai acțional. Toate exportate + testate e2e (TEST GND).
+- **Framework-uri de judecată aplicate per-sarcină (ACTIV 23.06.2026, felia 3):** peste cunoașterea din persone (L1),
+  task-prompturile aplică acum framework-ul pe SARCINA concretă: `buildInsightPrompt` = comparație KPI vs reperele L2 +
+  diagnostic pe pâlnie (unde se rupe: impresii→click→lead→client); `buildCampaignPrompt` = copy pe PAS/AIDA + stadiu de
+  conștientizare; `buildStrategyPrompt` = STP per direcție; `buildOpportunitiesPrompt` = prioritizare ICE; `buildChannelsPrompt`
+  = ordonare ICE. Prompt-only (pure), testat e2e (TEST FW3). Benchmark-urile L2 sunt acum FOLOSITE explicit în insight (bucla
+  benchmark→verdict închisă). Rămâne pe Andrei: calibrarea valorilor reale în BENCHMARKS_RO.
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

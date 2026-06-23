@@ -2065,6 +2065,20 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 18/18 suites + e2e **TEST GND** (clampText prefix curat + carry-over + regula de obiectiv + adBudget în context) + build.
 > DEPLOYED: functions (fără frontend → fără hosting). Felia 3 roadmap: benchmarks de judecată (BENCHMARKS_RO reali + framework-uri).
 
+**2026-06-23 - Task Completed — AI felia 3: framework-uri de judecată aplicate per-sarcină**
+> Model: Claude Opus 4.8 (1M context). A treia felie din roadmap-ul AI. Cunoașterea framework-urilor era deja în persone (L1,
+> din felia 1); felia 3 le face APLICATE pe sarcina concretă (model-ul nu doar „știe" AIDA, ci e instruit să-l folosească pe
+> ACEASTĂ campanie) + închide bucla benchmark→verdict (L2 era prezent, dar nu folosit explicit).
+> - **buildInsightPrompt:** compară fiecare KPI cu reperele de industrie din Fundație (L2) + diagnostic pe pâlnie (localizează
+>   UNDE se rupe: impresii→click→lead→client) și recomandă fix-ul pentru acel punct.
+> - **buildCampaignPrompt:** copy structurat pe PAS/AIDA + pornit de la stadiul de conștientizare al publicului.
+> - **buildStrategyPrompt:** fiecare direcție ancorată în STP (Segmentare/Targetare/Poziționare).
+> - **buildOpportunitiesPrompt:** prioritizare ICE (Impact × Încredere × Ușurință).
+> - **buildChannelsPrompt:** ordonare ICE (nu doar impact).
+> Prompt-only (funcții pure), zero schimbări de schemă/cost. Verificat: 18/18 suites + e2e **TEST FW3** + build. DEPLOYED: functions.
+> NB: BENCHMARKS_RO rămân orientative — calibrarea cu date reale = task Andrei. Felia 4 roadmap: grounding big-bet (trend MoM,
+> memorie insight anterior, campaniile live ale clientului).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

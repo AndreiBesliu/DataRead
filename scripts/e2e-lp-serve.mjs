@@ -633,6 +633,28 @@ console.log('\nGND) Quick wins grounding — clampText + carry-over + obiectiv +
   ok(insP.includes('Buget de reclame declarat') && /250.?500/.test(insP), 'insight: adBudget în context');
 }
 
+// ── TEST FW3: framework-uri de judecată aplicate per-sarcină (felia 3). ──
+console.log('\nFW3) Framework-uri aplicate — benchmark/funnel · PAS-AIDA · STP · ICE');
+{
+  const lead = { companyName: 'Z', industry: 'retail', objectives: ['leads'], adBudget: 'b500_1000' };
+  const insP = fns.buildInsightPrompt(lead, { name: 'C', platform: 'meta', status: 'active' }, []);
+  ok(insP.includes('Compară fiecare KPI cu reperele de industrie'), 'insight: comparație KPI vs benchmark-uri');
+  ok(insP.includes('pâlni'), 'insight: diagnostic pe pâlnie (unde se rupe)');
+
+  const cp = fns.buildCampaignPrompt(lead, { title: 'T', offer: 'O' });
+  ok(cp.includes('PAS sau AIDA') && cp.includes('conștientizare'), 'campaign: copy pe PAS/AIDA + awareness level');
+
+  const ch = fns.buildChannelsPrompt(lead);
+  ok(ch.includes('logica ICE'), 'channels: ordonare ICE');
+
+  const profile = { companyName: 'Z', industry: 'retail', productsServices: 'X', audience: 'Y', goals: 'G' };
+  const st = fns.buildStrategyPrompt(profile);
+  ok(st.includes('STP') && st.includes('Segmentare'), 'strategy: STP per direcție');
+
+  const op = fns.buildOpportunitiesPrompt(profile);
+  ok(op.includes('ICE') && op.includes('Impact'), 'opportunities: prioritizare ICE');
+}
+
 // ── TEST Q: „Self Marketing" — buildStrategyPrompt + STRATEGY_SCHEMA + coerceSelfProfileServer
 // (functions e JS netipizat → require-ul + apelul prind syntax/ReferenceError pe care build-ul nu-i vede). ──
 console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil server-side');
