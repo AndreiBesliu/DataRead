@@ -31,7 +31,7 @@ export const OPERATOR_HELP: HelpSection[] = [
   sec('opSuggestions', 3),
   sec('opRequests', 5),
   sec('opOpportunities', 3),
-  sec('opMarketing', 4),
+  sec('opMarketing', 5),
   sec('opConnectors', 4),
   sec('opAutomation', 7),
   sec('opAi', 7),

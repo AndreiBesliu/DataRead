@@ -1092,6 +1092,73 @@ console.log('\nINS) insight actions tipate — paritate clamp JS ↔ coerce TS')
   ok(enumOk, 'fiecare enum din INSIGHT_SCHEMA e acceptat de coerceInsightAction (schema↔coerce, fără drift)');
 }
 
+// ── TEST CONTACT: fundația de contacte (Faza 0 predicție) — identitate determinism + mascare + paritate clamp/coerce. ──
+console.log('\nCONTACT) fundație contacte — identitate + mascare + paritate JS↔TS');
+{
+  const h1 = fns.identityHash('u1', 'email', 'a@x.ro');
+  const h1b = fns.identityHash('u1', 'email', 'a@x.ro');
+  const h2 = fns.identityHash('u2', 'email', 'a@x.ro');
+  ok(h1 === h1b && h1.length === 40, 'identityHash: determinist (același input → același hash)');
+  ok(h1 !== h2, 'identityHash: per-tenant (același email, alt uid → alt hash)');
+  ok(fns.identityHash('u1', 'phone', '712345789') !== fns.identityHash('u1', 'email', '712345789'), 'identityHash: kind prefixat (email „123" ≠ telefon „123")');
+  // mascare paritate JS↔TS
+  ok(fns.maskEmailJs('Andrei@Gmail.com') === C.maskEmail('Andrei@Gmail.com') && fns.maskEmailJs('Andrei@Gmail.com') === 'a***@gmail.com', 'maskEmail paritate JS↔TS');
+  ok(fns.maskPhoneJs('+40 712 345 789') === C.maskPhone('+40 712 345 789') && fns.maskPhoneJs('+40 712 345 789') === '***789', 'maskPhone paritate JS↔TS');
+  ok(fns.maskEmailJs('nu-i email') === '' && fns.maskPhoneJs('12') === '', 'mascare: invalid → gol');
+  // extractContactIdentity: email by type, fallback name, anon
+  const fields = [{ name: 'mail', type: 'email' }, { name: 'tel', type: 'tel' }, { name: 'nume', type: 'text' }];
+  ok(fns.extractContactIdentity({ mail: 'X@Y.ro', tel: '0712345789' }, fields).kind === 'email', 'extractIdentity: email by type preferat');
+  ok(fns.extractContactIdentity({ tel: '0712345789' }, fields).kind === 'phone', 'extractIdentity: telefon fallback');
+  ok(fns.extractContactIdentity({ nume: 'Ion' }, fields).kind === 'anon', 'extractIdentity: fără email/telefon → anon');
+  ok(fns.extractContactIdentity({ email_address: 'a@b.ro' }, [{ name: 'email_address', type: 'text' }]).kind === 'email', 'extractIdentity: fallback euristic pe nume');
+  // paritate clampContact / clampContactEvent JS ↔ coerce TS (key-order identic → JSON.stringify egal)
+  const cCases = [
+    { identityKind: 'email', emailMasked: 'a***@x.ro', phoneMasked: '', lifecycle: 'calificat', rollup: { submissions: 2, firstSeen: 1, lastSeen: 9, lastSlug: 'p' }, mergeCandidate: true },
+    { identityKind: 'galaxy', lifecycle: 'vip', rollup: { submissions: 'x', lastSlug: 5 } },
+    'gunoi',
+  ];
+  let cMatch = true;
+  for (const x of cCases) if (JSON.stringify(fns.clampContact(x)) !== JSON.stringify(C.coerceToContact(x))) { cMatch = false; console.error('  contact divergență', JSON.stringify(fns.clampContact(x)), '!=', JSON.stringify(C.coerceToContact(x))); }
+  ok(cMatch, 'clampContact JS == coerceToContact TS pe cazuri adversariale');
+  const eCases = [
+    { type: 'status_change', at: 123, submissionId: 's1', slug: 'promo', detail: 'contactat', utm: { source: 'fb', medium: 'cpc', campaign: 'x' } },
+    { type: 'boom', at: -1, detail: 'y'.repeat(500) },
+    null,
+  ];
+  let eMatch = true;
+  for (const x of eCases) if (JSON.stringify(fns.clampContactEvent(x)) !== JSON.stringify(C.coerceToContactEvent(x))) { eMatch = false; console.error('  event divergență', JSON.stringify(fns.clampContactEvent(x)), '!=', JSON.stringify(C.coerceToContactEvent(x))); }
+  ok(eMatch, 'clampContactEvent JS == coerceToContactEvent TS pe cazuri adversariale');
+}
+
+// ── TEST PRED: predicție comportamentală (Faza 1) — paritate clamp/coerce + schema↔coerce + profil fără PII brut. ──
+console.log('\nPRED) predicție — paritate clamp JS ↔ coerce TS + profil mascat');
+{
+  const cases = [
+    { conversionLikelihood: 'high', temperature: 'warm', confidence: 'med', reasoning: 'r', nextBestActions: [{ action: 'offer', detail: 'd', whenDays: 5 }, { action: 'teleport', whenDays: 99 }], caveats: 'c', dataGaps: ['x', 42, ''] },
+    { conversionLikelihood: 'galaxy', nextBestActions: 'nu-i array', dataGaps: Array(10).fill('g') },
+    'gunoi',
+  ];
+  let match = true;
+  for (const x of cases) if (JSON.stringify(fns.clampPrediction(x)) !== JSON.stringify(C.coerceToPrediction(x))) { match = false; console.error('  pred divergență', JSON.stringify(fns.clampPrediction(x)), '!=', JSON.stringify(C.coerceToPrediction(x))); }
+  ok(match, 'clampPrediction JS == coerceToPrediction TS pe cazuri adversariale');
+  const sp = fns.PREDICTION_SCHEMA.properties;
+  const enumOk = sp.conversionLikelihood.enum.every((v) => C.coerceToPrediction({ conversionLikelihood: v }).conversionLikelihood === v)
+    && sp.temperature.enum.every((v) => C.coerceToPrediction({ temperature: v }).temperature === v)
+    && sp.nextBestActions.items.properties.action.enum.every((v) => C.coerceToPrediction({ nextBestActions: [{ action: v, detail: '', whenDays: 0 }] }).nextBestActions[0].action === v);
+  ok(enumOk, 'fiecare enum din PREDICTION_SCHEMA e acceptat de coerceToPrediction (schema↔coerce, fără drift)');
+  ok(sp.nextBestActions.items.additionalProperties === false && fns.PREDICTION_SCHEMA.additionalProperties === false, 'PREDICTION_SCHEMA additionalProperties:false');
+  // profil mascat: NU conține PII brut (doar mascat + sumar comportamental)
+  const contact = { emailMasked: 'a***@x.ro', phoneMasked: '', identityKind: 'email', lifecycle: 'contactat', rollup: { submissions: 2, firstSeen: 1, lastSeen: 2, lastSlug: 'promo' } };
+  const events = [{ type: 'form_submit', at: 1, slug: 'promo', utm: { source: 'fb' } }, { type: 'status_change', at: 2, detail: 'contactat' }];
+  const cp = fns.buildContactProfile(contact, events);
+  ok(cp.includes('a***@x.ro') && !cp.includes('@gmail') && cp.includes('CONTACT'), 'buildContactProfile: mascat, fără PII brut');
+  ok(cp.includes('a trimis formularul') && cp.includes('status → contactat'), 'buildContactProfile: timeline de evenimente');
+  const lp2 = fns.buildLeadProfile({ companyName: 'ACME', industry: 'retail', status: 'contacted', objectives: ['leads'], adBudget: '500' }, [{ type: 'call', at: 1, body: 'a sunat' }]);
+  ok(lp2.includes('ACME') && lp2.includes('LEAD'), 'buildLeadProfile: conține firma + tipul subiectului');
+  const prompt = fns.buildPredictionPrompt(cp, 'contact');
+  ok(prompt.includes('a***@x.ro') && prompt.includes('prezice') && !prompt.includes('@gmail'), 'buildPredictionPrompt: conține profilul mascat, fără PII brut');
+}
+
 // ── TEST W: A/B testing „pe sloturi" — helpers puri + serveLp (split/sticky/cookie/abStats) + submit atribuit. ──
 console.log('\nW) A/B testing — helpers + serveLp split/sticky + abStats');
 {

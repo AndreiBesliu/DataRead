@@ -2152,6 +2152,42 @@ normaliser, secretele niciodată în chat/repo.
 >   neschimbate). NB: insight-urile vechi (schema 1, string) arată „0 acțiuni" până la regenerare (clean break, precedent 5a).
 >   Felii rămase: predicție comportamentală (PART 2 din plan), 5c (raport kpis[]/highlights[]/recommendations[]).
 
+**2026-06-23 - Task Started — Predicție comportamentală Faza 0+1**
+> Model: Claude Opus 4.8 (1M context). Felia 6 din roadmap-ul AI: funcție AI nouă care analizează clienții
+> CLIENȚILOR noștri (consumatorii finali) și prezice comportamentul din istoria acumulată; motor reutilizabil
+> și pe lead-urile noastre. Faza 0 = fundația de date (contacte + evenimente, ingestie forward-only). Faza 1 =
+> motorul de predicție AI (operator). Decizii: subiect primar = contactul; ingestie activă acum (date de test).
+
+**2026-06-23 - Task Completed — Predicție comportamentală Faza 0: fundația de contacte**
+> Model: Claude Opus 4.8 (1M context). Fundație nouă pt. consumatorii finali ai clienților, sub `clients/{uid}/**`.
+> - **Date:** `contacts/{contactId}` (identitate MASCATĂ + hash; lifecycle; rollup RFM) + `contacts/{id}/events` (append-only,
+>   `at` explicit) + `contactRefs/{submissionId}` (index server-only submissionId→contactId). PII BRUT rămâne DOAR în submissions.
+> - **Identitate:** `identityHash = sha256(uid:kind:valoare)` (per-tenant → necorelabil cross-tenant; email→același contact pe
+>   LP-uri diferite). `src/types/contact.ts` + `contactEvent.ts` (coerce + mascare/normalizare puri); port JS în functions (paritate e2e).
+> - **Ingestie (best-effort, gate `CONTACT_INGEST_ENABLED=true`):** trigger `onSubmissionCreate` (re-citește LP pt. clientUid +
+>   tipuri câmpuri, extrage email/telefon, upsert contact tranzacțional + event form_submit + contactRefs) + `onLpLeadStateWrite`
+>   (status_change → event + lifecycle). Sărit dacă LP n-are client conectat; fail-closed prin `clientExists`.
+> - **Reguli:** contacts/events read owner+admin/write false; contactRefs read+write false.
+> Verificat: typecheck + 18/18 suites + e2e TEST CONTACT (identitate determinism + mascare paritate + clamp JS↔TS) + build + boot.
+> Review adversarial (PII/izolare + corectitudine triggere) → 0 defecte. DEPLOYED: functions + hosting (rules).
+
+**2026-06-23 - Task Completed — Predicție comportamentală Faza 1: motor AI generic**
+> Model: Claude Opus 4.8 (1M context). Motor UNIC de predicție peste un profil MASCAT; subiect = contact (consumatorul
+> clientului) SAU lead (pipeline-ul nostru) — „același sistem și pentru noi".
+> - **Schemă (`src/types/prediction.ts`):** conversionLikelihood (low/med/high) + temperature (hot/warm/cooling/cold) +
+>   confidence + reasoning + nextBestActions[]{action,detail,whenDays} + caveats + dataGaps[]. confidence/caveats/dataGaps
+>   OBLIGATORII (onestitate pe date subțiri). FĂRĂ churn/LTV (lipsesc date monetare). coerce + clamp JS (paritate e2e TEST PRED).
+> - **functions:** `PREDICTION_SCHEMA` (additionalProperties:false) + `clampPrediction` + `buildContactProfile`/`buildLeadProfile`
+>   (puri, ZERO PII brut în prompt) + `buildPredictionPrompt` + nucleu `performPrediction` (citiri best-effort, persona nouă
+>   `predictor` în personas.js, claude-opus-4-8). Callable-uri admin-only `predictContactBehavior`→`contactPredictions/{id}` +
+>   `predictLeadBehavior`→`leadPredictions/{id}` (consumeAiQuota, gate `PREDICTION_ENABLED`). Reguli: read admin/write false
+>   (UID-ul operatorului `by` NU ajunge la client; mirror client-safe = Faza 4 ulterioară).
+> - **UI:** `src/admin/PredictionPanel.tsx` (PredictionCard partajat + `LeadPrediction` în expanderul de lead + `ClientContacts`
+>   = listă contacte per client cu „Prezice comportament" în expanderul de client din AdminHome).
+> Verificat: typecheck + 18/18 suites + e2e TEST PRED (paritate clamp↔coerce + schema↔coerce + profil fără PII brut) + build + boot.
+> Review adversarial (PII în prompt + securitate callable + paritate/UI). DEPLOYED: functions + hosting. Faze rămase: 2 (sugestii),
+> 3 (warehouse: unificare identitate + events cross-LP + churn/LTV), 4 (client-facing /app cu consimțământ + fair-share).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

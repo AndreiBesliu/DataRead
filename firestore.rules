@@ -154,6 +154,22 @@ service cloud.firestore {
         allow delete: if signedInAs(uid);
       }
 
+      // Contacte = consumatorii FINALI ai clientului (Faza 0 predicție comportamentală). Construite din submission-uri
+      // + schimbări de status de triggerele de ingestie (Admin SDK). PII brut NU se stochează aici (doar mascat + hash).
+      // Clientul își vede DOAR contactele lui (owner); scrierea e EXCLUSIV server-side.
+      match /contacts/{contactId} {
+        allow read: if signedInAs(uid) || isAdmin();
+        allow write: if false; // doar functions (Admin SDK)
+        match /events/{eventId} {
+          allow read: if signedInAs(uid) || isAdmin();
+          allow write: if false; // append-only de functions (Admin SDK)
+        }
+      }
+      // Index server-only submissionId→contactId (corelează schimbările de status din lpLeadState). NICIODATĂ citibil de client.
+      match /contactRefs/{subId} {
+        allow read, write: if false;
+      }
+
       // Notificări + task-uri generate de automatizările client-scope (scope:'client'). Scrise EXCLUSIV de motor
       // (Admin SDK). Clientul își vede DOAR pe ale lui (izolare multi-tenant); poate marca un task ca rezolvat.
       match /notifications/{id} {
@@ -334,6 +350,19 @@ service cloud.firestore {
     // de campaigns/{id} (citibilă de client) ca să nu se scurgă judecata internă a agenției către client. Scrisă
     // EXCLUSIV de functions (performCampaignInsight, Admin SDK).
     match /campaignInsights/{campaignId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Predicții comportamentale (Faza 1) — pe un contact (contactPredictions/{contactId}) sau pe un lead
+    // (leadPredictions/{leadId}). Conțin UID-ul operatorului (`by`) → STRICT admin (ca campaignInsights, NU sub
+    // clients/{uid} care e citibil de client). Scrise EXCLUSIV de functions (performPrediction, Admin SDK).
+    // Mirror client-safe în /app = Faza 4 ulterioară (whitelist fără `by`).
+    match /contactPredictions/{contactId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /leadPredictions/{leadId} {
       allow read: if isAdmin();
       allow write: if false;
     }

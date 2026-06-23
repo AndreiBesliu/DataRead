@@ -295,6 +295,86 @@ exports.onRequestVersionCreated = onDocumentCreated(
   }
 );
 
+// ── Ingestie CONTACT din submission LP (Faza 0 predicție). Trigger best-effort: re-citește LP pt. clientUid +
+//    tipurile câmpurilor, extrage identitatea (mascat + hash), upsert contact + event form_submit + index
+//    submissionId→contactId. Gate CONTACT_INGEST_ENABLED. Sărit dacă LP n-are client conectat (contacte = per-tenant). ──
+exports.onSubmissionCreate = onDocumentCreated({ document: 'landingPages/{slug}/submissions/{subId}', region: REGION }, async (event) => {
+  if (!CONTACT_INGEST_ENABLED) return;
+  const { slug, subId } = event.params;
+  try {
+    const sub = event.data ? event.data.data() : null;
+    if (!sub) return;
+    const db = admin.firestore();
+    const lpSnap = await db.collection('landingPages').doc(slug).get();
+    const lp = lpSnap.exists ? (lpSnap.data() || {}) : null;
+    const clientUid = lp && typeof lp.clientUid === 'string' ? lp.clientUid : '';
+    if (!clientUid) return; // LP fără client conectat → nimic de ingerat (contactele sunt sub clients/{uid})
+    if (!(await clientExists(db, clientUid))) return;
+    const fields = lp.form && Array.isArray(lp.form.fields) ? lp.form.fields : [];
+    const id = extractContactIdentity(sub.values, fields);
+    const contactId = id.kind === 'anon' ? `sub_${subId}` : identityHash(clientUid, id.kind, id.value);
+    const nowMs = sub.createdAt && typeof sub.createdAt.toMillis === 'function' ? sub.createdAt.toMillis() : Date.now();
+    const utm = sub.utm && typeof sub.utm === 'object' ? sub.utm : {};
+    const cRef = db.collection('clients').doc(clientUid).collection('contacts').doc(contactId);
+    await db.runTransaction(async (tx) => {
+      const cSnap = await tx.get(cRef);
+      const prev = cSnap.exists ? (cSnap.data() || {}) : null;
+      const prevRollup = prev && prev.rollup && typeof prev.rollup === 'object' ? prev.rollup : {};
+      const shaped = clampContact({
+        identityKind: id.kind,
+        emailMasked: id.emailMasked || (prev && prev.emailMasked) || '',
+        phoneMasked: id.phoneMasked || (prev && prev.phoneMasked) || '',
+        lifecycle: (prev && prev.lifecycle) || 'nou',
+        rollup: {
+          submissions: (Number(prevRollup.submissions) || 0) + 1,
+          firstSeen: Number(prevRollup.firstSeen) || nowMs,
+          lastSeen: nowMs,
+          lastSlug: slug,
+        },
+        mergeCandidate: !!(prev && prev.mergeCandidate),
+      });
+      tx.set(cRef, {
+        ...shaped,
+        createdAt: (prev && prev.createdAt) || admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      tx.set(cRef.collection('events').doc(), clampContactEvent({
+        type: 'form_submit', at: nowMs, submissionId: subId, slug, detail: '',
+        utm: { source: utm.source, medium: utm.medium, campaign: utm.campaign },
+      }));
+      tx.set(db.collection('clients').doc(clientUid).collection('contactRefs').doc(subId), { contactId, at: nowMs });
+    });
+  } catch (err) {
+    logger.error('onSubmissionCreate ingest failed', { slug, subId, err: String(err) });
+  }
+});
+
+// ── Ingestie SCHIMBARE DE STATUS din CRM-ul clientului (lpLeadState) în istoricul contactului. Best-effort.
+//    lpLeadState e cheiat pe submissionId → indexul contactRefs regăsește contactId. Fără buclă (scrie în alt arbore). ──
+exports.onLpLeadStateWrite = onDocumentWritten({ document: 'clients/{uid}/lpLeadState/{subId}', region: REGION }, async (event) => {
+  if (!CONTACT_INGEST_ENABLED) return;
+  const { uid, subId } = event.params;
+  try {
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return; // ștergere → nimic
+    const status = ['nou', 'contactat', 'calificat', 'castigat', 'pierdut'].includes(after.status) ? after.status : '';
+    if (!status) return;
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    if (before && before.status === after.status) return; // doar la schimbare reală de status
+    const db = admin.firestore();
+    const refSnap = await db.collection('clients').doc(uid).collection('contactRefs').doc(subId).get();
+    const contactId = refSnap.exists ? (refSnap.data() || {}).contactId : '';
+    if (!contactId || typeof contactId !== 'string') return; // submission neîngerat → nimic de actualizat
+    const cRef = db.collection('clients').doc(uid).collection('contacts').doc(contactId);
+    await cRef.set({ lifecycle: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await cRef.collection('events').doc().set(clampContactEvent({
+      type: 'status_change', at: Date.now(), submissionId: subId, slug: typeof after.slug === 'string' ? after.slug : '', detail: status, utm: {},
+    }));
+  } catch (err) {
+    logger.error('onLpLeadStateWrite ingest failed', { uid, subId, err: String(err) });
+  }
+});
+
 // ── Sincronizare clientUid lead → campanii. Campania denormalizează clientUid-ul lead-ului (pentru
 // regulile multi-tenant + jobul de ingestie care mapează campania → credențiala clientului). Când
 // adminul conectează/reconectează/deconectează lead-ul la un cont (leads/{id}.clientUid se schimbă),
@@ -337,6 +417,7 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 
 const AI_ENABLED = true; // activat 12.06.2026 — ANTHROPIC_API_KEY e în Secret Manager (v1)
+const PREDICTION_ENABLED = true; // Predicție comportamentală (Faza 1) — gate în plus sub AI_ENABLED; flip+deploy oprește.
 // Enforcement App Check pe callable-urile client-facing (selfGenerateStrategy/Details) — la Functions se face
 // ÎN COD (nu există toggle în consolă). Activat 16.06.2026 după ce App Check a ajuns la ~99-100% verified.
 // Rollback de urgență: pune false + `npm run deploy:functions` (sau dezactivează cheia reCAPTCHA în client).
@@ -536,6 +617,99 @@ function clampInsightActions(out) {
   });
 }
 exports.clampInsightActions = clampInsightActions;
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// PREDICȚIE COMPORTAMENTALĂ — Faza 0: fundația de contacte (consumatorii finali ai clienților noștri).
+// Ingestie forward-only sub clients/{uid}/contacts. PII BRUT rămâne DOAR în submissions; aici stocăm
+// mascat + un identityHash (per-tenant, determinist). Paritate helperi mascare/normalizare cu src/types/contact.ts.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+const CONTACT_INGEST_ENABLED = true; // activat 23.06.2026 (date de test); Andrei poate opri per client real.
+
+// Port JS al helperilor puri din src/types/contact.ts (paritate testată e2e TEST CONTACT).
+function normEmailJs(raw) {
+  if (typeof raw !== 'string') return '';
+  const e = raw.trim().toLowerCase();
+  return e.includes('@') && e.length <= 254 ? e : '';
+}
+function normPhoneJs(raw) {
+  if (typeof raw !== 'string') return '';
+  const d = raw.replace(/\D/g, '');
+  return d.length >= 7 ? d.slice(-9) : '';
+}
+function maskEmailJs(raw) {
+  const e = normEmailJs(raw);
+  if (!e) return '';
+  const at = e.indexOf('@');
+  return `${e.slice(0, 1)}***@${e.slice(at + 1)}`.slice(0, 160);
+}
+function maskPhoneJs(raw) {
+  const p = normPhoneJs(raw);
+  if (!p) return '';
+  return `***${p.slice(-3)}`;
+}
+// Hash de identitate DOAR server-side (crypto). Per-tenant (uid prefix) → același email în 2 tenanți ≠ corelabil.
+// Prefix cu `kind` ca un email „123456789" și un telefon „123456789" să NU coincidă.
+function identityHash(uid, kind, value) {
+  return require('crypto').createHash('sha256').update(`${uid}:${kind}:${value}`).digest('hex').slice(0, 40);
+}
+exports.maskEmailJs = maskEmailJs;
+exports.maskPhoneJs = maskPhoneJs;
+exports.identityHash = identityHash;
+
+// Extrage identitatea (email preferat, telefon fallback) din valorile unui submission, folosind TIPURILE câmpurilor
+// LP (field.type email/tel) cu fallback euristic pe NUME (ca mapSubmissionToLead). Întoarce forma normalizată + mascată.
+function extractContactIdentity(values, fields) {
+  const v = values && typeof values === 'object' ? values : {};
+  const fs = Array.isArray(fields) ? fields : [];
+  const byType = (t) => { for (const f of fs) if (f && f.type === t && typeof f.name === 'string' && v[f.name]) return v[f.name]; return ''; };
+  const byName = (re) => { for (const f of fs) if (f && typeof f.name === 'string' && re.test(f.name) && v[f.name]) return v[f.name]; return ''; };
+  const rawEmail = byType('email') || byName(/email|mail/);
+  const rawPhone = byType('tel') || byName(/phone|tel|telefon/);
+  const email = normEmailJs(rawEmail);
+  const phone = normPhoneJs(rawPhone);
+  if (email) return { kind: 'email', value: email, emailMasked: maskEmailJs(rawEmail), phoneMasked: maskPhoneJs(rawPhone) };
+  if (phone) return { kind: 'phone', value: phone, emailMasked: '', phoneMasked: maskPhoneJs(rawPhone) };
+  return { kind: 'anon', value: '', emailMasked: '', phoneMasked: '' };
+}
+exports.extractContactIdentity = extractContactIdentity;
+
+// clampContact / clampContactEvent — port 1:1 al coerceToContact / coerceToContactEvent (read-shape; paritate e2e).
+// clampContact NU include createdAt/updatedAt (timestamp-uri adăugate separat la scriere).
+function clampContact(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  const KINDS = ['email', 'phone', 'anon'];
+  const LIFE = ['nou', 'contactat', 'calificat', 'castigat', 'pierdut'];
+  const s = (vv, max) => (typeof vv === 'string' ? vv.slice(0, max) : '');
+  const r = d.rollup && typeof d.rollup === 'object' ? d.rollup : {};
+  const n = (vv) => (typeof vv === 'number' && isFinite(vv) && vv >= 0 ? vv : 0);
+  return {
+    schema: 1,
+    identityKind: KINDS.includes(d.identityKind) ? d.identityKind : 'anon',
+    emailMasked: s(d.emailMasked, 160),
+    phoneMasked: s(d.phoneMasked, 40),
+    lifecycle: LIFE.includes(d.lifecycle) ? d.lifecycle : 'nou',
+    rollup: { submissions: Math.floor(n(r.submissions)), firstSeen: n(r.firstSeen), lastSeen: n(r.lastSeen), lastSlug: s(r.lastSlug, 80) },
+    mergeCandidate: d.mergeCandidate === true,
+  };
+}
+function clampContactEvent(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  const TYPES = ['form_submit', 'status_change'];
+  const s = (vv, max) => (typeof vv === 'string' ? vv.slice(0, max) : '');
+  const u = d.utm && typeof d.utm === 'object' ? d.utm : {};
+  const up = (vv) => (typeof vv === 'string' ? vv.slice(0, 80) : '');
+  return {
+    schema: 1,
+    type: TYPES.includes(d.type) ? d.type : 'form_submit',
+    at: typeof d.at === 'number' && isFinite(d.at) && d.at >= 0 ? d.at : 0,
+    submissionId: s(d.submissionId, 200),
+    slug: s(d.slug, 80),
+    detail: s(d.detail, 200),
+    utm: { source: up(u.source), medium: up(u.medium), campaign: up(u.campaign) },
+  };
+}
+exports.clampContact = clampContact;
+exports.clampContactEvent = clampContactEvent;
 
 const OBJECTIVE_RO = { leads: 'lead-uri / cereri de ofertă', sales: 'vânzări online', awareness: 'notorietate / brand', traffic: 'trafic pe site', other: 'alt obiectiv' };
 
@@ -1559,6 +1733,192 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   return { insight };
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// PREDICȚIE COMPORTAMENTALĂ — Faza 1: motor UNIC peste un profil MASCAT. Subiect = contact (consumatorul
+// clientului) SAU lead (pipeline-ul nostru). Aceeași schemă + persona. PII BRUT nu ajunge NICIODATĂ în prompt.
+// Paritate schemă↔coerce cu src/types/prediction.ts (clampPrediction == coerceToPrediction).
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+const NBA_ACTIONS = ['contact', 'nurture', 'offer', 'wait', 'qualify', 'reengage'];
+const PREDICTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    conversionLikelihood: { type: 'string', enum: ['low', 'med', 'high'], description: 'Probabilitatea de conversie: low/med/high.' },
+    temperature: { type: 'string', enum: ['hot', 'warm', 'cooling', 'cold'], description: 'Temperatura: hot (gata de conversie), warm (interesat), cooling (se răcește), cold (rece).' },
+    confidence: { type: 'string', enum: ['low', 'med', 'high'], description: 'Încrederea TA în predicție, calibrată DUPĂ cantitatea + recența datelor.' },
+    reasoning: { type: 'string', description: '2-4 fraze în română: semnalele din istoric care susțin predicția (recență, frecvență, traiectorie de status).' },
+    nextBestActions: {
+      type: 'array',
+      description: '1-3 acțiuni concrete prioritizate, fiecare cu termen.',
+      items: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['contact', 'nurture', 'offer', 'wait', 'qualify', 'reengage'], description: 'Tipul acțiunii.' },
+          detail: { type: 'string', description: 'Ce anume faci, concret (în română).' },
+          whenDays: { type: 'integer', description: 'În câte zile se face (0-30).' },
+        },
+        required: ['action', 'detail', 'whenDays'],
+        additionalProperties: false,
+      },
+    },
+    caveats: { type: 'string', description: 'Limitele predicției: ce ar putea-o invalida (în română).' },
+    dataGaps: { type: 'array', description: 'Ce date lipsă te-ar face mai sigur (în română).', items: { type: 'string' } },
+  },
+  required: ['conversionLikelihood', 'temperature', 'confidence', 'reasoning', 'nextBestActions', 'caveats', 'dataGaps'],
+  additionalProperties: false,
+};
+exports.PREDICTION_SCHEMA = PREDICTION_SCHEMA;
+
+// Clamp 1:1 al coerceToPrediction din prediction.ts (read-shape; key-order identic). Exportat pt. paritate e2e TEST PRED.
+function clampPrediction(out) {
+  const o = out && typeof out === 'object' ? out : {};
+  const inE = (list, v, fb) => (list.includes(v) ? v : fb);
+  const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const nbas = (Array.isArray(o.nextBestActions) ? o.nextBestActions : []).slice(0, 3).map((x) => {
+    const a = x && typeof x === 'object' ? x : {};
+    let wd = typeof a.whenDays === 'number' && isFinite(a.whenDays) ? Math.round(a.whenDays) : 0;
+    if (wd < 0) wd = 0; if (wd > 30) wd = 30;
+    return { action: inE(NBA_ACTIONS, a.action, 'contact'), detail: s(a.detail, 300), whenDays: wd };
+  });
+  return {
+    schema: 1,
+    conversionLikelihood: inE(['low', 'med', 'high'], o.conversionLikelihood, 'low'),
+    temperature: inE(['hot', 'warm', 'cooling', 'cold'], o.temperature, 'cold'),
+    confidence: inE(['low', 'med', 'high'], o.confidence, 'low'),
+    reasoning: s(o.reasoning, 2000),
+    nextBestActions: nbas,
+    caveats: s(o.caveats, 1000),
+    dataGaps: (Array.isArray(o.dataGaps) ? o.dataGaps : []).filter((x) => typeof x === 'string' && x.trim()).slice(0, 6).map((x) => x.slice(0, 200)),
+  };
+}
+exports.clampPrediction = clampPrediction;
+
+function predDaysAgo(ms) {
+  const d = Math.floor((Date.now() - Number(ms)) / 86400000);
+  return d < 0 ? 0 : d;
+}
+
+// Profil comportamental MASCAT al unui CONTACT (consumatorul clientului). PUR. ZERO PII brut (doar mascat + sumar).
+function buildContactProfile(contact, events) {
+  const c = contact && typeof contact === 'object' ? contact : {};
+  const r = c.rollup && typeof c.rollup === 'object' ? c.rollup : {};
+  const evs = Array.isArray(events) ? events : [];
+  const lines = [
+    '== SUBIECT: CONTACT (consumatorul final al clientului) ==',
+    `Identificare (mascat): ${c.emailMasked || c.phoneMasked || 'anonim'} (${c.identityKind || 'anon'})`,
+    `Status în pipeline-ul clientului: ${c.lifecycle || 'nou'}`,
+    `Interacțiuni totale: ${Number(r.submissions) || 0}`,
+  ];
+  if (r.firstSeen) lines.push(`Prima interacțiune: acum ${predDaysAgo(r.firstSeen)} zile`);
+  if (r.lastSeen) lines.push(`Ultima interacțiune: acum ${predDaysAgo(r.lastSeen)} zile`);
+  if (r.lastSlug) lines.push(`Ultima pagină: ${r.lastSlug}`);
+  if (evs.length) {
+    lines.push('', 'Istoric evenimente (recent → vechi):');
+    for (const e of evs.slice(0, 20)) {
+      const when = e && e.at ? `acum ${predDaysAgo(e.at)} zile` : '?';
+      const what = e && e.type === 'status_change' ? `status → ${e.detail || '?'}` : 'a trimis formularul';
+      const src = e && e.utm && e.utm.source ? ` [sursă ${e.utm.source}]` : '';
+      lines.push(`- ${when}: ${what}${src}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+// Profil al unui LEAD (prospect în pipeline-ul agenției). PUR.
+function buildLeadProfile(lead, activities) {
+  const l = lead && typeof lead === 'object' ? lead : {};
+  const acts = Array.isArray(activities) ? activities : [];
+  const lines = [
+    '== SUBIECT: LEAD (prospect în pipeline-ul agenției) ==',
+    `Firmă: ${l.companyName || '-'}`,
+    `Industrie: ${l.industry || '-'}`,
+    `Status: ${l.status || 'new'}`,
+    `Obiective: ${Array.isArray(l.objectives) && l.objectives.length ? l.objectives.join(', ') : '-'}`,
+    `Buget declarat: ${l.adBudget || '-'}`,
+  ];
+  if (l.nextFollowUp) lines.push(`Următorul follow-up programat: ${l.nextFollowUp}`);
+  if (acts.length) {
+    lines.push('', 'Activități (recent → vechi):');
+    for (const a of acts.slice(0, 20)) {
+      const when = a && a.at ? `acum ${predDaysAgo(a.at)} zile` : '?';
+      lines.push(`- ${when}: ${(a && a.type) || 'note'}${a && a.body ? ` — ${String(a.body).slice(0, 160)}` : ''}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildPredictionPrompt(profile, kind) {
+  return [
+    profile,
+    '',
+    `Sarcină: pe baza istoricului de mai sus, prezice comportamentul acestui ${kind === 'lead' ? 'LEAD' : 'CONTACT'}.`,
+    'Dă: probabilitatea de conversie (low/med/high), temperatura (hot/warm/cooling/cold), încrederea ta',
+    '(low/med/high — calibrată DUPĂ câte date ai), un raționament scurt ancorat în semnalele din istoric',
+    '(recență, frecvență, traiectorie de status), 1-3 next-best-actions concrete cu termen (în zile), plus caveats și dataGaps.',
+    'Recența contează cel mai mult. Pe 1-2 evenimente, confidence = low și spune EXPLICIT ce-ți lipsește în dataGaps.',
+    'Acțiunile să fie concrete, nu generice. NU inventa cifre monetare (churn/LTV). Totul în limba ROMÂNĂ.',
+  ].join('\n');
+}
+exports.buildContactProfile = buildContactProfile;
+exports.buildLeadProfile = buildLeadProfile;
+exports.buildPredictionPrompt = buildPredictionPrompt;
+
+// Nucleu reutilizabil: asamblează profilul (citiri best-effort), rulează modelul, scrie predicția (admin-only).
+async function performPrediction(db, opts) {
+  const kind = opts.kind === 'lead' ? 'lead' : 'contact';
+  let profile = '';
+  let industry = '';
+  let clientUid = '';
+  let subjectId = '';
+  if (kind === 'contact') {
+    clientUid = String(opts.clientUid || '');
+    subjectId = String(opts.contactId || '');
+    if (!clientUid || !subjectId) throw new HttpsError('invalid-argument', 'clientUid și contactId sunt obligatorii.');
+    const cRef = db.collection('clients').doc(clientUid).collection('contacts').doc(subjectId);
+    const cSnap = await cRef.get();
+    if (!cSnap.exists) throw new HttpsError('not-found', 'Contactul nu există.');
+    const contact = cSnap.data() || {};
+    let events = [];
+    try {
+      const evSnap = await cRef.collection('events').orderBy('at', 'desc').limit(25).get();
+      events = evSnap.docs.map((d) => d.data());
+    } catch (e) { logger.warn('contact events read failed', { err: String(e) }); }
+    profile = buildContactProfile(contact, events);
+    try { const cl = await db.collection('clients').doc(clientUid).get(); industry = (cl.exists ? (cl.data() || {}).industry : '') || ''; } catch (e) { /* best-effort */ }
+  } else {
+    subjectId = String(opts.leadId || '');
+    if (!subjectId) throw new HttpsError('invalid-argument', 'leadId e obligatoriu.');
+    const lRef = db.collection('leads').doc(subjectId);
+    const lSnap = await lRef.get();
+    if (!lSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
+    const lead = lSnap.data() || {};
+    clientUid = String(lead.clientUid || '');
+    industry = lead.industry || '';
+    let acts = [];
+    try {
+      const aSnap = await lRef.collection('activities').orderBy('at', 'desc').limit(25).get();
+      acts = aSnap.docs.map((d) => d.data());
+    } catch (e) { logger.warn('lead activities read failed', { err: String(e) }); }
+    profile = buildLeadProfile(lead, acts);
+  }
+  if (opts.consume) await opts.consume(); // cota se consumă DUPĂ validare, înainte de model (ca insight/report)
+  const { out, usage } = await runAiJson({
+    schema: PREDICTION_SCHEMA,
+    maxTokens: 4000,
+    system: buildSystemBlocks({ persona: PERSONAS.predictor, industry }),
+    prompt: buildPredictionPrompt(profile, kind),
+  });
+  const prediction = clampPrediction(out);
+  const col = kind === 'lead' ? 'leadPredictions' : 'contactPredictions';
+  // Admin-only (denormalizăm clientUid pt. un viitor mirror client-safe în /app — Faza 4). `by` NU ajunge la client.
+  await db.collection(col).doc(subjectId).set({
+    ...prediction, kind, clientUid,
+    at: admin.firestore.FieldValue.serverTimestamp(), by: opts.actorUid || '',
+  }, { merge: true });
+  logger.info('prediction generated', { kind, subjectId, by: opts.actorUid, usage });
+  return { prediction };
+}
+exports.performPrediction = performPrediction;
+
 async function performClientReport(db, leadId, actorUid, consume) {
   const leadSnap = await db.collection('leads').doc(leadId).get();
   if (!leadSnap.exists) throw new HttpsError('not-found', 'Clientul nu există.');
@@ -1643,6 +2003,31 @@ if (AI_ENABLED) {
       const { campaignId } = request.data || {};
       if (typeof campaignId !== 'string' || !campaignId) throw new HttpsError('invalid-argument', 'campaignId e obligatoriu.');
       return await performCampaignInsight(admin.firestore(), campaignId, request.auth.uid, () => consumeAiQuota(request.auth.uid));
+    }
+  );
+
+  // Predicție comportamentală (Faza 1) — admin-only, oglindesc aiAnalyzeCampaign. Motor comun performPrediction.
+  exports.predictContactBehavior = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot genera predicții.');
+      if (!PREDICTION_ENABLED) throw new HttpsError('failed-precondition', 'Predicția nu e activată.');
+      const { clientUid, contactId } = request.data || {};
+      if (typeof clientUid !== 'string' || !clientUid || typeof contactId !== 'string' || !contactId) throw new HttpsError('invalid-argument', 'clientUid și contactId sunt obligatorii.');
+      return await performPrediction(admin.firestore(), { kind: 'contact', clientUid, contactId, actorUid: request.auth.uid, consume: () => consumeAiQuota(request.auth.uid) });
+    }
+  );
+
+  exports.predictLeadBehavior = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      if (!request.auth) throw new HttpsError('unauthenticated', 'Autentificare necesară.');
+      if (request.auth.token.admin !== true) throw new HttpsError('permission-denied', 'Doar operatorii pot genera predicții.');
+      if (!PREDICTION_ENABLED) throw new HttpsError('failed-precondition', 'Predicția nu e activată.');
+      const { leadId } = request.data || {};
+      if (typeof leadId !== 'string' || !leadId) throw new HttpsError('invalid-argument', 'leadId e obligatoriu.');
+      return await performPrediction(admin.firestore(), { kind: 'lead', leadId, actorUid: request.auth.uid, consume: () => consumeAiQuota(request.auth.uid) });
     }
   );
 

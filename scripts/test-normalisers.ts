@@ -171,6 +171,74 @@ for (const c of INSIGHT_CHANGE_TYPES) check(`cheie ro insChange: ${c}`, roKeyExi
 for (const tgt of INSIGHT_TARGETS) check(`cheie ro insTarget: ${tgt}`, roKeyExists(`admin.insTarget_${tgt}`));
 for (const m of INSIGHT_MAGNITUDES) check(`cheie ro insMag: ${m}`, roKeyExists(`admin.insMag_${m}`));
 
+// ── coerceToContact + coerceToContactEvent (Faza 0 predicție comportamentală) ─────────────────
+import { coerceToContact, maskEmail, maskPhone, normalizeEmail, normalizePhone } from '../src/types/contact';
+import { coerceToContactEvent } from '../src/types/contactEvent';
+
+check('contact: non-obiect → defaults sigure (anon)', (() => {
+  const c = coerceToContact('x');
+  return c.schema === 1 && c.identityKind === 'anon' && c.emailMasked === '' && c.lifecycle === 'nou' && c.rollup.submissions === 0 && c.mergeCandidate === false;
+})());
+check('contact: enum invalid → fallback', (() => {
+  const c = coerceToContact({ identityKind: 'telepathy', lifecycle: 'vip' });
+  return c.identityKind === 'anon' && c.lifecycle === 'nou';
+})());
+check('contact: valori valide trec + rollup numeric', (() => {
+  const c = coerceToContact({ identityKind: 'email', emailMasked: 'a***@x.ro', lifecycle: 'calificat', rollup: { submissions: 3, firstSeen: 100, lastSeen: 200, lastSlug: 'promo' }, mergeCandidate: true });
+  return c.identityKind === 'email' && c.emailMasked === 'a***@x.ro' && c.lifecycle === 'calificat' && c.rollup.submissions === 3 && c.rollup.lastSlug === 'promo' && c.mergeCandidate === true;
+})());
+check('contact: rollup corupt → 0/empty (nu NaN/throw)', (() => {
+  const c = coerceToContact({ rollup: { submissions: 'multe', firstSeen: -5, lastSeen: NaN, lastSlug: 42 } });
+  return c.rollup.submissions === 0 && c.rollup.firstSeen === 0 && c.rollup.lastSeen === 0 && c.rollup.lastSlug === '';
+})());
+check('contact: mascare email/telefon', () => maskEmail('Andrei@Gmail.com') === 'a***@gmail.com' && maskPhone('+40 712 345 789') === '***789' && maskEmail('not-an-email') === '' && maskPhone('12') === '');
+check('contact: normalizare email/telefon', () => normalizeEmail('  X@Y.RO ') === 'x@y.ro' && normalizePhone('+40-712.345.789').length === 9 && normalizeEmail('nope') === '');
+
+check('contactEvent: non-obiect → default form_submit at 0', (() => {
+  const e = coerceToContactEvent(null);
+  return e.schema === 1 && e.type === 'form_submit' && e.at === 0 && e.submissionId === '' && e.utm.source === '';
+})());
+check('contactEvent: tip invalid → form_submit; valid păstrat', () => coerceToContactEvent({ type: 'boom' }).type === 'form_submit' && coerceToContactEvent({ type: 'status_change' }).type === 'status_change');
+check('contactEvent: at non-numeric/negativ → 0; valid păstrat', () => coerceToContactEvent({ at: 'ieri' }).at === 0 && coerceToContactEvent({ at: -3 }).at === 0 && coerceToContactEvent({ at: 1234 }).at === 1234);
+check('contactEvent: utm + câmpuri tăiate la plafon', (() => {
+  const e = coerceToContactEvent({ type: 'status_change', detail: 'x'.repeat(500), slug: 'y'.repeat(200), utm: { source: 'z'.repeat(200), medium: 'm', campaign: 'c' } });
+  return e.detail.length === 200 && e.slug.length === 80 && e.utm.source.length === 80 && e.utm.medium === 'm';
+})());
+
+// ── coerceToPrediction (Faza 1 predicție comportamentală) ─────────────────────────────────────
+import { coerceToPrediction, CONVERSION_LIKELIHOODS, TEMPERATURES, CONFIDENCES, NBA_ACTIONS, PREDICTION_LIMITS } from '../src/types/prediction';
+
+check('predicție: non-obiect → defaults sigure', (() => {
+  const p = coerceToPrediction('x');
+  return p.schema === 1 && p.conversionLikelihood === 'low' && p.temperature === 'cold' && p.confidence === 'low' && p.nextBestActions.length === 0 && p.dataGaps.length === 0;
+})());
+check('predicție: enum invalid → fallback', (() => {
+  const p = coerceToPrediction({ conversionLikelihood: 'maybe', temperature: 'lava', confidence: 'so-so' });
+  return p.conversionLikelihood === 'low' && p.temperature === 'cold' && p.confidence === 'low';
+})());
+check('predicție: NBA coerce (action enum, whenDays clamp 0..30, cap 3)', (() => {
+  const p = coerceToPrediction({ nextBestActions: [
+    { action: 'offer', detail: 'x', whenDays: 5 },
+    { action: 'teleport', detail: 'y', whenDays: 99 },
+    { action: 'wait', whenDays: -4 },
+    { action: 'contact', whenDays: 1 },
+  ] });
+  const a = p.nextBestActions;
+  return a.length === 3 && a[0].action === 'offer' && a[1].action === 'contact' && a[1].whenDays === 30 && a[2].action === 'wait' && a[2].whenDays === 0;
+})());
+check('predicție: dataGaps string[] (non-string/goale filtrate, cap)', (() => {
+  const p = coerceToPrediction({ dataGaps: ['lipsă buget', 42, '', '  ', ...Array(10).fill('x')] });
+  return p.dataGaps.length === PREDICTION_LIMITS.dataGaps && p.dataGaps[0] === 'lipsă buget' && p.dataGaps.every((s) => typeof s === 'string');
+})());
+check('predicție: reasoning/caveats tăiate la plafon', (() => {
+  const p = coerceToPrediction({ reasoning: 'r'.repeat(5000), caveats: 'c'.repeat(5000) });
+  return p.reasoning.length === PREDICTION_LIMITS.reasoning && p.caveats.length === PREDICTION_LIMITS.caveats;
+})());
+for (const k of CONVERSION_LIKELIHOODS) check(`cheie ro predLk: ${k}`, roKeyExists(`admin.predLk_${k}`));
+for (const k of TEMPERATURES) check(`cheie ro predTemp: ${k}`, roKeyExists(`admin.predTemp_${k}`));
+for (const k of CONFIDENCES) check(`cheie ro predConf: ${k}`, roKeyExists(`admin.predConf_${k}`));
+for (const k of NBA_ACTIONS) check(`cheie ro predAction: ${k}`, roKeyExists(`admin.predAction_${k}`));
+
 // ── coerceToOnboardingDraft (calea localStorage) ─────────────────────────────────────────────
 check('draft: null → null', coerceToOnboardingDraft(null) === null);
 check('draft: JSON stricat → null, fără throw', coerceToOnboardingDraft('{broken json!') === null);

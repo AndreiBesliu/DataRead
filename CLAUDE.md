@@ -357,9 +357,31 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   da proză — narativul stă în `reasoning`); `clampInsightActions` (port 1:1, paritate e2e TEST INS); `performCampaignInsight` scrie
   `schema:2`; `migrateCampaignInsights` → `schema:2, actions:[]`. UI: `MarketingCenter` randează acțiunile ca CHIPS. Triggerul
   `onCampaignAutomation` + `buildSuggestions` rămân pe `verdict` (a pune actions[] în ctx → oscilație). Insight-urile vechi (schema 1)
-  arată „0 acțiuni" până la regenerare. **Roadmap „în vizor" (PART 2 plan): funcție AI de PREDICȚIE COMPORTAMENTALĂ** (analizează
-  clienții CLIENȚILOR noștri, prezice comportament din istoria acumulată, eventual client-facing în /app) — cere fundație nouă de
-  date (`clients/{uid}/contacts` + events, identitate hash-uită multi-tenant) + callable de predicție; staged, NEÎNCEPUT.
+  arată „0 acțiuni" până la regenerare.
+- **Predicție comportamentală — Faza 0+1 (ACTIV 23.06.2026, felia 6):** funcție AI care analizează clienții CLIENȚILOR noștri
+  (consumatorii finali) + lead-urile noastre și prezice comportamentul din istoria acumulată. Motor reutilizabil pe ambele subiecte.
+  - **Faza 0 — fundația de contacte:** entitate nouă `clients/{uid}/contacts/{contactId}` (identitate MASCATĂ `emailMasked`/
+    `phoneMasked` + `identityKind` + `lifecycle` + rollup RFM; PII BRUT NU se stochează — rămâne în `submissions`) +
+    `contacts/{id}/events/{id}` (append-only, `at` ms explicit, form_submit/status_change) + `contactRefs/{submissionId}` (index
+    server-only submissionId→contactId). Identitate `identityHash = sha256(uid:kind:valoare)` (per-tenant → necorelabil cross-tenant;
+    email→același contact pe LP-uri diferite, unificare cross-LP gratis; conflict email↔telefon → `mergeCandidate`, NU merge automat).
+    `src/types/contact.ts` + `contactEvent.ts` (coerce + mascare/normalizare puri), port JS în functions (paritate e2e TEST CONTACT).
+    **Ingestie forward-only** (flag `CONTACT_INGEST_ENABLED=true`, Andrei poate opri): trigger `onSubmissionCreate` (re-citește LP pt.
+    clientUid + tipuri câmpuri, extrage email/telefon, upsert contact tranzacțional + event + contactRefs; sărit dacă LP n-are client)
+    + `onLpLeadStateWrite` (status_change → event + lifecycle). Best-effort (try/catch + `clientExists`). Reguli: contacts/events
+    read owner+admin/write false; contactRefs read+write false. NU există backfill (clean break — doar date de test).
+  - **Faza 1 — motorul de predicție AI:** motor UNIC peste un profil MASCAT. `src/types/prediction.ts` (`coerceToPrediction`):
+    conversionLikelihood (low/med/high) + temperature (hot/warm/cooling/cold) + confidence + reasoning + nextBestActions[]
+    {action(contact/nurture/offer/wait/qualify/reengage),detail,whenDays 0..30} + caveats + dataGaps[] (confidence/caveats/dataGaps
+    OBLIGATORII; fără churn/LTV). functions: `PREDICTION_SCHEMA` (additionalProperties:false) + `clampPrediction` (paritate e2e TEST PRED)
+    + `buildContactProfile`/`buildLeadProfile`/`buildPredictionPrompt` (puri, ZERO PII brut în prompt) + nucleu `performPrediction`
+    (persona nouă `predictor` în personas.js, claude-opus-4-8). Callable-uri admin-only `predictContactBehavior`→`contactPredictions/{id}`
+    + `predictLeadBehavior`→`leadPredictions/{id}` (consumeAiQuota, gate `PREDICTION_ENABLED` sub AI_ENABLED). Reguli: read admin/write
+    false (UID-ul operatorului `by` NU ajunge la client). UI `src/admin/PredictionPanel.tsx` (PredictionCard + LeadPrediction în
+    expanderul de lead + ClientContacts = listă contacte per client cu „Prezice comportament", în expanderul de client din AdminHome).
+  - **Confidențialitate:** tot sub `clients/{uid}/**`; PII brut DOAR în submissions; prompturile primesc DOAR mascat + sumar
+    comportamental. **Faze viitoare:** F2 (sugestii din predicții), F3 (warehouse: unificare cross-identificator + events cross-LP +
+    churn/LTV), F4 (client-facing /app: mirror client-safe + consimțământ + fair-share quota + App Check).
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

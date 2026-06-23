@@ -24,6 +24,7 @@ import { LEAD_NOTES_MAX, LEAD_STATUSES, coerceLeadNotes, coerceLeadStatus, type 
 import LeadRequests from './LeadRequests';
 import OpportunityBoard from './OpportunityBoard';
 import LeadActivity from './LeadActivity';
+import { LeadPrediction, ClientContacts } from './PredictionPanel';
 import SuggestionsPanel from './SuggestionsPanel';
 import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
@@ -724,6 +725,7 @@ export default function AdminHome() {
                                 {user && <OpportunityBoard leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
                                 {user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
                                 {user && <LeadActivity leadId={l.id} adminUid={user.uid} />}
+                                {user && <LeadPrediction leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
 
                                 {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
                                 <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
@@ -803,6 +805,7 @@ export default function AdminHome() {
                         {clientDetail === 'loading' && <span style={{ color: 'var(--fg-1)' }}>{t('admin.loading')}</span>}
                         {clientDetail === null && <span style={{ color: 'var(--fg-1)' }}>{t('admin.detailEmpty')}</span>}
                         {clientDetail !== null && clientDetail !== 'loading' && <OnboardingDetail detail={clientDetail} />}
+                        {clientDetail !== 'loading' && <ClientContacts uid={uid} />}
                       </td>
                     </tr>
                   )}

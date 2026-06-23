@@ -14,5 +14,10 @@ export { INDUSTRIES } from '../src/types/onboarding';
 export { coerceToDeliverables, coerceToMarketingRequest } from '../src/types/request';
 // Paritate TS↔JS pt. acțiunile de insight tipate (felia 5b): coerceToInsight TS vs clampInsightActions JS.
 export { coerceToInsight, coerceInsightAction } from '../src/analytics/kpi';
+// Paritate TS↔JS pt. contacte (Faza 0 predicție): coerceToContact/Event TS vs clampContact/Event JS + mascare.
+export { coerceToContact, maskEmail, maskPhone } from '../src/types/contact';
+export { coerceToContactEvent } from '../src/types/contactEvent';
+// Paritate TS↔JS pt. predicție (Faza 1): coerceToPrediction TS vs clampPrediction JS.
+export { coerceToPrediction } from '../src/types/prediction';
 // Pentru paritatea TS↔JS a chrome-ului default (PUBLIC_CHROME_DEFAULT == DEFAULT_SITE_CHROME din functions).
 export { PUBLIC_CHROME_DEFAULT } from '../src/config/publicChrome';
