@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
-import { REQUEST_SCHEMA } from '../types/request';
+import { REQUEST_SCHEMA, emptyDeliverables } from '../types/request';
 import { AD_BUDGETS } from '../types/onboarding';
 import { coerceToRecommendedChannels, sortByImpact, type ImpactLevel, type RecommendedChannel } from '../types/recommendation';
 
@@ -88,7 +88,7 @@ export default function OpportunityBoard({ leadId, adminUid, clientUid }: { lead
         objective: o.suggestedObjective || 'leads',
         status: 'open',
         source: 'manual',
-        deliverables: { adTexts: '', videoScripts: '', campaignStructure: '', calendar: '', posts: '', ideas: '', notes: '' },
+        deliverables: emptyDeliverables(),
         clientUid: clientUid || '',
         createdBy: adminUid,
         createdAt: serverTimestamp(),

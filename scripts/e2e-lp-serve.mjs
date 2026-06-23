@@ -1030,11 +1030,34 @@ console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (
 // interne + câmpurile necunoscute/goale NU trebuie să ajungă în subarborele clientului. ──
 console.log('\nV) clientSafeDeliverables (filtru oglindă livrabile + versiuni)');
 {
-  const safe = fns.clientSafeDeliverables({ adTexts: 'reclame', notes: 'NOTĂ INTERNĂ', internalScore: 9, ideas: '   ', campaignStructure: 'structura' });
-  ok(safe.adTexts === 'reclame' && safe.campaignStructure === 'structura', 'păstrează câmpurile client-safe');
+  const safe = fns.clientSafeDeliverables({ adVariants: [{ hook: 'H', body: 'B', cta: 'C', angle: 'a', stage: 'rece' }], notes: 'NOTĂ INTERNĂ', internalScore: 9, ideas: [], campaignStructure: 'structura' });
+  ok(Array.isArray(safe.adVariants) && safe.adVariants.length === 1 && safe.campaignStructure === 'structura', 'păstrează câmpurile client-safe (array + proză)');
   ok(!('notes' in safe) && !('internalScore' in safe), 'elimină notele interne + câmpurile necunoscute');
-  ok(!('ideas' in safe), 'elimină câmpurile goale (whitespace)');
+  ok(!('ideas' in safe), 'elimină listele goale');
   ok(Object.keys(fns.clientSafeDeliverables(null)).length === 0 && Object.keys(fns.clientSafeDeliverables('x')).length === 0, 'null/gunoi → {} (fără throw)');
+}
+
+// ── TEST DELIV: livrabile structurate (felia 5a) — paritate clampDeliverables (JS) ↔ coerceToDeliverables (TS). ──
+console.log('\nDELIV) livrabile structurate — paritate clamp JS ↔ coerce TS');
+{
+  const subset = (kind, full) => kind === 'content'
+    ? { calendar: full.calendar, posts: full.posts, ideas: full.ideas }
+    : { adVariants: full.adVariants, videoScripts: full.videoScripts, campaignStructure: full.campaignStructure };
+  const cases = [
+    { kind: 'campaign', out: { adVariants: [{ hook: 'H', body: 'B', cta: 'Sună', angle: 'urgență', stage: 'cald' }, { hook: 'x'.repeat(500), stage: 'gresit' }, 'nu-i obiect'], videoScripts: [{ concept: 'c', script: 's' }], campaignStructure: 'y'.repeat(20000) } },
+    { kind: 'content', out: { calendar: [{ day: 'Ziua 1', theme: 'Lansare', format: 'reel', channel: 'IG' }, { day: 'Ziua 2', format: 'tiktok' }], posts: [{ text: 't', hashtags: '#a', visual: 'v' }], ideas: ['idee', 42, '', 'x'.repeat(500)] } },
+    { kind: 'campaign', out: {} },
+    { kind: 'content', out: { calendar: 'blob vechi string', ideas: 'string nu array' } },
+  ];
+  let allMatch = true;
+  for (const c of cases) {
+    const js = fns.clampDeliverables(c.kind, c.out);
+    const ts = subset(c.kind, C.coerceToDeliverables(c.out));
+    if (JSON.stringify(js) !== JSON.stringify(ts)) { allMatch = false; console.error('  divergență', c.kind, JSON.stringify(js), '!=', JSON.stringify(ts)); }
+  }
+  ok(allMatch, 'clampDeliverables JS == coerceToDeliverables TS (subset pe tip) pe cazuri adversariale');
+  ok(!('notes' in fns.clampDeliverables('campaign', { notes: 'x' })), 'clampDeliverables exclude notes (păstrat de set+merge)');
+  ok(fns.clampDeliverables('content', { calendar: 'blob' }).calendar.length === 0, 'format vechi string → listă goală (clean break)');
 }
 
 // ── TEST W: A/B testing „pe sloturi" — helpers puri + serveLp (split/sticky/cookie/abStats) + submit atribuit. ──
@@ -1554,9 +1577,9 @@ console.log('\nLPSRC) buildSourceBrief + uniqueLpSlug (Strategie/Campanie → La
   // Sursa = campanie (lead + livrabile)
   const bc = fns.buildSourceBrief('campaign', {
     lead: { companyName: 'Acme', description: 'Vindem panouri solare', industry: 'Energie', objectives: ['leads', 'awareness'], locale: 'ro' },
-    req: { adTexts: ['Economisește 40%', { text: 'Instalare rapidă' }] },
+    req: { adVariants: [{ hook: 'Economisește 40%', body: 'Instalare rapidă', cta: 'Cere ofertă', angle: 'preț', stage: 'cald' }] },
   });
-  ok(bc.offer.includes('Acme') && bc.offer.includes('panouri solare') && bc.offer.includes('Economisește 40%') && bc.offer.includes('Instalare rapidă'), 'LPSRC: brief campanie = companie+descriere+adTexts');
+  ok(bc.offer.includes('Acme') && bc.offer.includes('panouri solare') && bc.offer.includes('Economisește 40%') && bc.offer.includes('Instalare rapidă'), 'LPSRC: brief campanie = companie+descriere+adVariants');
   ok(bc.audience.includes('Energie') && bc.audience.includes('leads'), 'LPSRC: audience campanie = industrie+obiective');
   ok(bc.lang === 'ro' && bc.includeForm === true, 'LPSRC: lang + includeForm');
   // Sursa = strategie Self Marketing (profil + strategie)

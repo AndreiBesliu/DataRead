@@ -65,7 +65,7 @@ check('lead notes: non-string → gol', coerceLeadNotes(42) === '' && coerceLead
 check('lead notes: tăiate la plafon', coerceLeadNotes('x'.repeat(9000)).length === 4000);
 
 // ── cereri de marketing (Verticala 1: campanii + plan de conținut) ───────────────────────────
-import { coerceToMarketingRequest, deliverableFieldsFor, emptyRequest } from '../src/types/request';
+import { coerceToMarketingRequest, deliverableFieldsFor, emptyRequest, DELIVERABLE_LIST_MAX } from '../src/types/request';
 import roDict from '../src/i18n/locales/ro';
 
 function roKeyExists(key: string): boolean {
@@ -81,29 +81,58 @@ check("request kind: 'content' trece", coerceToMarketingRequest({ kind: 'content
 check("request kind: gunoi/lipsa → 'campaign' (compatibilitate cu cererile vechi)", (() => {
   return coerceToMarketingRequest({ kind: 'mega' }).kind === 'campaign' && coerceToMarketingRequest({}).kind === 'campaign';
 })());
-check('request: câmpurile content coerce-uite', (() => {
-  const r = coerceToMarketingRequest({ kind: 'content', deliverables: { calendar: 'Ziua 1', posts: 42, ideas: 'x'.repeat(20000) } });
-  return r.deliverables.calendar === 'Ziua 1' && r.deliverables.posts === '' && r.deliverables.ideas.length === 8000;
+check('request: format vechi (string) → liste goale (clean break, fără migrare)', (() => {
+  const r = coerceToMarketingRequest({ kind: 'content', deliverables: { calendar: 'Ziua 1 blob vechi', posts: 'blob', ideas: 'x' } });
+  return r.deliverables.calendar.length === 0 && r.deliverables.posts.length === 0 && r.deliverables.ideas.length === 0;
 })());
+check('request: adVariants coerce (item parțial → stage default, sub-câmp tăiat, non-obiect → gol)', (() => {
+  const r = coerceToMarketingRequest({ deliverables: { adVariants: [
+    { hook: 'H', body: 'B', cta: 'Sună', angle: 'urgență', stage: 'cald' },
+    { hook: 'x'.repeat(500), stage: 'invalid' },
+    'not-an-object',
+  ] } });
+  const av = r.deliverables.adVariants;
+  return av.length === 3 && av[0].stage === 'cald' && av[1].stage === 'rece' && av[1].hook.length === 200 && av[2].hook === '' && av[2].stage === 'rece';
+})());
+check('request: calendar format enum invalid → gol; valid păstrat', (() => {
+  const r = coerceToMarketingRequest({ kind: 'content', deliverables: { calendar: [
+    { day: 'Ziua 1', theme: 'Lansare', format: 'reel', channel: 'Instagram' },
+    { day: 'Ziua 2', format: 'tiktok-dance' },
+  ] } });
+  return r.deliverables.calendar[0].format === 'reel' && r.deliverables.calendar[1].format === '';
+})());
+check('request: ideas = string[] (non-string/goale filtrate, cap item + listă)', (() => {
+  const r = coerceToMarketingRequest({ deliverables: { ideas: ['idee bună', 42, '', '  ', 'x'.repeat(500), ...Array(50).fill('umplutură')] } });
+  const ideas = r.deliverables.ideas;
+  return ideas.length === DELIVERABLE_LIST_MAX.ideas && ideas[0] === 'idee bună' && ideas.every((s) => typeof s === 'string') && ideas.some((s) => s.length === 200);
+})());
+check('request: cap listă adVariants (>max → tăiat)', coerceToMarketingRequest({ deliverables: { adVariants: Array(20).fill({ hook: 'h' }) } }).deliverables.adVariants.length === DELIVERABLE_LIST_MAX.adVariants);
+// Acoperire chei i18n: secțiuni + sub-câmpuri + enum-uri (ro primar; en prin typecheck).
 for (const kind of ['campaign', 'content'] as const) {
   for (const f of deliverableFieldsFor(kind)) {
-    check(`cheie ro există (${kind}): ${f.labelKey}`, roKeyExists(f.labelKey));
+    check(`cheie ro (${kind}): ${f.labelKey}`, roKeyExists(f.labelKey));
+    if (f.type === 'objlist') {
+      for (const sf of f.itemFields) {
+        check(`cheie ro sub-câmp (${kind}): ${sf.labelKey}`, roKeyExists(sf.labelKey));
+        if (sf.enum) for (const e of sf.enum) check(`cheie ro enum: ${sf.enumLabelPrefix}${e}`, roKeyExists(`${sf.enumLabelPrefix}${e}`));
+      }
+    }
   }
 }
 check('request: non-obiect → empty', JSON.stringify(coerceToMarketingRequest('x')) === JSON.stringify(emptyRequest()));
 check('request: defaults corecte', (() => {
   const r = emptyRequest();
-  return r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.adTexts === '';
+  return r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.adVariants.length === 0 && r.deliverables.ideas.length === 0;
 })());
 check('request: tipuri greșite → defaults', (() => {
   const r = coerceToMarketingRequest({ title: 42, status: 'archived', source: 'robot', objective: 'spam', deliverables: 'x' });
-  return r.title === '' && r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.notes === '';
+  return r.title === '' && r.status === 'open' && r.source === 'manual' && r.objective === '' && r.deliverables.notes === '' && r.deliverables.adVariants.length === 0;
 })());
 check('request: valori valide trec', (() => {
-  const r = coerceToMarketingRequest({ title: 'Campanie vară', offer: 'Meniu nou', budget: '500 €', objective: 'sales', status: 'done', source: 'ai', deliverables: { adTexts: 'text1' } });
-  return r.title === 'Campanie vară' && r.objective === 'sales' && r.status === 'done' && r.source === 'ai' && r.deliverables.adTexts === 'text1' && r.deliverables.videoScripts === '';
+  const r = coerceToMarketingRequest({ title: 'Campanie vară', offer: 'Meniu nou', budget: '500 €', objective: 'sales', status: 'done', source: 'ai', deliverables: { adVariants: [{ hook: 'Hook 1', cta: 'Comandă' }] } });
+  return r.title === 'Campanie vară' && r.objective === 'sales' && r.status === 'done' && r.source === 'ai' && r.deliverables.adVariants.length === 1 && r.deliverables.adVariants[0].hook === 'Hook 1' && r.deliverables.videoScripts.length === 0;
 })());
-check('request: livrabile tăiate la plafon', coerceToMarketingRequest({ deliverables: { campaignStructure: 'x'.repeat(20000) } }).deliverables.campaignStructure.length === 8000);
+check('request: campaignStructure (proză) tăiat la plafon', coerceToMarketingRequest({ deliverables: { campaignStructure: 'x'.repeat(20000) } }).deliverables.campaignStructure.length === 8000);
 
 // ── coerceToOnboardingDraft (calea localStorage) ─────────────────────────────────────────────
 check('draft: null → null', coerceToOnboardingDraft(null) === null);

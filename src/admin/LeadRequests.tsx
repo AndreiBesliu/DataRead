@@ -18,12 +18,19 @@ import { db, functions } from '../firebase';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { OBJECTIVES, type Objective } from '../types/onboarding';
 import {
-  DELIVERABLE_MAX,
+  NOTES_MAX,
+  PROSE_MAX,
   REQUEST_SCHEMA,
   REQUEST_STATUSES,
+  coerceToDeliverables,
   coerceToMarketingRequest,
   deliverableFieldsFor,
+  deliverablesToSections,
+  emptyDeliverables,
+  type DeliverableField,
+  type DeliverableSubField,
   type MarketingRequest,
+  type RequestDeliverables,
   type RequestKind,
   type RequestStatus,
 } from '../types/request';
@@ -68,6 +75,7 @@ function fmtTs(v: unknown): string {
  *  ACELEAȘI câmpuri prin callable-ul aiGenerateCampaign (source: 'ai'). */
 export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: string; adminUid: string; clientUid?: string }) {
   const { t } = useTranslation();
+  const tr = (k: string): string => t(k); // wrapper pt. helperii care cer (k: string) => string
   const [rows, setRows] = useState<Row[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [newReq, setNewReq] = useState({ kind: 'campaign' as RequestKind, title: '', offer: '', budget: '', objective: 'leads' as Objective });
@@ -114,11 +122,7 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
     const parts = [`=== ${d.title} ===`, `Ofertă: ${d.offer}`];
     if (d.budget) parts.push(`Buget: ${d.budget}`);
     if (d.objective) parts.push(`Obiectiv: ${t(`onboarding.objective.${d.objective}`)}`);
-    for (const f of deliverableFieldsFor(d.kind)) {
-      if (f.key === 'notes') continue;
-      const text = d.deliverables[f.key].trim();
-      if (text) parts.push('', `— ${t(f.labelKey)} —`, text);
-    }
+    for (const sec of deliverablesToSections(tr, d.kind, d.deliverables)) parts.push('', `— ${sec.label} —`, sec.body);
     return parts.join('\n');
   };
 
@@ -129,11 +133,11 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
       d.budget ? `${t('admin.reqFormBudget')}: ${d.budget}` : '',
       d.objective ? `${t('admin.reqFormObjective')}: ${t(`onboarding.objective.${d.objective}`)}` : '',
     ].filter(Boolean);
-    const sections = deliverableFieldsFor(d.kind)
-      .filter((f) => f.key !== 'notes')
-      .map((f) => ({ label: t(f.labelKey), body: d.deliverables[f.key] }));
-    printHtmlDoc(composePrintHtml({ title: printTitle([d.title || t('admin.reqTitle')]), meta, sections }));
+    printHtmlDoc(composePrintHtml({ title: printTitle([d.title || t('admin.reqTitle')]), meta, sections: deliverablesToSections(tr, d.kind, d.deliverables) }));
   };
+
+  // Conținut client-safe (orice secțiune ne-goală, fără note) → controlează vizibilitatea Copy/PDF.
+  const hasClientContent = (d: MarketingRequest): boolean => deliverablesToSections(tr, d.kind, d.deliverables).length > 0;
 
   useEffect(() => {
     const q = query(collection(db, 'leads', leadId, 'requests'), orderBy('createdAt', 'desc'));
@@ -166,7 +170,7 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
         objective: newReq.objective,
         status: 'open',
         source: 'manual',
-        deliverables: { adTexts: '', videoScripts: '', campaignStructure: '', calendar: '', posts: '', ideas: '', notes: '' },
+        deliverables: emptyDeliverables(),
         clientUid: clientUid || '', // moștenit de la lead → trigger-ul oglindește livrabilele în portal
         createdBy: adminUid,
         createdAt: serverTimestamp(),
@@ -227,12 +231,14 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
         snapshotAt: serverTimestamp(),
         snapshotBy: adminUid,
       });
-      const merged = { ...draft.deliverables };
+      const merged: RequestDeliverables = { ...draft.deliverables };
+      const mAny = merged as unknown as Record<string, unknown>;
+      const vAny = v.data.deliverables as unknown as Record<string, unknown>;
       for (const f of deliverableFieldsFor(draft.kind)) {
-        if (f.key !== 'notes') merged[f.key] = v.data.deliverables[f.key];
+        if (f.key !== 'notes') mAny[f.key] = vAny[f.key];
       }
       await updateDoc(doc(db, 'leads', leadId, 'requests', reqId), {
-        deliverables: merged,
+        deliverables: coerceToDeliverables(merged),
         source: v.data.source,
         updatedAt: serverTimestamp(),
       });
@@ -254,12 +260,7 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
         budget: draft.budget.slice(0, 80),
         objective: draft.objective,
         status: draft.status,
-        deliverables: Object.fromEntries(
-          (Object.keys(draft.deliverables) as Array<keyof MarketingRequest['deliverables']>).map((k) => [
-            k,
-            draft.deliverables[k].slice(0, DELIVERABLE_MAX),
-          ])
-        ),
+        deliverables: coerceToDeliverables(draft.deliverables),
         updatedAt: serverTimestamp(),
       });
       setSaveState('saved');
@@ -282,33 +283,53 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
     }
   };
 
-  const setDel = (key: keyof MarketingRequest['deliverables'], v: string) => {
-    setDraft((d) => (d ? { ...d, deliverables: { ...d.deliverables, [key]: v } } : d));
+  // Setteri imutabili pe livrabile structurate (felia 5a).
+  const updateDel = (mut: (del: RequestDeliverables) => RequestDeliverables) => {
+    setDraft((d) => (d ? { ...d, deliverables: mut(d.deliverables) } : d));
     setSaveState('idle');
   };
+  const setProse = (key: keyof RequestDeliverables, v: string) =>
+    updateDel((del) => ({ ...del, [key]: v }) as RequestDeliverables);
+  const setStrItem = (key: keyof RequestDeliverables, idx: number, v: string) =>
+    updateDel((del) => ({ ...del, [key]: (del[key] as string[]).map((x, i) => (i === idx ? v : x)) }) as RequestDeliverables);
+  const setObjItem = (key: keyof RequestDeliverables, idx: number, sub: string, v: string) =>
+    updateDel((del) => ({ ...del, [key]: (del[key] as unknown as Record<string, unknown>[]).map((x, i) => (i === idx ? { ...x, [sub]: v } : x)) }) as RequestDeliverables);
+  const emptyItemFor = (key: keyof RequestDeliverables): unknown => {
+    switch (key) {
+      case 'adVariants': return { hook: '', body: '', cta: '', angle: '', stage: 'rece' };
+      case 'videoScripts': return { concept: '', script: '' };
+      case 'calendar': return { day: '', theme: '', format: '', channel: '' };
+      case 'posts': return { text: '', hashtags: '', visual: '' };
+      default: return '';
+    }
+  };
+  const addItem = (key: keyof RequestDeliverables) =>
+    updateDel((del) => ({ ...del, [key]: [...(del[key] as unknown[]), emptyItemFor(key)] }) as RequestDeliverables);
+  const removeItem = (key: keyof RequestDeliverables, idx: number) =>
+    updateDel((del) => ({ ...del, [key]: (del[key] as unknown[]).filter((_, i) => i !== idx) }) as RequestDeliverables);
 
   /** Verticala 1: cere backend-ului să genereze livrabilele cu AI (callable aiGenerateCampaign).
    *  Functions citește lead-ul + cererea din Firestore și scrie rezultatul pe cerere; aici doar
    *  pornim apelul și aducem rezultatul în editor. Dacă functions-ul nu e deployat încă (cheia
    *  Anthropic nesetată), arătăm mesajul de „neactivat" — integrarea nu e dependență critică. */
   const generateWithAi = async (id: string) => {
-    const aiFields = draft ? deliverableFieldsFor(draft.kind).filter((f) => f.key !== 'notes') : [];
-    const hasContent = !!draft && aiFields.some((f) => draft.deliverables[f.key].trim());
-    if (hasContent && !window.confirm(t('admin.reqAiOverwriteConfirm'))) return;
+    if (draft && hasClientContent(draft) && !window.confirm(t('admin.reqAiOverwriteConfirm'))) return;
     setAiBusy(true);
     setAiMessage(null);
     try {
-      const fn = httpsCallable<{ leadId: string; requestId: string }, { deliverables?: Record<string, string> }>(
+      const fn = httpsCallable<{ leadId: string; requestId: string }, { deliverables?: unknown }>(
         functions,
         'aiGenerateCampaign'
       );
       const { data } = await fn({ leadId, requestId: id });
-      const del = data?.deliverables ?? {};
+      const ret = coerceToDeliverables(data?.deliverables); // forma tipată (felia 5a)
       setDraft((d) => {
         if (!d) return d;
-        const merged = { ...d.deliverables };
+        const merged: RequestDeliverables = { ...d.deliverables };
+        const mAny = merged as unknown as Record<string, unknown>;
+        const rAny = ret as unknown as Record<string, unknown>;
         for (const f of deliverableFieldsFor(d.kind)) {
-          if (f.key !== 'notes' && typeof del[f.key] === 'string') merged[f.key] = del[f.key];
+          if (f.key !== 'notes') mAny[f.key] = rAny[f.key];
         }
         return { ...d, source: 'ai', deliverables: merged };
       });
@@ -327,6 +348,84 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
     } finally {
       setAiBusy(false);
     }
+  };
+
+  // ── Editor de livrabile structurate (felia 5a): prose / listă de string-uri / listă de obiecte ──
+  const copyFieldText = (d: MarketingRequest, f: DeliverableField): string => {
+    const sec = deliverablesToSections(tr, d.kind, d.deliverables, { includeNotes: true }).find((s) => s.label === t(f.labelKey));
+    return sec ? sec.body : '';
+  };
+  const fieldHeader = (d: MarketingRequest, f: DeliverableField) => {
+    const body = copyFieldText(d, f);
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+        {t(f.labelKey)}
+        {body && (
+          <button type="button" onClick={() => copyText(f.key, body)} style={{ border: '1px solid var(--border)', background: 'var(--bg-1)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: copiedKey === f.key ? '#1e7e34' : 'var(--fg-1)' }}>
+            {copiedKey === f.key ? t('admin.copied') : t('admin.copy')}
+          </button>
+        )}
+      </span>
+    );
+  };
+  const renderItemSub = (key: keyof RequestDeliverables, idx: number, sf: DeliverableSubField, value: string) => {
+    if (sf.enum) {
+      return (
+        <select style={field} value={value} onChange={(e) => setObjItem(key, idx, sf.key, e.target.value)}>
+          {sf.enum.map((opt) => <option key={opt} value={opt}>{t((sf.enumLabelPrefix || '') + opt)}</option>)}
+        </select>
+      );
+    }
+    if (sf.long) {
+      return <textarea style={{ ...field, minHeight: 60, resize: 'vertical', fontFamily: 'inherit' }} value={value} onChange={(e) => setObjItem(key, idx, sf.key, e.target.value)} />;
+    }
+    return <input style={field} value={value} onChange={(e) => setObjItem(key, idx, sf.key, e.target.value)} />;
+  };
+  const renderDeliverableField = (d: MarketingRequest, f: DeliverableField) => {
+    if (f.type === 'prose') {
+      return (
+        <div key={f.key} style={{ display: 'grid', gap: 3, fontSize: 12 }}>
+          {fieldHeader(d, f)}
+          <textarea style={{ ...field, minHeight: f.key === 'notes' ? 50 : 80, resize: 'vertical', fontFamily: 'inherit' }} value={d.deliverables[f.key] as string} maxLength={f.key === 'notes' ? NOTES_MAX : PROSE_MAX} onChange={(e) => setProse(f.key, e.target.value)} />
+        </div>
+      );
+    }
+    if (f.type === 'strlist') {
+      const items = d.deliverables[f.key] as string[];
+      return (
+        <div key={f.key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+          {fieldHeader(d, f)}
+          {items.map((it, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6 }}>
+              <input style={field} value={it} onChange={(e) => setStrItem(f.key, i, e.target.value)} />
+              <button type="button" onClick={() => removeItem(f.key, i)} style={{ border: '1px solid var(--border)', background: 'var(--bg-1)', borderRadius: 6, padding: '0 10px', fontSize: 13, cursor: 'pointer', color: '#c0392b' }}>✕</button>
+            </div>
+          ))}
+          <button type="button" className="btn" style={{ justifySelf: 'start', padding: '3px 10px', fontSize: 12 }} onClick={() => addItem(f.key)}>{t('admin.reqAddItem')}</button>
+        </div>
+      );
+    }
+    const items = d.deliverables[f.key] as unknown as Record<string, string>[];
+    return (
+      <div key={f.key} style={{ display: 'grid', gap: 6, fontSize: 12 }}>
+        {fieldHeader(d, f)}
+        {items.map((it, i) => (
+          <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', display: 'grid', gap: 6, background: 'var(--bg-0)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <strong style={{ fontSize: 11, color: 'var(--fg-1)' }}>#{i + 1}</strong>
+              <button type="button" onClick={() => removeItem(f.key, i)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14 }} title={t('admin.reqRemoveItem')}>✕</button>
+            </div>
+            {f.itemFields.map((sf) => (
+              <label key={sf.key} style={{ display: 'grid', gap: 2, fontSize: 11, fontWeight: 600 }}>
+                {t(sf.labelKey)}
+                {renderItemSub(f.key, i, sf, (it[sf.key] as string) || '')}
+              </label>
+            ))}
+          </div>
+        ))}
+        <button type="button" className="btn" style={{ justifySelf: 'start', padding: '3px 10px', fontSize: 12 }} onClick={() => addItem(f.key)}>{t('admin.reqAddItem')}</button>
+      </div>
+    );
   };
 
   return (
@@ -505,39 +604,18 @@ export default function LeadRequests({ leadId, adminUid, clientUid }: { leadId: 
                   <textarea style={{ ...field, minHeight: 40, resize: 'vertical', fontFamily: 'inherit' }} value={draft.offer} maxLength={500} onChange={(e) => { setDraft((d) => (d ? { ...d, offer: e.target.value } : d)); setSaveState('idle'); }} />
                 </label>
 
-                {deliverableFieldsFor(draft.kind).map((f) => (
-                  <label key={f.key} style={{ display: 'grid', gap: 3, fontSize: 12, fontWeight: 700 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {t(f.labelKey)}
-                      {f.key !== 'notes' && draft.deliverables[f.key].trim() && (
-                        <button
-                          type="button"
-                          onClick={() => copyText(f.key, draft.deliverables[f.key])}
-                          style={{ border: '1px solid var(--border)', background: 'var(--bg-1)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: copiedKey === f.key ? '#1e7e34' : 'var(--fg-1)' }}
-                        >
-                          {copiedKey === f.key ? t('admin.copied') : t('admin.copy')}
-                        </button>
-                      )}
-                    </span>
-                    <textarea
-                      style={{ ...field, minHeight: f.key === 'notes' ? 50 : 90, resize: 'vertical', fontFamily: 'inherit' }}
-                      value={draft.deliverables[f.key]}
-                      maxLength={DELIVERABLE_MAX}
-                      onChange={(e) => setDel(f.key, e.target.value)}
-                    />
-                  </label>
-                ))}
+                {deliverableFieldsFor(draft.kind).map((f) => renderDeliverableField(draft, f))}
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-primary" style={{ padding: '6px 16px', fontSize: 12 }} disabled={saveState === 'saving'} onClick={() => void save(r.id)}>
                     {saveState === 'saving' ? t('admin.reqSaving') : saveState === 'saved' ? t('admin.reqSaved') : t('admin.reqSave')}
                   </button>
-                  {deliverableFieldsFor(draft.kind).some((f) => f.key !== 'notes' && draft.deliverables[f.key].trim()) && (
+                  {hasClientContent(draft) && (
                     <button className="btn" style={{ padding: '6px 16px', fontSize: 12, color: copiedKey === 'all' ? '#1e7e34' : undefined }} onClick={() => copyText('all', buildCopyAll(draft))}>
                       {copiedKey === 'all' ? t('admin.copied') : `📋 ${t('admin.copyAll')}`}
                     </button>
                   )}
-                  {deliverableFieldsFor(draft.kind).some((f) => f.key !== 'notes' && draft.deliverables[f.key].trim()) && (
+                  {hasClientContent(draft) && (
                     <button className="btn" style={{ padding: '6px 16px', fontSize: 12 }} onClick={() => pdfDeliverables(draft)}>
                       {t('admin.pdfBtn')}
                     </button>

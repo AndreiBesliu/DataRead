@@ -285,7 +285,7 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - **Verticala 1 Marketing AI — ACTIVĂ (12.06.2026):** callable-ul `aiGenerateCampaign` e deployat
   la europe-central2: admin-only, quota lunară în `aiUsage/{uid}` (200/lună/operator), citește
   lead-ul + cererea server-side, model `claude-opus-4-8` cu adaptive thinking + ieșire structurată
-  (schema CAMPAIGN_SCHEMA: adTexts/videoScripts/campaignStructure), scrie livrabilele pe
+  (schema CAMPAIGN_SCHEMA tipată — vezi felia 5a: adVariants[]/videoScripts[]/campaignStructure), scrie livrabilele pe
   `leads/{id}/requests/{reqId}` cu merge (notele manuale rămân; source: 'ai'). Butonul „Generează
   cu AI" din /admin e funcțional. `ANTHROPIC_API_KEY` = Secret Manager v1 (decizie Andrei: cheia
   inițială; ROTIREA rămâne în backlog înainte de scalare — la rotire: secrets:set cu cheia nouă +
@@ -331,6 +331,24 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   Review adversarial: bug HIGH prins+reparat (agregare MoM care amesteca luni nealiniate → rescris pe uniune). NB: fereastra
   de `campaigns.clientUid` stale la reconectarea unui lead (pre-existentă, se auto-vindecă prin onLeadWrite) — robustețe de
   întărit separat (deconectare-înainte-de-reconectare).
+- **Livrabile campanie+content TIPATE (ACTIV 23.06.2026, felia 5a):** livrabilele AI (campanie+content) au trecut de la
+  blob-uri STRING la SCHEME TIPATE (array-uri de obiecte editabile) — editare granulară pe item + pregătire A/B pe variantă +
+  publicare (north star [[project_dataread_publishing]]). Structurare SELECTIVĂ: listele devin array-uri tipate, proza rămâne
+  proză. `RequestDeliverables` (`src/types/request.ts`, REQUEST_SCHEMA=2): campaign = `adVariants:{hook,body,cta,angle,stage}[]`
+  (stage enum rece/cald/fierbinte) + `videoScripts:{concept,script}[]` + `campaignStructure` (proză) + `notes`; content =
+  `calendar:{day,theme,format,channel}[]` (format enum poza/reel/carusel/text/story/video) + `posts:{text,hashtags,visual}[]` +
+  `ideas:string[]` + `notes`. Plafoane/enum-uri exportate dintr-un loc; `coerceToDeliverables`/`coerceToMarketingRequest`
+  normalizează orice (clean break: format vechi string/gunoi → liste goale, fără throw/migrare — nu existau date de producție).
+  NOU `deliverablesToSections(t,kind,del)` = flatten array→secțiuni {label,body} (reutilizat de copy/PDF în admin ȘI portal —
+  anti-drift; exclude notes implicit). **functions/index.js:** CAMPAIGN_SCHEMA/CONTENT_SCHEMA = array-de-obiecte; NOU
+  `clampDeliverables(kind,out)` = port 1:1 al coerce-ului TS (plafoane/enum ca tabele JS, paritate prinsă de e2e TEST DELIV),
+  întoarce DOAR câmpurile tipului (FĂRĂ notes) → `set({merge:true})` păstrează nota internă a operatorului; `hasPrev` +
+  `clientSafeDeliverables` array-aware (listă ne-goală SAU proză ne-goală); `buildSourceBrief` citește `req.adVariants`. **UI:**
+  `LeadRequests` editor pe ITEMI (add/remove card, câmpuri din metadata, `<select>` pt. enum); save/restore/merge-după-AI prin
+  coerce (NU `.slice`/`typeof===string` pe array — regresia principală, evitată); `AppHome` (MarketingPortal+VersionHistory)
+  păstrează valoarea brută prin coerce, afișează prin `deliverablesToSections`. Reguli NESCHIMBATE (requests = write:false
+  admin-only, fără validare de formă pe deliverables). Review adversarial 3 lentile → 0 defecte. Amânat: 5b
+  (`insight.actions[]`), 5c (raport `kpis[]/highlights[]/recommendations[]`).
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

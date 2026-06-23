@@ -2096,6 +2096,34 @@ normaliser, secretele niciodată în chat/repo.
 >   (clientUid==uid, scris doar de Admin SDK). LOW pre-existent: fereastră clientUid stale la reconectare lead (se auto-vindecă).
 > Verificat: 18/18 suites + e2e (TEST GND4) + build. DEPLOYED: functions. Felia 5 roadmap: livrabile string→scheme tipate.
 
+**2026-06-23 - Task Started — AI felia 5a: livrabile campanie+content string → scheme tipate**
+> Model: Claude Opus 4.8 (1M context). A 5-a felie din roadmap-ul AI, increment 5a (doar campanie+content; insight/raport
+> rămân string în 5b/5c). Livrabilele-listă devin ARRAY-uri de obiecte editabile → editare granulară + pregătire A/B pe
+> variantă + publicare (north star). Clean break: nu există date de producție (doar teste sacrificabile) — coerce normalizează
+> orice formă veche (string) la liste goale, fără migrare.
+
+**2026-06-23 - Task Completed — AI felia 5a: livrabile campanie+content string → scheme tipate**
+> Model: Claude Opus 4.8 (1M context). Livrabilele AI (campanie+content) au trecut de la blob-uri STRING la SCHEME TIPATE.
+> Structurare SELECTIVĂ: listele devin array-uri de obiecte; proza rămâne proză (campaignStructure, notes).
+> - **Forme noi (src/types/request.ts, REQUEST_SCHEMA=2):** campaign = `adVariants:{hook,body,cta,angle,stage}[]` (stage enum
+>   rece/cald/fierbinte) + `videoScripts:{concept,script}[]` + `campaignStructure` (proză) + `notes`; content =
+>   `calendar:{day,theme,format,channel}[]` (format enum poza/reel/carusel/text/story/video) + `posts:{text,hashtags,visual}[]`
+>   + `ideas:string[]` + `notes`. Plafoane + enum-uri exportate dintr-un singur loc; `coerceToDeliverables`/`coerceToMarketingRequest`
+>   normalizează orice (format vechi string / gunoi → liste goale, fără throw). NOU `deliverablesToSections(t,kind,del)` =
+>   flatten array→secțiuni {label,body} (reutilizat de copy/PDF în admin ȘI portal — anti-drift; exclude notes implicit).
+> - **functions/index.js:** CAMPAIGN_SCHEMA/CONTENT_SCHEMA → array-de-obiecte (enum stage/format); NOU `clampDeliverables(kind,out)`
+>   = port 1:1 al coerce-ului TS (plafoane/enum replicate ca tabele JS, paritate prinsă de e2e), întoarce DOAR câmpurile tipului
+>   (FĂRĂ notes) → `set({merge:true})` păstrează nota internă a operatorului; `hasPrev` + `clientSafeDeliverables` rescrise
+>   array-aware (whitelist neschimbat; valoare = listă ne-goală SAU proză ne-goală); `buildSourceBrief` citește `req.adVariants`.
+> - **UI:** `LeadRequests.tsx` editor pe ITEMI (add/remove variantă, câmpuri per item din metadata, `<select>` pt. enum); save +
+>   restore + merge-după-AI trec prin coerce (NU `.slice`/`typeof===string` pe array — altfel livrabilele „dispăreau" silent);
+>   `AppHome.tsx` (MarketingPortal + VersionHistory) păstrează valoarea brută prin coerce și afișează prin `deliverablesToSections`.
+> - **Riscul principal (regresia string→array):** cele 3 filtre `typeof===string` (merge generateWithAi, portal, VersionHistory)
+>   + `save` cu `.slice` pe array — toate rescrise array-aware.
+> Verificat: typecheck + 18/18 suites (test-normalisers typed) + e2e (TEST DELIV paritate clamp JS↔coerce TS + TEST V clientSafe
+>   array-aware + LPSRC adVariants) + build + boot-smoke. Review adversarial (3 lentile: regresie/paritate/merge-privacy) cu
+>   verificare per finding. DEPLOYED: functions + hosting. Felii rămase: 5b (insight.actions[]), 5c (raport kpis[]/highlights[]).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

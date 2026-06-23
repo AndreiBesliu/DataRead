@@ -179,7 +179,7 @@ exports.onSubscriptionWrite = onDocumentWritten(
 // ── Portal client: oglindește livrabilele client-safe (FĂRĂ note interne) în subarborele ──
 // clientului. Trigger pe orice scriere de cerere (manual / AI / restaurare). Folosește diff-ul
 // before/after pe clientUid ca să gestioneze create/update/delete/relink/unlink fără cod special.
-const CLIENT_SAFE_DELIVERABLES = ['adTexts', 'videoScripts', 'campaignStructure', 'calendar', 'posts', 'ideas'];
+const CLIENT_SAFE_DELIVERABLES = ['adVariants', 'videoScripts', 'campaignStructure', 'calendar', 'posts', 'ideas'];
 
 /** Gardă defense-in-depth (principiul #3, izolare multi-tenant): oglindirile bazate pe un clientUid
  *  DENORMALIZAT (deliverables, lpIndex) scriu sub clients/{uid}/** DOAR dacă acel cont client EXISTĂ.
@@ -203,7 +203,9 @@ function clientSafeDeliverables(del) {
   const src = del && typeof del === 'object' ? del : {};
   const safe = {};
   for (const k of CLIENT_SAFE_DELIVERABLES) {
-    if (typeof src[k] === 'string' && src[k].trim()) safe[k] = src[k];
+    const v = src[k];
+    // Listă tipată ne-goală SAU proză ne-goală (felia 5a: array-uri + campaignStructure string). `notes` exclus (nu e în whitelist).
+    if (Array.isArray(v) ? v.length > 0 : (typeof v === 'string' && v.trim())) safe[k] = v;
   }
   return safe;
 }
@@ -358,20 +360,41 @@ exports.PERSONAS = PERSONAS;
 const CAMPAIGN_SCHEMA = {
   type: 'object',
   properties: {
-    adTexts: {
-      type: 'string',
-      description: '3-5 variante de texte de reclamă Meta în română, fiecare cu hook, corp și CTA, separate clar.',
+    adVariants: {
+      type: 'array',
+      description: '3-5 variante de reclamă Meta în română, ordonate de la cea mai puternică. Fiecare = obiect structurat.',
+      items: {
+        type: 'object',
+        properties: {
+          hook: { type: 'string', description: 'Cârligul — primele cuvinte care opresc scrollul.' },
+          body: { type: 'string', description: 'Corpul reclamei: beneficiu + dovadă + tratarea obiecției, concret, fără clișee.' },
+          cta: { type: 'string', description: 'Apelul la acțiune (ex. „Comandă acum", „Rezervă o oră").' },
+          angle: { type: 'string', description: 'Unghiul creativ / mesajul dominant al variantei (scurt).' },
+          stage: { type: 'string', enum: ['rece', 'cald', 'fierbinte'], description: 'Stadiul de conștientizare al publicului vizat.' },
+        },
+        required: ['hook', 'body', 'cta', 'angle', 'stage'],
+        additionalProperties: false,
+      },
     },
     videoScripts: {
-      type: 'string',
-      description: '2 scripturi de video scurt (15-30s, Reels/TikTok) în română, cu indicații de cadre și text pe ecran.',
+      type: 'array',
+      description: '2 scripturi de video scurt (15-30s, Reels/TikTok) în română.',
+      items: {
+        type: 'object',
+        properties: {
+          concept: { type: 'string', description: 'Conceptul video pe scurt (ce arată, unghiul).' },
+          script: { type: 'string', description: 'Scenariul: cadre + text pe ecran + voce, gata de filmat.' },
+        },
+        required: ['concept', 'script'],
+        additionalProperties: false,
+      },
     },
     campaignStructure: {
       type: 'string',
-      description: 'Structura campaniei Meta în română: obiectiv, ad set-uri cu audiențe/targeting/plasamente și împărțirea bugetului.',
+      description: 'Structura campaniei Meta în română (PROZĂ): obiectiv, ad set-uri cu audiențe/targeting/plasamente și împărțirea bugetului.',
     },
   },
-  required: ['adTexts', 'videoScripts', 'campaignStructure'],
+  required: ['adVariants', 'videoScripts', 'campaignStructure'],
   additionalProperties: false,
 };
 
@@ -380,18 +403,38 @@ const CONTENT_SCHEMA = {
   type: 'object',
   properties: {
     calendar: {
-      type: 'string',
-      description:
-        'Calendar de conținut pe 30 de zile în română, cu 12-15 zile active de postare (ritm sustenabil): pe fiecare linie „Ziua N: temă — format (poză/reel/carusel/text) — canal".',
+      type: 'array',
+      description: 'Calendar de conținut pe 30 de zile în română, 12-15 zile active (ritm sustenabil). Fiecare zi = obiect.',
+      items: {
+        type: 'object',
+        properties: {
+          day: { type: 'string', description: 'Eticheta zilei (ex. „Ziua 1").' },
+          theme: { type: 'string', description: 'Tema/subiectul postării.' },
+          format: { type: 'string', enum: ['poza', 'reel', 'carusel', 'text', 'story', 'video'], description: 'Formatul postării.' },
+          channel: { type: 'string', description: 'Canalul (ex. Instagram, Facebook, TikTok).' },
+        },
+        required: ['day', 'theme', 'format', 'channel'],
+        additionalProperties: false,
+      },
     },
     posts: {
-      type: 'string',
-      description:
-        '8 postări complete în română, gata de publicat, numerotate și aliniate cu calendarul: textul postării + hashtag-uri + sugestie de vizual.',
+      type: 'array',
+      description: '8 postări complete în română, gata de publicat, aliniate cu calendarul.',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Textul postării, gata de publicat.' },
+          hashtags: { type: 'string', description: 'Hashtag-uri locale relevante (pe o linie).' },
+          visual: { type: 'string', description: 'Sugestie de vizual (ce poză/video însoțește).' },
+        },
+        required: ['text', 'hashtags', 'visual'],
+        additionalProperties: false,
+      },
     },
     ideas: {
-      type: 'string',
-      description: '12 idei suplimentare de conținut în română, câte una pe linie, specifice firmei și industriei.',
+      type: 'array',
+      description: '12 idei suplimentare de conținut în română, specifice firmei și industriei.',
+      items: { type: 'string' },
     },
   },
   required: ['calendar', 'posts', 'ideas'],
@@ -438,9 +481,38 @@ const CHANNELS_SCHEMA = {
 
 // Câmpurile de livrabile completate de AI, per tip de cerere.
 const KIND_FIELDS = {
-  campaign: ['adTexts', 'videoScripts', 'campaignStructure'],
+  campaign: ['adVariants', 'videoScripts', 'campaignStructure'],
   content: ['calendar', 'posts', 'ideas'],
 };
+
+// Plafoane/enum livrabile structurate (felia 5a) — PARITATE cu src/types/request.ts. Drift prins de e2e (TEST DELIV).
+const DELIVERABLE_LIST_MAX = { adVariants: 8, videoScripts: 6, calendar: 31, posts: 12, ideas: 20 };
+const AWARENESS_STAGES = ['rece', 'cald', 'fierbinte'];
+const CONTENT_FORMATS = ['poza', 'reel', 'carusel', 'text', 'story', 'video'];
+
+// Clamp structurat al livrabilelor AI — port 1:1 al coerce-ului per-câmp din request.ts (str = hard-slice,
+// non-string → '', enum cu fallback, liste tăiate la plafon). Întoarce DOAR câmpurile tipului (FĂRĂ `notes`)
+// → set({merge:true}) păstrează nota internă a operatorului + nu atinge câmpurile celuilalt tip.
+function clampDeliverables(kind, out) {
+  const o = out && typeof out === 'object' ? out : {};
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const ob = (v) => (v && typeof v === 'object' ? v : {});
+  const s = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  const inEnum = (list, v, fb) => (list.includes(v) ? v : fb);
+  if (kind === 'content') {
+    return {
+      calendar: arr(o.calendar).slice(0, DELIVERABLE_LIST_MAX.calendar).map((x) => { const c = ob(x); return { day: s(c.day, 40), theme: s(c.theme, 200), format: inEnum(CONTENT_FORMATS, c.format, ''), channel: s(c.channel, 60) }; }),
+      posts: arr(o.posts).slice(0, DELIVERABLE_LIST_MAX.posts).map((x) => { const p = ob(x); return { text: s(p.text, 1500), hashtags: s(p.hashtags, 300), visual: s(p.visual, 300) }; }),
+      ideas: arr(o.ideas).filter((i) => typeof i === 'string' && i.trim()).slice(0, DELIVERABLE_LIST_MAX.ideas).map((i) => i.slice(0, 200)),
+    };
+  }
+  return {
+    adVariants: arr(o.adVariants).slice(0, DELIVERABLE_LIST_MAX.adVariants).map((x) => { const a = ob(x); return { hook: s(a.hook, 200), body: s(a.body, 1500), cta: s(a.cta, 120), angle: s(a.angle, 140), stage: inEnum(AWARENESS_STAGES, a.stage, 'rece') }; }),
+    videoScripts: arr(o.videoScripts).slice(0, DELIVERABLE_LIST_MAX.videoScripts).map((x) => { const v = ob(x); return { concept: s(v.concept, 140), script: s(v.script, 2000) }; }),
+    campaignStructure: s(o.campaignStructure, 8000),
+  };
+}
+exports.clampDeliverables = clampDeliverables;
 
 const OBJECTIVE_RO = { leads: 'lead-uri / cereri de ofertă', sales: 'vânzări online', awareness: 'notorietate / brand', traffic: 'trafic pe site', other: 'alt obiectiv' };
 
@@ -1557,13 +1629,12 @@ if (AI_ENABLED) {
         prompt,
       });
 
-      const deliverables = {};
-      for (const k of KIND_FIELDS[kind]) deliverables[k] = clampText(out[k], 8000);
+      const deliverables = clampDeliverables(kind, out);
 
       // Plasa de siguranță: înainte să suprascriem, starea curentă (dacă are conținut) devine o
       // versiune în istoric — o regenerare nu pierde niciodată munca anterioară (AI sau manuală).
       const prevDel = (typeof reqData.deliverables === 'object' && reqData.deliverables) || {};
-      const hasPrev = KIND_FIELDS[kind].some((k) => typeof prevDel[k] === 'string' && prevDel[k].trim());
+      const hasPrev = KIND_FIELDS[kind].some((k) => { const v = prevDel[k]; return Array.isArray(v) ? v.length > 0 : (typeof v === 'string' && v.trim().length > 0); });
       if (hasPrev) {
         await reqRef.collection('versions').add({
           deliverables: prevDel,
@@ -2100,8 +2171,8 @@ function buildSourceBrief(source, ctx) {
     };
   }
   const lead = c.lead || {}; const req = c.req || {};
-  const ads = Array.isArray(req.adTexts)
-    ? req.adTexts.map((a) => (typeof a === 'string' ? a : (a && (a.text || a.body || a.headline)) || '')).filter(Boolean).slice(0, 5).join(' / ')
+  const ads = Array.isArray(req.adVariants)
+    ? req.adVariants.map((a) => (a && typeof a === 'object' ? [a.hook, a.body].filter(Boolean).join(' — ') : '')).filter(Boolean).slice(0, 5).join(' / ')
     : '';
   const objectives = Array.isArray(lead.objectives) ? lead.objectives.join(', ') : '';
   return {

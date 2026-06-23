@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { deliverableFieldsFor, type RequestKind } from '../types/request';
+import { coerceToDeliverables, deliverablesToSections, type RequestDeliverables, type RequestKind } from '../types/request';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
@@ -26,12 +26,13 @@ const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google',
 const portalMoney = (n: number) => `€${n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}`;
 const portalRoas = (n: number | null) => (n === null ? '—' : `${n.toFixed(2)}×`);
 
-interface DelivVersion { id: string; atMs: number; source: string; deliverables: Record<string, string> }
+interface DelivVersion { id: string; atMs: number; source: string; deliverables: RequestDeliverables }
 
 /** Istoricul de versiuni al unui livrabil (read-only) — oglindit client-safe de functions sub
  *  clients/{uid}/deliverables/{reqId}/versions. Încărcare leneșă la prima deschidere (getDocs o singură dată). */
 function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind: RequestKind }) {
   const { t } = useTranslation();
+  const tr = (k: string): string => t(k);
   const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<DelivVersion[] | null>(null);
 
@@ -40,12 +41,8 @@ function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind
       const snap = await getDocs(query(collection(db, 'clients', uid, 'deliverables', reqId, 'versions'), orderBy('snapshotAt', 'desc'), limit(20)));
       setVersions(snap.docs.map((d) => {
         const x = d.data();
-        const del: Record<string, string> = {};
-        if (x.deliverables && typeof x.deliverables === 'object') {
-          for (const [k, v] of Object.entries(x.deliverables as Record<string, unknown>)) if (typeof v === 'string') del[k] = v;
-        }
         const at = x.snapshotAt as { toMillis?: () => number } | undefined;
-        return { id: d.id, atMs: at && typeof at.toMillis === 'function' ? at.toMillis() : 0, source: x.source === 'ai' ? 'ai' : 'manual', deliverables: del };
+        return { id: d.id, atMs: at && typeof at.toMillis === 'function' ? at.toMillis() : 0, source: x.source === 'ai' ? 'ai' : 'manual', deliverables: coerceToDeliverables(x.deliverables) };
       }));
     } catch {
       setVersions([]);
@@ -67,14 +64,12 @@ function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind
             {v.atMs ? ` · ${new Date(v.atMs).toLocaleString('ro-RO')}` : ''}
             {` · ${v.source === 'ai' ? 'AI' : t('appHome.versionManual')}`}
           </div>
-          {deliverableFieldsFor(kind)
-            .filter((f) => f.key !== 'notes' && v.deliverables[f.key]?.trim())
-            .map((f) => (
-              <div key={f.key} style={{ marginBottom: 6 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--fg-1)' }}>{t(f.labelKey)}</div>
-                <div style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{v.deliverables[f.key]}</div>
-              </div>
-            ))}
+          {deliverablesToSections(tr, kind, v.deliverables).map((sec) => (
+            <div key={sec.label} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--fg-1)' }}>{sec.label}</div>
+              <div style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{sec.body}</div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -85,9 +80,10 @@ function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind
  *  raportul lunar (oglindit în clients/{uid} de functions). Read-only — operatorii gestionează tot. */
 function MarketingPortal({ uid }: { uid: string }) {
   const { t } = useTranslation();
+  const tr = (k: string): string => t(k);
   const [camps, setCamps] = useState<Array<{ id: string; data: CampaignDef }> | null>(null);
   const [report, setReport] = useState<ClientReport | null>(null);
-  const [deliv, setDeliv] = useState<Array<{ id: string; kind: RequestKind; title: string; deliverables: Record<string, string> }>>([]);
+  const [deliv, setDeliv] = useState<Array<{ id: string; kind: RequestKind; title: string; deliverables: RequestDeliverables }>>([]);
 
   useEffect(() => {
     const off1 = onSnapshot(
@@ -110,14 +106,10 @@ function MarketingPortal({ uid }: { uid: string }) {
     const off3 = onSnapshot(
       query(collection(db, 'clients', uid, 'deliverables'), orderBy('updatedAt', 'desc')),
       (snap) => {
-        const out: Array<{ id: string; kind: RequestKind; title: string; deliverables: Record<string, string> }> = [];
+        const out: Array<{ id: string; kind: RequestKind; title: string; deliverables: RequestDeliverables }> = [];
         snap.forEach((d) => {
           const x = d.data();
-          const del: Record<string, string> = {};
-          if (x.deliverables && typeof x.deliverables === 'object') {
-            for (const [k, v] of Object.entries(x.deliverables as Record<string, unknown>)) if (typeof v === 'string') del[k] = v;
-          }
-          out.push({ id: d.id, kind: x.kind === 'content' ? 'content' : 'campaign', title: typeof x.title === 'string' ? x.title : '', deliverables: del });
+          out.push({ id: d.id, kind: x.kind === 'content' ? 'content' : 'campaign', title: typeof x.title === 'string' ? x.title : '', deliverables: coerceToDeliverables(x.deliverables) });
         });
         setDeliv(out);
       },
@@ -144,12 +136,10 @@ function MarketingPortal({ uid }: { uid: string }) {
       ],
     }));
   };
-  const pdfDeliv = (d: { title: string; kind: RequestKind; deliverables: Record<string, string> }) => {
+  const pdfDeliv = (d: { title: string; kind: RequestKind; deliverables: RequestDeliverables }) => {
     printHtmlDoc(composePrintHtml({
       title: printTitle([d.title || t('appHome.portalDeliverables')]),
-      sections: deliverableFieldsFor(d.kind)
-        .filter((f) => f.key !== 'notes' && d.deliverables[f.key]?.trim())
-        .map((f) => ({ label: t(f.labelKey), body: d.deliverables[f.key] })),
+      sections: deliverablesToSections(tr, d.kind, d.deliverables),
     }));
   };
   const portalPdfBtn = { border: '1px solid var(--border)', background: 'var(--bg-0)', color: 'var(--fg-1)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' } as const;
@@ -216,14 +206,12 @@ function MarketingPortal({ uid }: { uid: string }) {
                   <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t(d.kind === 'content' ? 'admin.reqKindContent' : 'admin.reqKindCampaign')}</span>
                   <button onClick={() => pdfDeliv(d)} style={{ ...portalPdfBtn, marginLeft: 'auto', padding: '4px 10px' }}>{t('appHome.pdfBtn')}</button>
                 </div>
-                {deliverableFieldsFor(d.kind)
-                  .filter((f) => f.key !== 'notes' && d.deliverables[f.key]?.trim())
-                  .map((f) => (
-                    <div key={f.key} style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)' }}>{t(f.labelKey)}</div>
-                      <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{d.deliverables[f.key]}</div>
-                    </div>
-                  ))}
+                {deliverablesToSections(tr, d.kind, d.deliverables).map((sec) => (
+                  <div key={sec.label} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)' }}>{sec.label}</div>
+                    <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{sec.body}</div>
+                  </div>
+                ))}
                 <VersionHistory uid={uid} reqId={d.id} kind={d.kind} />
               </div>
             ))}
