@@ -14,6 +14,7 @@ import { db } from '../firebase';
 import { customThemeCss, type CustomTheme } from '../theme/themes';
 import { PUBLIC_THEME_DEFAULT } from '../config/publicTheme';
 import { coerceToSitePublic } from '../types/sitePublic';
+import { coerceToPageThemes, pageKeyForSlug } from '../types/pageThemes';
 
 const STYLE_ID = 'public-theme-css';
 
@@ -31,6 +32,33 @@ export function usePublicTheme(): CustomTheme {
       .catch(() => {/* offline / interzis → rămâne snapshot-ul copt */});
     return () => { cancelled = true; };
   }, []);
+  return theme;
+}
+
+/** Felia A: tema unei PAGINI publice = override-ul ei (siteConfig/pageThemes.themes[pageKey]) dacă există, altfel
+ *  tema globală (publicTheme). Init = snapshot copt (sincron, == prerender → fără hydration drift); după mount
+ *  citește AMBELE docuri o dată (getDoc, webdriver-guard ca prerender-ul să rămână determinist). Override-ul
+ *  se aplică post-mount (ca tema globală azi) — scurt flash global→pagină doar pe paginile cu override. */
+export function usePagePublicTheme(slug: string): CustomTheme {
+  const [theme, setTheme] = useState<CustomTheme>(PUBLIC_THEME_DEFAULT);
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
+    let cancelled = false;
+    const key = pageKeyForSlug(slug);
+    Promise.all([
+      getDoc(doc(db, 'siteConfig', 'publicTheme')),
+      getDoc(doc(db, 'siteConfig', 'pageThemes')),
+    ])
+      .then(([gSnap, pSnap]) => {
+        if (cancelled) return;
+        const global = coerceToSitePublic(gSnap.exists() ? gSnap.data() : null).theme;
+        const pt = coerceToPageThemes(pSnap.exists() ? pSnap.data() : null);
+        const override = key ? pt.themes[key] : undefined;
+        setTheme(override || global);
+      })
+      .catch(() => {/* offline / interzis → rămâne snapshot-ul copt */});
+    return () => { cancelled = true; };
+  }, [slug]);
   return theme;
 }
 

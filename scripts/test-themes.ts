@@ -80,6 +80,26 @@ check('customThemeCss cu imagine → url + radial-gradient (grilă)', (() => {
   return css.includes('url("https://ex.com/b.png")') && css.includes('radial-gradient');
 })());
 
+// ── Teme per-pagină (Felia A) ──
+import { coerceToPageThemes, pageThemeFor, pageKeyForSlug, PAGE_KEYS } from '../src/types/pageThemes';
+check('pageThemes: non-obiect → {} (fără throw)', (() => {
+  const pt = coerceToPageThemes('gunoi');
+  return pt.schema === 1 && Object.keys(pt.themes).length === 0;
+})());
+check('pageThemes: include DOAR cheile prezente (pagină fără override → fără temă)', (() => {
+  const pt = coerceToPageThemes({ themes: { home: { vars: { accent: '#123456' } }, xxx: { vars: {} } } });
+  return !!pt.themes.home && pt.themes.home.vars.accent === '#123456' && !('xxx' in pt.themes) && pt.themes.pachete === undefined;
+})());
+check('pageThemes: pageThemeFor null când nu există override', (() => {
+  const pt = coerceToPageThemes({ themes: { home: { vars: {} } } });
+  return pageThemeFor(pt, 'home') !== null && pageThemeFor(pt, 'contact') === null && pageThemeFor(pt, undefined) === null;
+})());
+check('pageThemes: pageKeyForSlug mapează rutele', (() => pageKeyForSlug('/') === 'home' && pageKeyForSlug('/pachete') === 'pachete' && pageKeyForSlug('/app') === 'app' && pageKeyForSlug('/necunoscut') === undefined)());
+check('pageThemes: fiecare override e CustomTheme valid (coerce-uit)', (() => {
+  const pt = coerceToPageThemes({ themes: Object.fromEntries(PAGE_KEYS.map((k) => [k, { vars: { accent: '#abcdef' } }])) });
+  return PAGE_KEYS.every((k) => !!pt.themes[k] && /^#[0-9a-fA-F]{6}$/.test(pt.themes[k]!.vars.accent));
+})());
+
 if (failures) {
   console.error(`${failures} checks failed`);
   process.exit(1);

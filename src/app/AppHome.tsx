@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { coerceToDeliverables, deliverablesToSections, type RequestDeliverables, type RequestKind } from '../types/request';
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
@@ -22,7 +22,24 @@ import { getPackage, isValidPackageId } from '../config/packages';
 import { coerceToCampaign, coerceToReport, kpisFromTotals, type CampaignDef, type ClientReport } from '../analytics/kpi';
 import { coerceToContact, contactDisplay, type Contact } from '../types/contact';
 import { coerceToPrediction, predictionToSections, type Prediction } from '../types/prediction';
+import { customThemeStyle, type CustomTheme } from '../theme/themes';
+import { coerceToPageThemes } from '../types/pageThemes';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
+
+/** Felia A: tema portalului client (/app), dacă operatorul i-a setat un override în siteConfig/pageThemes.app.
+ *  Best-effort getDoc (webdriver-guard ca boot-smoke să rămână determinist). null → aspectul default actual. */
+function useAppPageTheme(): CustomTheme | null {
+  const [theme, setTheme] = useState<CustomTheme | null>(null);
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
+    let cancelled = false;
+    getDoc(doc(db, 'siteConfig', 'pageThemes'))
+      .then((snap) => { if (!cancelled) setTheme(coerceToPageThemes(snap.exists() ? snap.data() : null).themes.app || null); })
+      .catch(() => {/* offline / interzis → aspect default */});
+    return () => { cancelled = true; };
+  }, []);
+  return theme;
+}
 
 const PLATFORM_LABEL: Record<string, string> = { meta: 'Meta', google: 'Google', tiktok: 'TikTok', other: 'Alt' };
 const portalMoney = (n: number) => `€${n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })}`;
@@ -688,6 +705,7 @@ export default function AppHome() {
   const [profile, setProfile] = useState<ClientProfile | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
+  const appTheme = useAppPageTheme(); // Felia A: override de temă pe /app (siteConfig/pageThemes.app), dacă există.
 
   useEffect(() => {
     if (!user) {
@@ -745,6 +763,7 @@ export default function AppHome() {
   };
 
   return (
+    <div style={appTheme ? customThemeStyle(appTheme) : undefined}>
     <main data-page="app-home" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, margin: 0 }}>{t('appHome.title')}</h1>
@@ -840,5 +859,6 @@ export default function AppHome() {
       {/* Facturile clientului (Verticala 2) — doar cele emise, read-only + PDF. */}
       <InvoicesPortal uid={user.uid} />
     </main>
+    </div>
   );
 }

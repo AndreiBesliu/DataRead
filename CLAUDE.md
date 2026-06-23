@@ -612,6 +612,14 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     HIBRID anti-flash/anti-hydration-drift: snapshot copt (`src/config/publicTheme.ts`, render sincron == prerender)
     + override runtime `getDoc` cu guard `navigator.webdriver` (NU citi Firestore sub prerender/boot — listener-ele
     blochează `networkidle`). serveLp aplică tema ca `design` pe paginile `kind:'site'` (`getPublicThemeDesign`, cache modul ~60s).
+  - **Teme PER-PAGINĂ (ACTIV 23.06.2026, „editez fiecare pagină" Felia A):** override de aspect pe fiecare pagină a noastră, peste
+    tema globală. `siteConfig/pageThemes` (UN doc, map `themes[pageKey]=CustomTheme`; pageKey ∈ home/pachete/self/start/contact/
+    termeni/confid/app) + `src/types/pageThemes.ts` (coerce include DOAR cheile prezente → pagină fără override = tema globală).
+    `usePagePublicTheme(slug)` (PublicTheme.tsx) aplică override-ul peste global pe `.theme-banner` (același tipar hibrid →
+    fără hydration drift). **`/app` capătă temă** (`useAppPageTheme` în AppHome învelește în `customThemeStyle(pageThemes.app)` dacă
+    există; altfel aspectul default). UI: în „Site", editorul de design e PER SCOP (selector Global/pagină + „Resetează la tema
+    globală" + buton „🎨 Design" per pagină + preview live pe pagina aleasă). Reguli: allowlist `siteConfig` extins cu `pageThemes`.
+    Felia B (CONȚINUT editabil per-pagină: `pageContent/{slug}` override peste i18n + editor) = următoarea, neînceput.
   - **B2a — pagini de site:** `LandingPage.kind: 'campaign'|'site'` (default campaign). `LandingStudio` are prop
     `kind` (filtre/metrici/recompile pe tip; slug-unicitate GLOBALĂ pe colecție). serveLp separă strict: `/pagina`
     servește DOAR `kind:'site'` publicate, `/p` restul; kind greșit → 404. `firebase.json`: rewrite `/pagina/** →

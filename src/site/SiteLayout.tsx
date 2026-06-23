@@ -6,7 +6,7 @@ import { pathLanguage, stripLangPrefix, toLocalizedPath, type LanguageCode } fro
 import { cookieConsent, setCookieConsent } from '../services/analytics';
 import { useAuthStore } from '../store/authStore';
 import { customThemeStyle } from '../theme/themes';
-import { usePublicTheme, PublicThemeStyle } from './PublicTheme';
+import { usePagePublicTheme, PublicThemeStyle } from './PublicTheme';
 import { usePublicChrome } from './PublicChrome';
 import { chromeLabel } from '../types/siteChrome';
 import Seo from './Seo';
@@ -28,7 +28,7 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   // (bat valorile din clasă), iar fonturile se injectează în <head> de <PublicThemeStyle>. Sursă sincronă
   // = snapshot copt (== prerender, fără flash); override live din Firestore. Stilizarea structurală a
   // bannerului (nav/butoane/hero/glow) rămâne în .theme-banner.
-  const publicTheme = usePublicTheme();
+  const publicTheme = usePagePublicTheme(slug);
   // Chrome global (header/footer + meniu) — data-driven din siteConfig/publicChrome (hibrid: snapshot copt ==
   // prerender + override runtime). Editat o singură dată în /admin → aplicat pe TOATE paginile noastre.
   const chrome = usePublicChrome();

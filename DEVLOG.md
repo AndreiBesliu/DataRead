@@ -2243,6 +2243,22 @@ normaliser, secretele niciodată în chat/repo.
 > Frontend-only (SiteAdminPanel.tsx + i18n ro/en). Verificat: typecheck + 18/18 suites + build. Hosting fără X-Frame-Options →
 > iframe same-origin OK. DEPLOYED: hosting.
 
+**2026-06-23 - Task Completed — Editare per-pagină Felia A: temă per pagină + temare /app**
+> Model: Claude Opus 4.8 (1M context). Prima felie din „editez fiecare pagină" (aspect; conținutul = Felia B ulterioară).
+> Rezolvă și plângerea: editai designul previzualizând /app dar /app nu se schimba (avea temă proprie).
+> - **Date:** `siteConfig/pageThemes` (UN doc, map `themes[pageKey]=CustomTheme`; pageKey ∈ home/pachete/self/start/contact/
+>   termeni/confid/app). `src/types/pageThemes.ts` (coerce: include DOAR cheile prezente → o pagină fără override NU primește
+>   temă default; pageThemeFor/pageKeyForSlug). Reguli: extins allowlist-ul `siteConfig` cu `pageThemes` (read public, write admin, themes is map).
+> - **Aplicare:** `usePagePublicTheme(slug)` în PublicTheme.tsx — global (snapshot→runtime, gardă webdriver) + override per slug;
+>   aplicat pe `.theme-banner` în SiteLayout (același pattern hibrid → fără hydration drift). `/app`: `useAppPageTheme()` în AppHome
+>   învelește conținutul în `customThemeStyle(pageThemes.app)` dacă există (altfel aspectul default neschimbat) → editarea designului „Portal client" îl afectează.
+> - **UI admin (SiteAdminPanel):** editor de design PER SCOP — selector „Aplici designul pe: Global / o pagină"; „Salvează & publică"
+>   scrie în publicTheme (global) sau pageThemes.themes[pageKey]; „Resetează la tema globală" (șterge override-ul); buton „🎨 Design"
+>   per rând de pagină (setează scopul + deschide editorul); preview-ul live arată pagina aleasă și se reîncarcă după publicare.
+>   Anti-clobber: `initRef` inițializează copia de lucru o singură dată (snapshot-urile ulterioare nu suprascriu editările).
+> Verificat: typecheck + 18/18 suites (coerceToPageThemes) + build + boot. Review adversarial (hydration/prerender + reguli/editor).
+> Frontend + rules. DEPLOYED: hosting + rules. Felia B (conținut editabil per-pagină) = următoarea.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
