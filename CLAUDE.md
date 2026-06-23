@@ -291,6 +291,21 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   inițială; ROTIREA rămâne în backlog înainte de scalare — la rotire: secrets:set cu cheia nouă +
   `npm run deploy:functions`). Comutatorul `AI_ENABLED` din functions/index.js stinge tot fluxul
   la nevoie (flip + deploy).
+- **Fundația AI stratificată + prompt caching (ACTIV 23.06.2026):** TOATE callable-urile AI împart o „Fundație"
+  de calitate construită O SINGURĂ DATĂ în `functions/prompts/personas.js` (+ `benchmarks.js`), injectată prin
+  `buildSystemBlocks({persona, industry})` în `runAiJson`. `system` e acum un ARRAY de blocuri stratificate cu
+  `cache_control` pe granițele stabile: **L1 universal** (context piață RO în €, cele 4 roluri/persona —
+  strateg+copywriter/analist/account-manager/LP-designer — + few-shot BUN vs SLAB; ~17,6k caractere ⇒ peste pragul
+  de 4096 tokeni al Opus 4.8, deci se memorează; identic pentru tot sistemul) → **L2 per-verticală** (`BENCHMARKS_RO`
+  pe cele 8 industrii din `SELF_INDUSTRIES`, repere CTR/CPL/ROAS/CVR orientative — DE CALIBRAT cu Andrei) → directiva
+  de rol activ (mică, necache-uită). **L3 client + L4 cererea** rămân în mesajul user (necache-uite) — regula de aur:
+  zero date volatile în blocurile cache-uite (altfel se fragmentează prefixul). Economie: prima cerere ~1,25x
+  (scriere), reutilizările ~0,1x în fereastra TTL de 5 min (câștig real pe „rafale" pe aceeași verticală).
+  `runAiJson` acceptă `system` string SAU array (backward-compatible); cele 4 apeluri inline (campaign/insight/report/LP)
+  consolidate pe `runAiJson`. **Caching = prefix-match** (orice byte schimbat înaintea breakpoint-ului invalidează),
+  cheiat pe conținut+model la nivel de organizație (nu „una pe API key"). Test pur `scripts/test-personas.ts`
+  (structură + plasare cache_control + invarianți) + e2e TEST FND. Ghid operator: „Cum funcționează AI-ul" (tab Ghid,
+  `opAi`). Următorii pași AI: vezi memoria `project_dataread_ai_roadmap`.
 - **Pas „Oportunități" — recomandare canale AI (ACTIV 15.06.2026):** callable `aiRecommendChannels(leadId)`
   (admin-only, oglindă `aiGenerateCampaign`, aceeași quota `aiUsage`) — citește lead-ul, model
   `claude-opus-4-8` + `CHANNELS_SCHEMA` (4-6 canale: titlu/impact/motiv/descriere/obiectiv/ofertă), scrie

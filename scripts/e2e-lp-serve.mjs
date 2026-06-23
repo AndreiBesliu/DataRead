@@ -580,6 +580,25 @@ console.log('\nN) aiRecommendChannels — prompt + schema (pasul Oportunități)
   ok(JSON.stringify(items?.properties?.suggestedObjective?.enum) === JSON.stringify(['leads', 'sales', 'awareness', 'traffic']), 'suggestedObjective enum corect');
 }
 
+// ── TEST FND: Fundația stratificată — buildSystemBlocks re-exportat din index.js (dovedește că
+// require('./prompts/personas') se încarcă în contextul functions + structura cache_control e corectă). ──
+console.log('\nFND) Fundația stratificată — buildSystemBlocks (cache_control pe blocuri system)');
+{
+  ok(typeof fns.buildSystemBlocks === 'function', 'index.js a încărcat require(./prompts/personas) (buildSystemBlocks exportat)');
+  const blocks = fns.buildSystemBlocks({ persona: fns.PERSONAS.analyst, industry: 'horeca' });
+  ok(Array.isArray(blocks) && blocks.every((b) => b && b.type === 'text' && typeof b.text === 'string'), 'blocuri = array de {type:text,text}');
+  ok(blocks.length === 3, 'cu verticală → L1 + L2 + directivă');
+  ok(blocks[0].cache_control?.type === 'ephemeral' && blocks[1].cache_control?.type === 'ephemeral', 'L1 + L2 au cache_control ephemeral');
+  ok(!blocks[blocks.length - 1].cache_control, 'directiva (suffix) NU e cache-uită');
+  ok(blocks.filter((b) => b.cache_control).length <= 4, '≤ 4 breakpoints cache_control');
+  ok(blocks[1].text.toLowerCase().includes('horeca'), 'L2 conține verticala');
+  ok(blocks[2].text.includes(fns.PERSONAS.analyst), 'directiva conține rolul activ');
+  const noL2 = fns.buildSystemBlocks({ persona: fns.PERSONAS.lpDesigner });
+  ok(noL2.length === 2 && noL2[0].cache_control && !noL2[1].cache_control, 'fără verticală → L1(cc) + directivă(fără cc)');
+  // backward-compat: runAiJson normalizează un system STRING la un bloc fără cache_control (verificăm helperul L1).
+  ok(typeof fns.buildL1Text === 'function' && fns.buildL1Text().length >= 16384, 'L1 ≥ 16384 caractere (clear 4096 tokeni)');
+}
+
 // ── TEST Q: „Self Marketing" — buildStrategyPrompt + STRATEGY_SCHEMA + coerceSelfProfileServer
 // (functions e JS netipizat → require-ul + apelul prind syntax/ReferenceError pe care build-ul nu-i vede). ──
 console.log('\nQ) selfGenerateStrategy — prompt + schema + coerce profil server-side');

@@ -344,6 +344,16 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const AI_MODEL = 'claude-opus-4-8'; // cel mai capabil model disponibil (vezi CLAUDE.md → AI)
 const AI_MONTHLY_LIMIT = 200; // generări/lună per operator — generos, dar nu nelimitat
 
+// Fundația stratificată (prompt-caching pe straturi) — vezi functions/prompts/personas.js.
+// buildSystemBlocks(...) → array de blocuri `system` cu cache_control pe granițele stabile
+// (L1 universal + L2 per-verticală), folosit de TOATE callable-urile AI prin runAiJson.
+const { buildSystemBlocks, PERSONAS, buildL1Text, buildL2Text } = require('./prompts/personas');
+// Re-export pt. testele e2e (functions e JS netipizat → validăm structura blocurilor + cache_control).
+exports.buildSystemBlocks = buildSystemBlocks;
+exports.buildL1Text = buildL1Text;
+exports.buildL2Text = buildL2Text;
+exports.PERSONAS = PERSONAS;
+
 // Schema livrabilelor — output_config.format garantează JSON valid pe această formă.
 const CAMPAIGN_SCHEMA = {
   type: 'object',
@@ -1116,13 +1126,16 @@ function assertAdmin(request, msg = 'Doar operatorii pot folosi această funcți
 async function runAiJson({ schema, system, prompt, maxTokens = 6000 }) {
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+  // `system` poate fi string (vechi) SAU array de blocuri cu cache_control (Fundația stratificată).
+  // Un string vechi → un bloc text FĂRĂ cache_control = comportament identic (backward-compatible).
+  const systemParam = typeof system === 'string' ? [{ type: 'text', text: system }] : system;
   let response;
   try {
     response = await client.messages.create({
       model: AI_MODEL,
       max_tokens: maxTokens,
       thinking: { type: 'adaptive' },
-      system,
+      system: systemParam,
       output_config: { format: { type: 'json_schema', schema } },
       messages: [{ role: 'user', content: prompt }],
     });
@@ -1265,21 +1278,15 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   const metrics = metricsSnap.docs.map((d) => d.data());
   const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
   if (consume) await consume();
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-  let response;
-  try {
-    response = await client.messages.create({
-      model: AI_MODEL, max_tokens: 8000, thinking: { type: 'adaptive' },
-      system: 'Ești analistul de performanță și strategul de media-buying al agenției DataRead. Judeci ' +
-        'campaniile pe cifre (ROAS, CPL, CTR), nu pe impresii, și dai recomandări acționabile.',
-      output_config: { format: { type: 'json_schema', schema: INSIGHT_SCHEMA } },
-      messages: [{ role: 'user', content: buildInsightPrompt(leadSnap && leadSnap.exists ? leadSnap.data() : {}, camp, metrics) }],
-    });
-  } catch (err) { logger.error('anthropic analyze failed', { err: String(err) }); throw new HttpsError('internal', 'Analiza AI a eșuat. Reîncearcă în câteva momente.'); }
-  if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat analiza.');
-  const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-  let out; try { out = JSON.parse(text); } catch (err) { throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.'); }
+  const lead = leadSnap && leadSnap.exists ? (leadSnap.data() || {}) : {};
+  // Fundația stratificată: persona „analist" + L2 din verticala lead-ului. Lead-ul/metricile rămân
+  // în prompt (L3+L4, necache-uite) — vezi buildInsightPrompt.
+  const { out, usage } = await runAiJson({
+    schema: INSIGHT_SCHEMA,
+    maxTokens: 8000,
+    system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry }),
+    prompt: buildInsightPrompt(lead, camp, metrics),
+  });
   const insight = {
     verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
     headline: String(out.headline || '').slice(0, 4000),
@@ -1294,7 +1301,7 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
     at: admin.firestore.FieldValue.serverTimestamp(), by: actorUid,
   }, { merge: true });
-  logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: actorUid, usage: response.usage });
+  logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: actorUid, usage });
   return { insight };
 }
 
@@ -1305,21 +1312,14 @@ async function performClientReport(db, leadId, actorUid, consume) {
   const camps = campsSnap.docs.map((d) => d.data());
   if (camps.length === 0) throw new HttpsError('failed-precondition', 'Clientul nu are campanii de raportat.');
   if (consume) await consume();
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-  let response;
-  try {
-    response = await client.messages.create({
-      model: AI_MODEL, max_tokens: 10000, thinking: { type: 'adaptive' },
-      system: 'Ești account managerul agenției DataRead. Scrii rapoarte de performanță clare și oneste ' +
-        'pentru clienții firmelor mici și mijlocii din România.',
-      output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
-      messages: [{ role: 'user', content: buildClientReportPrompt(leadSnap.data(), camps) }],
-    });
-  } catch (err) { logger.error('anthropic report failed', { err: String(err) }); throw new HttpsError('internal', 'Generarea raportului a eșuat. Reîncearcă.'); }
-  if (response.stop_reason === 'refusal') throw new HttpsError('failed-precondition', 'Modelul a refuzat raportul.');
-  const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-  let out; try { out = JSON.parse(text); } catch (err) { throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.'); }
+  const lead = leadSnap.data() || {};
+  // Fundația stratificată: persona „account manager" + L2 din verticala clientului.
+  const { out, usage } = await runAiJson({
+    schema: REPORT_SCHEMA,
+    maxTokens: 10000,
+    system: buildSystemBlocks({ persona: PERSONAS.accountManager, industry: lead.industry }),
+    prompt: buildClientReportPrompt(lead, camps),
+  });
   const report = {
     summary: String(out.summary || '').slice(0, 6000),
     highlights: String(out.highlights || '').slice(0, 6000),
@@ -1329,7 +1329,7 @@ async function performClientReport(db, leadId, actorUid, consume) {
   await db.collection('leads').doc(leadId).set({ marketingReport: report, marketingReportAt: reportAt, marketingReportBy: actorUid }, { merge: true });
   const clientUid = (leadSnap.data() || {}).clientUid;
   if (typeof clientUid === 'string' && clientUid) await db.collection('clients').doc(clientUid).set({ marketingReport: report, marketingReportAt: reportAt }, { merge: true });
-  logger.info('client report generated', { leadId, campaigns: camps.length, by: actorUid, usage: response.usage });
+  logger.info('client report generated', { leadId, campaigns: camps.length, by: actorUid, usage });
   return { report };
 }
 
@@ -1407,38 +1407,14 @@ if (AI_ENABLED) {
       const schema = kind === 'content' ? CONTENT_SCHEMA : CAMPAIGN_SCHEMA;
       const prompt = kind === 'content' ? buildContentPrompt(leadSnap.data(), reqData) : buildCampaignPrompt(leadSnap.data(), reqData);
 
-      // Import leneș: SDK-ul se încarcă doar în containerul acestui callable.
-      const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-
-      let response;
-      try {
-        response = await client.messages.create({
-          model: AI_MODEL,
-          max_tokens: 16000,
-          thinking: { type: 'adaptive' },
-          system:
-            'Ești strategul de marketing și copywriterul senior al agenției DataRead. Scrii pentru ' +
-            'firme mici și mijlocii din România: concret, persuasiv, fără jargon corporatist gol.',
-          output_config: { format: { type: 'json_schema', schema } },
-          messages: [{ role: 'user', content: prompt }],
-        });
-      } catch (err) {
-        logger.error('anthropic call failed', { err: String(err) });
-        throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
-      }
-
-      if (response.stop_reason === 'refusal') {
-        throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează oferta.');
-      }
-      const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-      let out;
-      try {
-        out = JSON.parse(text);
-      } catch (err) {
-        logger.error('ai response unparsable', { stop: response.stop_reason });
-        throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
-      }
+      // Fundația stratificată: persona „strateg + copywriter" + L2 din verticala lead-ului.
+      // Lead-ul + cererea rămân în `prompt` (L3+L4, necache-uite); consolidat pe runAiJson.
+      const { out, usage } = await runAiJson({
+        schema,
+        maxTokens: 16000,
+        system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: (leadSnap.data() || {}).industry }),
+        prompt,
+      });
 
       const deliverables = {};
       for (const k of KIND_FIELDS[kind]) deliverables[k] = String(out[k] || '').slice(0, 8000);
@@ -1471,7 +1447,7 @@ if (AI_ENABLED) {
         { merge: true }
       );
 
-      logger.info('campaign generated', { leadId, requestId, kind, by: request.auth.uid, usage: response.usage });
+      logger.info('campaign generated', { leadId, requestId, kind, by: request.auth.uid, usage });
       return { deliverables };
     }
   );
@@ -1499,9 +1475,7 @@ if (AI_ENABLED) {
 
       const { out, usage } = await runAiJson({
         schema: CHANNELS_SCHEMA,
-        system:
-          'Ești strategul de marketing senior al agenției DataRead. Recomanzi canale de achiziție ' +
-          'pentru firme mici și mijlocii din România: realist, adaptat la buget și industrie, fără jargon gol.',
+        system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: (leadSnap.data() || {}).industry }),
         prompt: buildChannelsPrompt(leadSnap.data()),
       });
 
@@ -1568,9 +1542,7 @@ if (AI_ENABLED) {
         result = await runAiJson({
           schema: STRATEGY_SCHEMA,
           maxTokens: 8000,
-          system:
-            'Ești strategul de marketing senior al agenției DataRead. Construiești strategii ample, cu mai ' +
-            'multe unghiuri, pentru firme mici și mijlocii din România: realist, adaptat la buget și industrie, fără jargon gol.',
+          system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: profile.industry }),
           prompt: buildStrategyPrompt(profile),
         });
       } catch (err) {
@@ -1629,9 +1601,7 @@ if (AI_ENABLED) {
         result = await runAiJson({
           schema: OPPORTUNITIES_SCHEMA,
           maxTokens: 7000,
-          system:
-            'Ești strategul de marketing senior al agenției DataRead. Propui oportunități de promovare concrete și ' +
-            'prioritizate pentru firme mici și mijlocii din România: realiste, adaptate la buget și industrie, fără jargon gol.',
+          system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: profile.industry }),
           prompt: buildOpportunitiesPrompt(profile),
         });
       } catch (err) {
@@ -1691,9 +1661,7 @@ if (AI_ENABLED) {
         result = await runAiJson({
           schema: DETAILS_SCHEMA,
           maxTokens: 8000,
-          system:
-            'Ești strategul de marketing senior al agenției DataRead. Transformi o direcție strategică într-un ' +
-            'plan tactic concret pentru firme mici și mijlocii din România: realist, adaptat la buget, fără jargon gol.',
+          system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: (profSnap.data() || {}).industry }),
           prompt: buildDetailsPrompt(profSnap.data(), direction),
         });
       } catch (err) {
@@ -1756,9 +1724,7 @@ if (AI_ENABLED) {
         result = await runAiJson({
           schema: EXECUTION_SCHEMA,
           maxTokens: 8000,
-          system:
-            'Ești strategul de marketing senior al agenției DataRead. Transformi o direcție strategică într-un plan ' +
-            'de execuție pe 30 de zile, pe faze săptămânale, pentru firme mici și mijlocii din România: realist, adaptat la buget.',
+          system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: (profSnap.data() || {}).industry }),
           prompt: buildExecutionPrompt(profSnap.data(), direction),
         });
       } catch (err) {
@@ -1815,10 +1781,8 @@ if (AI_ENABLED) {
     additionalProperties: false,
   };
 
-  const LP_SYSTEM =
-    'Ești designerul și copywriterul senior de landing pages al agenției DataRead. Construiești ' +
-    'pagini de campanie pentru firme mici și mijlocii din România — moderne, rapide, orientate pe ' +
-    'conversie. Scrii HTML curat, semantic, responsive (mobile-first), cu CSS inline în <style>.';
+  // (Persona „LP designer" trăiește acum în functions/prompts/personas.js → PERSONA_LP_DESIGNER,
+  //  injectată prin buildSystemBlocks în runLpModel. System prompt-ul inline a fost eliminat.)
 
   const lpStr = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 
@@ -1852,34 +1816,15 @@ if (AI_ENABLED) {
   }
 
   async function runLpModel(prompt) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-    let response;
-    try {
-      response = await client.messages.create({
-        model: AI_MODEL,
-        max_tokens: 32000,
-        thinking: { type: 'adaptive' },
-        system: LP_SYSTEM,
-        output_config: { format: { type: 'json_schema', schema: LP_PAGE_SCHEMA } },
-        messages: [{ role: 'user', content: prompt }],
-      });
-    } catch (err) {
-      logger.error('anthropic LP call failed', { err: String(err) });
-      throw new HttpsError('internal', 'Generarea AI a eșuat. Reîncearcă în câteva momente.');
-    }
-    if (response.stop_reason === 'refusal') {
-      throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea — reformulează.');
-    }
-    const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
-    let out;
-    try {
-      out = JSON.parse(text);
-    } catch (err) {
-      logger.error('LP ai response unparsable', { stop: response.stop_reason });
-      throw new HttpsError('internal', 'Răspunsul AI nu a putut fi interpretat. Reîncearcă.');
-    }
-    return { html: String(out.html || '').slice(0, 200000), usage: response.usage };
+    // Fundația stratificată: persona „LP designer" (fără L2 — LP nu primește industria).
+    // Consolidat pe runAiJson (sursă unică + caching pe blocul L1).
+    const { out, usage } = await runAiJson({
+      schema: LP_PAGE_SCHEMA,
+      maxTokens: 32000,
+      system: buildSystemBlocks({ persona: PERSONAS.lpDesigner }),
+      prompt,
+    });
+    return { html: String(out.html || '').slice(0, 200000), usage };
   }
 
   exports.aiGenerateLandingPage = onCall(

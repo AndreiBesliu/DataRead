@@ -2022,6 +2022,32 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: 17/17 suites + e2e (LPSRC) + build + boot. DEPLOYED: functions + hosting + rules.
 > Arhitectat spre north star: LP = primul „material"; urmează output AI bogat (creative) + asset package + publicare (ads_management, App Review).
 
+**2026-06-23 - Task Started — Fundația AI stratificată + prompt caching + ghid Admin**
+> Model: Claude Opus 4.8 (1M context). Andrei: „AI cât mai bun și să contribuie cât mai mult" → prima felie din roadmap-ul
+> AI (audit multi-agent). Decis cu Andrei: Fundație DIRECT STRATIFICATĂ (nu mono-strat) + ghid Admin detaliat care explică
+> straturile + caching-ul. Workflow understand+design (wf_028d00ec-e67) a mapat suprafața AI (runAiJson + 9 callable-uri) și
+> a draftat conținutul personas RO + ghidul.
+
+**2026-06-23 - Task Completed — Fundația AI stratificată + prompt caching + ghid Admin**
+> Model: Claude Opus 4.8 (1M context).
+> - **Module noi (CommonJS, pure):** `functions/prompts/personas.js` (L1 `AGENCY_CONTEXT_RO` în €, cele 4 persona —
+>   strateg+copywriter/analist/account-manager/LP-designer — + few-shot BUN/SLAB; `buildL1Text`/`buildL2Text`/`normIndustry`/
+>   `buildSystemBlocks`) + `functions/prompts/benchmarks.js` (`BENCHMARKS_RO` pe cele 8 `SELF_INDUSTRIES` + `VERTICAL_NOTES_RO`,
+>   valori orientative DE CALIBRAT).
+> - **runAiJson:** `system` acceptă acum string SAU array de blocuri (backward-compatible). `buildSystemBlocks({persona,industry})`
+>   produce [L1(cache_control), L2-per-verticală(cache_control) dacă industria e mapabilă, directivă rol activ(fără cc)].
+>   L1 ~17,6k caractere ⇒ ≥4096 tokeni (clear pragul Opus 4.8 chiar la chars/4). 2 breakpoints (din 4). L3 client + L4 cererea
+>   rămân în mesajul user (necache-uite) — regula de aur: zero volatile în prefix.
+> - **9 callable-uri** mutate pe `buildSystemBlocks` + cele 4 inline (campaign/insight/report/runLpModel) CONSOLIDATE pe runAiJson
+>   (sursă unică). `LP_SYSTEM` eliminat (persona în personas.js). Verticala vine din lead.industry (admin) / profile.industry (self).
+> - **Ghid Admin:** secțiune nouă `opAi` (7 itemi) „Cum funcționează AI-ul: Fundația stratificată și caching-ul" (de ce Fundație,
+>   4 straturi, exemplu HoReCa, ce e caching, exemplu numeric 500→165, regula de aur, limite practice) — ro+en paritate.
+> - **Teste:** pur `scripts/test-personas.ts` (structură blocuri + plasare cache_control + invarianți volatilitate + prag 4096
+>   + mapare verticală) + e2e **TEST FND** (buildSystemBlocks re-exportat din index.js → dovedește încărcarea require-ului).
+> Verificat: 18/18 suites (inclusiv test-personas) + typecheck (paritate en) + e2e (FND + toate cele existente) + build + build:site + boot.
+> Caching = prefix-match, cheiat pe conținut+model la nivel de organizație (nu „una pe API key"). BENCHMARKS_RO = orientative,
+> de calibrat cu Andrei pe date reale. Următorii pași AI: memoria project_dataread_ai_roadmap (grounding ieftin → benchmarks reali → structură livrabile).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
