@@ -42,6 +42,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Comenzi de servicii (Felia 2 catalog) — operatorul le gestionează din /admin; clientul logat își poate
+    // cere singur un serviciu din /app. CLIENT-SAFE: doc fără note interne/UID operator. Adminul vede tot;
+    // clientul DOAR comenzile lui (clientUid == uid). Crearea de către client e strict constrânsă (source 'client',
+    // status 'requested', fără livrabil, fără leadId). Update/delete = doar admin (statusul + livrabilul).
+    match /serviceOrders/{id} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.clientUid == request.auth.uid);
+      allow create: if isAdmin()
+        || (request.auth != null
+          && request.resource.data.keys().hasOnly(
+            ['schema', 'service', 'status', 'source', 'clientUid', 'leadId', 'companyName', 'contactEmail', 'contactPhone', 'note', 'deliverable', 'createdAt', 'updatedAt']
+          )
+          && request.resource.data.schema == 1
+          && request.resource.data.source == 'client'
+          && request.resource.data.clientUid == request.auth.uid
+          && request.resource.data.status == 'requested'
+          && request.resource.data.leadId == null
+          && request.resource.data.deliverable == ''
+          && (request.resource.data['service'] in ['audit', 'saas', 'automation', 'web', 'self', 'seo', 'sms'])
+          && request.resource.data.note is string && request.resource.data.note.size() <= 2000
+          && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120
+          && request.resource.data.contactEmail is string && request.resource.data.contactEmail.size() <= 120
+          && request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() <= 120
+          && request.resource.data.createdAt == request.time);
+      allow update, delete: if isAdmin();
+    }
+
     // Lead-urile formularului public /start — site-ul NU are login, deci crearea e anonimă,
     // dar strict validată (whitelist + plafoane + status forțat 'new'). Doar adminii citesc.
     match /leads/{id} {

@@ -40,6 +40,12 @@ for (const k of dataKeys) {
 check("serviceInterest e în whitelist-ul leads", leadsWl.includes("'serviceInterest'"));
 check("serviceInterest e în whitelist-ul onboarding", onbWl.includes("'serviceInterest'"));
 
+// serviceOrders: whitelist-ul de create trebuie să acopere TOATE câmpurile pe care le scrie clientul din /app
+// (ServiceOrdersPortal) — altfel `hasOnly` respinge cererea clientului. Aceeași clasă de bug ca serviceInterest.
+const soWl = whitelistAfter('match /serviceOrders/');
+const SO_CLIENT_KEYS = ['schema', 'service', 'status', 'source', 'clientUid', 'leadId', 'companyName', 'contactEmail', 'contactPhone', 'note', 'deliverable', 'createdAt', 'updatedAt'];
+for (const k of SO_CLIENT_KEYS) check(`serviceOrders whitelist conține '${k}'`, soWl.includes(`'${k}'`));
+
 if (failures) {
   console.error(`${failures} checks failed`);
   process.exit(1);

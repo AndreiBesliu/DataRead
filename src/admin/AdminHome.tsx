@@ -26,6 +26,7 @@ import OpportunityBoard from './OpportunityBoard';
 import LeadActivity from './LeadActivity';
 import { LeadPrediction, ClientContacts } from './PredictionPanel';
 import SuggestionsPanel from './SuggestionsPanel';
+import ServiceOrdersPanel from './ServiceOrdersPanel';
 import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
 import MarketingCenter from './MarketingCenter';
@@ -41,11 +42,12 @@ import { ADMIN_THEMES, CUSTOM_THEME_ID, customThemeStyle, themeAnimClass, themeS
 import ThemeEditor from '../theme/ThemeEditor';
 import AuthPanel from '../app/AuthPanel';
 
-type AdminView = 'leads' | 'suggestions' | 'marketing' | 'automation' | 'invoices' | 'design' | 'admins' | 'health' | 'help';
+type AdminView = 'leads' | 'suggestions' | 'serviceOrders' | 'marketing' | 'automation' | 'invoices' | 'design' | 'admins' | 'health' | 'help';
 
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
   suggestions: 'admin.navSuggestions',
+  serviceOrders: 'admin.navServiceOrders',
   marketing: 'admin.navMarketing',
   automation: 'admin.navAutomation',
   invoices: 'admin.navInvoices',
@@ -67,7 +69,7 @@ const TOP_TAB_LABEL_KEY: Record<TopTab, string> = {
   help: 'admin.navHelp',
 };
 const TOP_TAB_VIEWS: Record<TopTab, AdminView[]> = {
-  admin: ['leads', 'suggestions', 'automation', 'invoices', 'admins', 'health'],
+  admin: ['leads', 'suggestions', 'serviceOrders', 'automation', 'invoices', 'admins', 'health'],
   marketing: ['marketing'],
   design: ['design'],
   help: ['help'],
@@ -584,6 +586,7 @@ export default function AdminHome() {
       })()}
 
       {view === 'suggestions' && <SuggestionsPanel onNavigate={(v) => setView(v as AdminView)} />}
+      {view === 'serviceOrders' && <ServiceOrdersPanel />}
       {view === 'help' && <div style={{ marginTop: 12 }}><h2 style={{ fontSize: 18, margin: '0 0 6px' }}>{t('help.title')}</h2><HelpView sections={OPERATOR_HELP} /></div>}
       {view === 'marketing' && <MarketingCenter leads={leadOptions} />}
       {view === 'automation' && <AutomationsPanel />}

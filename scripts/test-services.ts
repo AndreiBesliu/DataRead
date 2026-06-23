@@ -11,6 +11,7 @@ import {
 import { PUBLIC_ROUTES } from '../src/site/publicRoutes';
 import { PAGE_KEYS, PAGE_KEY_BY_SLUG } from '../src/types/pageThemes';
 import { coerceToOnboarding } from '../src/types/onboarding';
+import { coerceToServiceOrder, SERVICE_ORDER_STATUSES, SERVICE_ORDER_STATUS_COLORS } from '../src/types/serviceOrder';
 import ro from '../src/i18n/locales/ro';
 import en from '../src/i18n/locales/en';
 
@@ -61,6 +62,23 @@ check('/servicii e în PUBLIC_ROUTES', PUBLIC_ROUTES.some((r) => r.slug === '/se
 check("'servicii' e cheie de pagină (pageThemes)", (PAGE_KEYS as readonly string[]).includes('servicii') && PAGE_KEY_BY_SLUG['/servicii'] === 'servicii');
 check('coerceToOnboarding: serviceInterest valid păstrat', coerceToOnboarding({ serviceInterest: 'seo' }).serviceInterest === 'seo');
 check('coerceToOnboarding: serviceInterest gunoi → null', coerceToOnboarding({ serviceInterest: 'nope' }).serviceInterest === null && coerceToOnboarding({}).serviceInterest === null);
+
+// ── Comenzi de servicii (Felia 2) ──
+check('serviceOrder: coerce(null) → defaults sigure', (() => {
+  const o = coerceToServiceOrder(null);
+  return o.schema === 1 && o.service === 'audit' && o.status === 'requested' && o.source === 'operator' && o.clientUid === null && o.leadId === null && o.deliverable === '';
+})());
+check('serviceOrder: service invalid → audit; status/source invalide → default', (() => {
+  const o = coerceToServiceOrder({ service: 'nope', status: 'xxx', source: 'yyy' });
+  return o.service === 'audit' && o.status === 'requested' && o.source === 'operator';
+})());
+check('serviceOrder: câmpuri valide păstrate + clamp', (() => {
+  const o = coerceToServiceOrder({ service: 'seo', status: 'delivered', source: 'client', clientUid: 'u1', leadId: 'l1', companyName: 'X', note: 'n'.repeat(5000) });
+  return o.service === 'seo' && o.status === 'delivered' && o.source === 'client' && o.clientUid === 'u1' && o.leadId === 'l1' && o.note.length === 2000;
+})());
+check('serviceOrder: culori de status pt. toate statusurile', SERVICE_ORDER_STATUSES.every((s) => /^#[0-9a-fA-F]{6}$/.test(SERVICE_ORDER_STATUS_COLORS[s])));
+check('serviceOrders: status + chei portal client în ro+en', [...SERVICE_ORDER_STATUSES.map((s) => `serviceOrders.status_${s}`), 'serviceOrders.title', 'serviceOrders.request', 'serviceOrders.send', 'serviceOrders.empty', 'serviceOrders.deliverable'].every(inBoth));
+check('admin.svc + navServiceOrders în ro+en', ['admin.navServiceOrders', 'admin.svc.title', 'admin.svc.newOrder', 'admin.svc.deliverable', 'admin.svc.create', 'admin.svc.confirmDelete', 'admin.svc.srcClient', 'admin.svc.srcOperator'].every(inBoth));
 
 if (failures) {
   console.error(`${failures} checks failed`);

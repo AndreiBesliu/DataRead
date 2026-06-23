@@ -2323,6 +2323,23 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 20/20 suites + build + boot + **e2e (paritate chrome TS↔JS ✓)**. Review adversarial (injecție + paritate): CLEAN.
 > Frontend + functions. DEPLOYED: hosting + functions.
 
+**2026-06-23 - Task Completed — Servicii Felia 2: comenzi de servicii (operator pe lead/client + client din /app)**
+> Model: Claude Opus 4.8 (1M context). Model „1+3": operatorul gestionează comenzi de servicii din /admin ȘI clientul logat
+> își poate cere singur un serviciu din /app. Colecție DEDICATĂ (nu suprascriu pipeline-ul AI campaign/content).
+> - **`src/types/serviceOrder.ts` (NOU):** ServiceOrder {service, status(requested/in_progress/delivered/cancelled),
+>   source(operator/client), clientUid, leadId, companyName, contact, note, deliverable} + coerceToServiceOrder (defaults sigure)
+>   + culori status. CLIENT-SAFE: doc fără note interne/UID operator.
+> - **`firestore.rules`:** colecția `serviceOrders` — admin = tot; client citește DOAR comenzile lui (clientUid==uid); creare de
+>   client STRICT constrânsă (source 'client', status 'requested', fără livrabil/leadId, clientUid==uid, whitelist hasOnly,
+>   createdAt==request.time); update/delete doar admin. Anonim = blocat.
+> - **`src/app/ServiceOrdersPortal.tsx` (NOU):** secțiune în /app — listă proprie (query where clientUid==uid, FĂRĂ orderBy →
+>   fără index compozit, sortat client-side) + „Cere un serviciu" (creează serviceOrder). Vede statusul + livrabilul.
+> - **`src/admin/ServiceOrdersPanel.tsx` (NOU):** tab „Comenzi servicii" — board cu toate comenzile, filtru status, schimbare
+>   status, editare livrabil (vizibil clientului), creare comandă (operator, opțional legat de un client prin uid), ștergere.
+> - i18n complet ro+en (serviceOrders.* + admin.svc.* + admin.navServiceOrders).
+> Verificat: typecheck + 20/20 suites (coerceToServiceOrder + paritate whitelist serviceOrders în test-rules) + build + boot.
+> Review adversarial (securitate reguli/izolare + corectitudine). Frontend + REGULI (fără functions). DEPLOYED: hosting + rules.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

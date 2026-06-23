@@ -23,6 +23,7 @@ import { coerceToCampaign, coerceToReport, kpisFromTotals, type CampaignDef, typ
 import { coerceToContact, contactDisplay, type Contact } from '../types/contact';
 import { coerceToPrediction, predictionToSections, type Prediction } from '../types/prediction';
 import AuthPanel, { PKG_INTENT_KEY } from './AuthPanel';
+import ServiceOrdersPortal from './ServiceOrdersPortal';
 import { isPreviewSearch } from './previewMode';
 
 // Tema portalului /app (pageThemes.app) e aplicată acum de AppThemeLayout pe TOATE rutele /app/* (un singur
@@ -865,6 +866,8 @@ export default function AppHome() {
 
       </div>
 
+      {/* Comenzi de servicii (Felia 2 catalog) — clientul cere un serviciu + vede statusul/livrabilul. */}
+      <ServiceOrdersPortal uid={user.uid} email={user.email || ''} displayName={user.displayName || ''} />
       {/* Portalul de marketing — datele reale ale clientului (read-only). */}
       <MarketingPortal uid={user.uid} />
       {/* F4: predicții comportamentale despre PROPRIII clienți (oglindite client-safe, read-only). */}
