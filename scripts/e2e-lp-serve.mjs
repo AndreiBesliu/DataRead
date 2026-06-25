@@ -1833,6 +1833,20 @@ console.log('\nABUSE) rate-limit per-IP/slug + clientIpHash');
   ok(await fns.lpRateExceeded(db, 'sub_slug_altul', 3) === false, 'lpRateExceeded: bucket per-cheie izolat');
 }
 
+// ── TEST FOLLOWUP: ciornă de follow-up (#11) — sumar activități + prompt grounded + nota de securitate. ──
+console.log('\nFOLLOWUP) ciornă follow-up — sumar + prompt');
+{
+  ok(fns.followUpActivitySummary([]).includes('Nicio interac'), 'followUpActivitySummary: gol → primul contact');
+  const sum = fns.followUpActivitySummary([{ at: Date.parse('2026-06-20T10:00:00Z'), type: 'call', body: 'A cerut ofertă pentru pachetul Growth' }]);
+  ok(sum.includes('call') && sum.includes('ofert') && sum.includes('2026-06-20'), 'followUpActivitySummary: include tip+dată+corp');
+  const lead = { companyName: 'Presto Construct SRL', industry: 'construction', description: 'firmă de construcții', objectives: ['leads'] };
+  const prompt = fns.buildFollowUpPrompt(lead, [{ at: Date.now(), type: 'note', body: 'discuție inițială' }], { temperature: 'warm', conversionLikelihood: 'high' });
+  ok(prompt.includes('Presto Construct') && prompt.includes('FIRMA CLIENTULUI'), 'buildFollowUpPrompt: include contextul lead-ului');
+  ok(prompt.includes('INTERACȚIUNI RECENTE') && prompt.includes('discuție inițială'), 'buildFollowUpPrompt: include activitățile recente');
+  ok(prompt.toLowerCase().includes('temperatur') && prompt.includes('warm'), 'buildFollowUpPrompt: include predicția');
+  ok(prompt.includes('NOTĂ DE SECURITATE') && prompt.toLowerCase().includes('nu ca instruc'), 'buildFollowUpPrompt: nota anti-injecție prezentă');
+}
+
 rmSync(tmp, { force: true });
 console.log(`\nE2E-LP-SERVE: ${failed ? failed + ' verificări EȘUATE' : 'TOATE verificările au trecut'}`);
 process.exit(failed ? 1 : 0);

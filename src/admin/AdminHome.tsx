@@ -29,6 +29,8 @@ import SuggestionsPanel from './SuggestionsPanel';
 import ServiceOrdersPanel from './ServiceOrdersPanel';
 import SeoPanel from './SeoPanel';
 import { usePersistedState } from '../utils/persistedState';
+import { leadPriority, PRIORITY_TIER_COLORS, type LeadPriorityResult } from './leadPriority';
+import { coerceToPrediction } from '../types/prediction';
 import HelpView from '../help/HelpView';
 import { OPERATOR_HELP } from '../help/helpContent';
 import MarketingCenter from './MarketingCenter';
@@ -104,6 +106,8 @@ interface LeadRow {
   id: string;
   data: OnboardingData;
   createdAt: unknown;
+  createdAtMs: number;
+  nextFollowUpMs: number | null;
   status: LeadStatus;
   notes: string;
   clientUid: string;
@@ -229,6 +233,8 @@ export default function AdminHome() {
   // Filtre/căutare persistate (se păstrează la schimbarea tabului / refresh — quick win operator).
   const [leadFilter, setLeadFilter] = usePersistedState<'all' | LeadStatus>('admin.leadFilter', 'all');
   const [leadSearch, setLeadSearch] = usePersistedState<string>('admin.leadSearch', '');
+  const [leadSort, setLeadSort] = usePersistedState<'recent' | 'priority'>('admin.leadSort', 'recent');
+  const [predByLead, setPredByLead] = useState<Record<string, { temperature: import('../types/prediction').Temperature; conversionLikelihood: import('../types/prediction').ConversionLikelihood }>>({});
   const [seoPrefillUrl, setSeoPrefillUrl] = useState('');
   const [notesDraft, setNotesDraft] = useState('');
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -276,10 +282,14 @@ export default function AdminHome() {
       const out: LeadRow[] = [];
       snap.forEach((d) => {
         const raw = d.data();
+        const cAt = raw.createdAt as { toMillis?: () => number } | undefined;
+        const nf = typeof raw.nextFollowUp === 'string' ? Date.parse(raw.nextFollowUp) : NaN;
         out.push({
           id: d.id,
           data: coerceToOnboarding(raw),
           createdAt: raw.createdAt,
+          createdAtMs: cAt && typeof cAt.toMillis === 'function' ? cAt.toMillis() : 0,
+          nextFollowUpMs: Number.isFinite(nf) ? nf : null,
           status: coerceLeadStatus(raw.status),
           notes: coerceLeadNotes(raw.notes),
           clientUid: typeof raw.clientUid === 'string' ? raw.clientUid : '',
@@ -291,6 +301,16 @@ export default function AdminHome() {
       console.warn('admin leads listener:', err);
       setLeads([]);
     });
+  }, [isAdmin]);
+
+  // Predicțiile pe lead (deja calculate de predictLeadBehavior) → semnal pentru prioritizarea inbox-ului (#10).
+  useEffect(() => {
+    if (isAdmin !== true) return;
+    return onSnapshot(query(collection(db, 'leadPredictions'), limit(300)), (snap) => {
+      const m: Record<string, { temperature: import('../types/prediction').Temperature; conversionLikelihood: import('../types/prediction').ConversionLikelihood }> = {};
+      snap.forEach((d) => { const p = coerceToPrediction(d.data()); m[d.id] = { temperature: p.temperature, conversionLikelihood: p.conversionLikelihood }; });
+      setPredByLead(m);
+    }, () => setPredByLead({}));
   }, [isAdmin]);
 
   // Contorul de generări AI al operatorului curent (luna în curs) — pentru statistici.
@@ -625,11 +645,24 @@ export default function AdminHome() {
         );
         const counts = { all: all.length } as Record<'all' | LeadStatus, number>;
         for (const s of LEAD_STATUSES) counts[s] = all.filter((l) => l.status === s).length;
-        const visible = leadFilter === 'all' ? all : all.filter((l) => l.status === leadFilter);
+        const nowMs = Date.now();
+        const prioOf = (l: LeadRow) => leadPriority(
+          { status: l.status, createdAtMs: l.createdAtMs, nextFollowUpMs: l.nextFollowUpMs, temperature: predByLead[l.id]?.temperature ?? null, conversionLikelihood: predByLead[l.id]?.conversionLikelihood ?? null },
+          nowMs,
+        );
+        const filtered = leadFilter === 'all' ? all : all.filter((l) => l.status === leadFilter);
+        const visible = leadSort === 'priority' ? [...filtered].sort((a, b) => prioOf(b).score - prioOf(a).score) : filtered;
         return (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 10px' }}>
               <h2 style={{ fontSize: 18, margin: 0 }}>{t('admin.leadsTitle')}</h2>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['recent', 'priority'] as const).map((s) => (
+                  <button key={s} type="button" onClick={() => setLeadSort(s)} className={leadSort === s ? 'btn btn-primary' : 'btn'} style={{ fontSize: 11, padding: '3px 10px' }}>
+                    {t('admin.leadSort_' + s)}
+                  </button>
+                ))}
+              </div>
               {counts.new > 0 && (
                 <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '2px 10px' }}>
                   {t('admin.leadsNewCount', { count: counts.new })}
@@ -697,6 +730,7 @@ export default function AdminHome() {
                               {l.data.companyName || '—'}
                               {(l.data as unknown as Record<string, unknown>).source === 'self-discovery' ? <span title={t('admin.leadSelfDiscovery')} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--accent)', borderRadius: 4, padding: '1px 5px' }}>🔎 Self</span> : null}
                               {l.data.serviceInterest ? <span title={t('admin.fService')} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: 'var(--fg-1)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{t(`services.${l.data.serviceInterest}.name`)}</span> : null}
+                              {(() => { const pr: LeadPriorityResult = prioOf(l); return pr.score > 0 ? <span title={t('admin.priority.r_' + pr.reasonKey)} style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: PRIORITY_TIER_COLORS[pr.tier], borderRadius: 4, padding: '1px 6px' }}>★{pr.score}</span> : null; })()}
                             </td>
                             <td style={td}>{l.data.contactEmail || '—'}</td>
                             <td style={td}>{l.data.contactPhone || '—'}</td>

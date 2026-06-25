@@ -2387,6 +2387,20 @@ normaliser, secretele niciodată în chat/repo.
 > mediul are doar Java 1.8 și libul nu e instalat → NU poate fi rulată/verificată aici. De făcut în CI/mediu cu Java 11+
 > (rămâne pe lista de îmbunătățiri).
 
+**2026-06-23 - Task Completed — Capabilități AI #10+#11 (din audit): prioritizare inbox + ciornă follow-up**
+> Model: Claude Opus 4.8 (1M context). Valorifică predicția + comunicarea deja construite, închizând bucla operator.
+> - **#10 `leadPriority`** (`src/admin/leadPriority.ts`, PUR): scor DETERMINIST 0-100 („pe cine sun primul azi") care
+>   CONSUMĂ predicția AI existentă (temperature+conversionLikelihood din leadPredictions) + recență + status + follow-up
+>   scadent → tier high/medium/low + motiv dominant. AdminHome: listener pe `leadPredictions` (admin-read), toggle sort
+>   „Recente/Prioritate" (persistat), badge ★scor pe rând (titlu = motiv i18n). FĂRĂ AI nou (instant, fără cost, explicabil).
+>   LeadRow capătă createdAtMs + nextFollowUpMs. Test `scripts/test-leadpriority.ts`.
+> - **#11 `aiDraftFollowUp`** (callable AI nou, operator + App Check + quota): citește lead-ul + activitățile CRM recente +
+>   predicția (best-effort) → persona accountManager + `buildFollowUpPrompt` (nota anti-injecție) → ciornă {subiect, corp}.
+>   NU trimite/persistă (operatorul revizuiește). UI: buton „✨ Ciornă AI" în `LeadActivity` umple composer-ul de email
+>   (peste `sendLeadEmail` deja construit). Quota consumată DOAR după ce lead-ul există.
+> Verificat: typecheck + 22/22 suites (test-leadpriority nou) + build + boot + e2e (bloc FOLLOWUP: sumar+prompt+nota).
+> Review adversarial single-agent: CLEAN pe 7 verificări (securitate callable, paritate i18n motive, hooks, izolare). DEPLOYED: hosting + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

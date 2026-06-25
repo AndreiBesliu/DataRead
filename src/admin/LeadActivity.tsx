@@ -81,6 +81,25 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
     }
   };
 
+  // ── Ciornă de follow-up AI (#11): umple composer-ul de email cu un draft generat (operatorul revizuiește). ──
+  const [drafting, setDrafting] = useState(false);
+  const draftFollowUp = async () => {
+    setDrafting(true);
+    setMailState({ s: 'idle', msg: '' });
+    try {
+      const fn = httpsCallable<{ leadId: string }, { subject: string; body: string }>(functions, 'aiDraftFollowUp');
+      const res = await fn({ leadId });
+      if (res.data?.subject) setMailSubject(res.data.subject);
+      if (res.data?.body) setMailBody(res.data.body);
+      setMailOpen(true);
+    } catch (e) {
+      setMailState({ s: 'err', msg: t('admin.activity.draftErr') });
+      setMailOpen(true);
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const fmt = (ms: number) => (ms ? new Date(ms).toLocaleString('ro-RO') : '—');
   const inp: CSSProperties = { padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, background: 'var(--bg-1)', color: 'var(--fg-0)' };
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -99,6 +118,9 @@ export default function LeadActivity({ leadId, adminUid }: { leadId: string; adm
         </label>
         <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy || !body.trim()} onClick={() => void add()}>{t('admin.activity.add')}</button>
         <button className="btn" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setMailOpen((o) => !o)}>✉️ {t('admin.activity.emailBtn')}</button>
+        <button className="btn" style={{ padding: '6px 12px', fontSize: 12 }} disabled={drafting} onClick={() => void draftFollowUp()}>
+          {drafting ? t('admin.activity.drafting') : '✨ ' + t('admin.activity.draftBtn')}
+        </button>
       </div>
 
       {/* Trimite email către lead (felia 1) — server-side gated; loghează automat o activitate de tip email. */}
