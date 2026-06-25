@@ -2472,6 +2472,26 @@ normaliser, secretele niciodată în chat/repo.
 > Risc viitor notat: dacă se pornește enforcement App Check pe Firestore, citirile publice siteConfig din iframe (fără App Check
 > acum) ar pica → preview-ul ar cădea pe snapshot-ul copt; atunci = preview din srcDoc fără Firebase (alternativă documentată).
 
+**2026-06-26 - Task Completed — Eficiență /admin (din auditul UI): badge-uri + expander pe sub-tab-uri + zebra + segmented nav**
+> Model: Claude Opus 4.8 (1M context). Pachet de productivitate operator (tot în `AdminHome.tsx`, frontend-only).
+> - **Badge-uri „inbox" pe tab-uri:** numere de acțiuni în așteptare — Lead-uri (status `new`, din listenerul existent),
+>   Comenzi servicii (`serviceOrders` where status=='requested', listener nou ușor), Administratori (`adminRequests` where
+>   status=='pending', DOAR owner/bootstrap → fără permission-denied pt. operatori). Suma urcă pe tabul principal „Administrare".
+>   Pastila accent cu „99+" la depășire. Single-field equality → fără index compus.
+> - **Expander lead pe SUB-TAB-URI:** cele 8 secțiuni stivuite într-un `<td>` (detalii/SEO/note/oportunități/cereri/activitate/
+>   predicție/cont/șterge) → 5 sub-tab-uri segmented (Detalii [+SEO+note+cont client+șterge] / Oportunități / Cereri / Activitate /
+>   Predicție). `leadTab` resetat la `detail` la deschiderea fiecărui lead. Mai puțin scroll, focus pe o sarcină; componentele grele
+>   (LeadRequests/OpportunityBoard/etc.) se montează DOAR când sub-tabul e activ.
+> - **Tabele mai scanabile:** antet `th` cu majuscule discrete + zebra pe rânduri impare (lead + clienți); rândul de lead nou
+>   păstrează evidențierea albastră peste zebra.
+> - **Segmented control** pe sub-tab-urile din „Administrare" (grup de pastile cu fundal) → distinge clar nivelul 2 de tab-urile
+>   principale (underline). Literal de status `#c0392b` → `var(--danger)` la butonul Șterge lead.
+> Verificat: typecheck + 22/22 suites + build + boot (10/10). /admin e auth-gated → nu se poate verifica vizual în preview-ul local
+> (necesită login admin); acoperit prin typecheck/build/review. DEPLOYED: hosting + rules. i18n `admin.leadTab.*` (ro+en).
+> NOTĂ: sticky-header pe tabele AMÂNAT — containerul `overflowX:auto` + expanderul inline ar cere un refactor de tabel (scroll
+> intern), incompatibil cu rândul expandabil; zebra + sub-tab-urile acoperă deja „scanabil". Badge de „Sugestii" amânat (ar dubla
+> 4 listenere; badge-urile concrete lead/comenzi/cereri acoperă inbox-ul).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

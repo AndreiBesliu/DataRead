@@ -700,6 +700,13 @@ const ro = {
     },
     leadSort_recent: 'Recente',
     leadSort_priority: 'Prioritate',
+    leadTab: {
+      detail: 'Detalii',
+      opportunities: 'Oportunități',
+      requests: 'Cereri',
+      activity: 'Activitate',
+      prediction: 'Predicție',
+    },
     priority: {
       r_followUpDue: 'Follow-up scadent azi',
       r_hot: 'Lead fierbinte (predicție)',

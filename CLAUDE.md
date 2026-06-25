@@ -493,6 +493,13 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   „Administrare") un rând de sub-tab-uri; blocurile de randare per view sunt NEATINSE. Clic pe un tab principal → primul
   său view (păstrează sub-tab-ul curent dacă ești deja în grup). `SuggestionsPanel.onNavigate` funcționează nealterat
   (top-tab-ul se recalculează din `view`).
+  **Eficiență operator (ACTIV 26.06.2026, din auditul UI):** sub-tab-urile din „Administrare" = **segmented control**
+  (grup de pastile, distinct de underline-ul tab-urilor principale). **Badge-uri „inbox"** pe tab-uri (numere de acțiuni în
+  așteptare): Lead-uri (status `new`), Comenzi servicii (`serviceOrders` requested), Administratori (`adminRequests` pending —
+  doar owner/bootstrap); suma urcă pe „Administrare". **Expanderul de lead** s-a mutat din 8 secțiuni stivuite în 5
+  **sub-tab-uri** (`LEAD_DETAIL_TABS`, state `leadTab`, reset la `detail` la deschidere): Detalii(+SEO+note+cont client+șterge)/
+  Oportunități/Cereri/Activitate/Predicție — componentele grele se montează doar când sub-tabul e activ. Tabele lead+clienți cu
+  antet `th` majuscule + **zebra** pe rânduri impare. Amânat: sticky-header (cere refactor de tabel, incompatibil cu expanderul inline).
 - **IA /admin (reorg 21.06.2026): separare design ↔ analytics.** Landing Pages + Site sunt comasate într-UN tab
   **„Design & Pagini"** (`DesignHome`, view `design`, sub-tab-uri Landing/Site) — editorul LP (`LpEditor`) rămâne DOAR
   design/conținut (cod/design/AI/formular/conversie/A/B-setup). **Analytics-ul LP a fost mutat în Marketing Center**

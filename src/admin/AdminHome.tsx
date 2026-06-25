@@ -48,6 +48,16 @@ import AuthPanel from '../app/AuthPanel';
 
 type AdminView = 'leads' | 'suggestions' | 'serviceOrders' | 'seo' | 'marketing' | 'automation' | 'invoices' | 'design' | 'admins' | 'health' | 'help';
 
+// Sub-tab-urile expanderului de lead (înlocuiesc cele 8 secțiuni stivuite într-un singur <td>).
+type LeadDetailTab = 'detail' | 'requests' | 'opportunities' | 'activity' | 'prediction';
+const LEAD_DETAIL_TABS: { id: LeadDetailTab; labelKey: string }[] = [
+  { id: 'detail', labelKey: 'admin.leadTab.detail' },
+  { id: 'opportunities', labelKey: 'admin.leadTab.opportunities' },
+  { id: 'requests', labelKey: 'admin.leadTab.requests' },
+  { id: 'activity', labelKey: 'admin.leadTab.activity' },
+  { id: 'prediction', labelKey: 'admin.leadTab.prediction' },
+];
+
 const VIEW_LABEL_KEY: Record<AdminView, string> = {
   leads: 'admin.navLeads',
   suggestions: 'admin.navSuggestions',
@@ -239,6 +249,11 @@ export default function AdminHome() {
   const [notesDraft, setNotesDraft] = useState('');
   const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [aiCount, setAiCount] = useState<number | null>(null);
+  // Badge-uri „inbox" pe tab-uri: comenzi de servicii noi + cereri de acces admin în așteptare.
+  const [serviceOrdersNew, setServiceOrdersNew] = useState(0);
+  const [adminRequestsPending, setAdminRequestsPending] = useState(0);
+  // Sub-tab activ în expanderul de lead (8 secțiuni stivuite → sub-tab-uri).
+  const [leadTab, setLeadTab] = useState<LeadDetailTab>('detail');
   const [view, setView] = useState<AdminView>('leads');
   const [linkSelect, setLinkSelect] = useState('');
   const { themeId, setThemeId, custom, setCustom } = useAdminTheme();
@@ -349,6 +364,28 @@ export default function AdminHome() {
     });
   }, [isAdmin]);
 
+  // Badge „inbox" pe tabul Comenzi servicii: comenzile noi (status 'requested') — listener ușor de numărare.
+  useEffect(() => {
+    if (isAdmin !== true) return;
+    return onSnapshot(
+      query(collection(db, 'serviceOrders'), where('status', '==', 'requested'), limit(100)),
+      (snap) => setServiceOrdersNew(snap.size),
+      () => setServiceOrdersNew(0),
+    );
+  }, [isAdmin]);
+
+  // Badge pe tabul Administratori: cereri de acces în așteptare. DOAR owner (el le gestionează) → evită și
+  // eventuale permission-denied pentru operatori.
+  useEffect(() => {
+    const isOwner = myRole === 'owner' || user?.uid === BOOTSTRAP_ADMIN_UID;
+    if (isAdmin !== true || !isOwner) { setAdminRequestsPending(0); return; }
+    return onSnapshot(
+      query(collection(db, 'adminRequests'), where('status', '==', 'pending'), limit(100)),
+      (snap) => setAdminRequestsPending(snap.size),
+      () => setAdminRequestsPending(0),
+    );
+  }, [isAdmin, myRole, user]);
+
   // Aprobarea/respingerea/revocarea administratorilor s-a mutat în tabul „Administratori" (AdminsPanel),
   // prin callable-ul owner-only `manageAdmin` (clientul nu mai scrie direct în admins/adminRequests).
 
@@ -368,6 +405,7 @@ export default function AdminHome() {
     setOpenLead(l.id);
     setNotesDraft(l.notes);
     setNotesState('idle');
+    setLeadTab('detail'); // mereu deschide pe „Detalii"
   };
 
   /** Șterge definitiv lead-ul + cererile lui + istoricele de versiuni (Firestore nu face cascade). */
@@ -505,6 +543,9 @@ export default function AdminHome() {
   }
 
   const td: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', fontSize: 14, textAlign: 'left' };
+  // Antet de tabel mai scanabil (majuscule discrete) + zebra pe rânduri impare (citire mai ușoară a tabelelor lungi).
+  const th: CSSProperties = { ...td, fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--fg-1)', background: 'var(--bg-0)' };
+  const zebra = (idx: number): CSSProperties | undefined => (idx % 2 === 1 ? { background: 'var(--bg-0)' } : undefined);
   const sectionBox: CSSProperties = { background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflowX: 'auto', marginBottom: 28 };
 
   const isCustom = themeId === CUSTOM_THEME_ID;
@@ -562,6 +603,13 @@ export default function AdminHome() {
           Grupul activ se derivă din `view` (wrap pe ecrane înguste ca să nu se reverse). */}
       {(() => {
         const top = topTabOf(view);
+        // Badge-uri „inbox" (numere de acțiuni în așteptare) per view, derivate din listenerele de mai sus.
+        const newLeads = (leads ?? []).filter((l) => l.status === 'new').length;
+        const viewBadge: Partial<Record<AdminView, number>> = { leads: newLeads, serviceOrders: serviceOrdersNew, admins: adminRequestsPending };
+        const topBadge = (tt: TopTab) => TOP_TAB_VIEWS[tt].reduce((n, v) => n + (viewBadge[v] || 0), 0);
+        const badge = (n: number) => (n > 0 ? (
+          <span style={{ marginLeft: 6, background: 'var(--accent, #2563eb)', color: '#fff', fontSize: 10, fontWeight: 800, borderRadius: 999, padding: '1px 6px', minWidth: 16, display: 'inline-block', textAlign: 'center', lineHeight: 1.6, verticalAlign: 'middle' }}>{n > 99 ? '99+' : n}</span>
+        ) : null);
         return (
           <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: '2px solid var(--border)', marginBottom: top === 'admin' ? 0 : 22 }}>
@@ -579,13 +627,15 @@ export default function AdminHome() {
                       cursor: 'pointer',
                     }}
                   >
-                    {t(TOP_TAB_LABEL_KEY[tt])}
+                    {t(TOP_TAB_LABEL_KEY[tt])}{badge(topBadge(tt))}
                   </button>
                 );
               })}
             </div>
+            {/* Sub-tab-urile din „Administrare" = segmented control (grup de pastile cu fundal) → distinge clar
+                nivelul 2 de tab-urile principale (underline). */}
             {top === 'admin' && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, borderBottom: '1px solid var(--border)', marginBottom: 22, paddingTop: 10 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, background: 'var(--bg-0)', border: '1px solid var(--border)', borderRadius: 10, padding: 3, margin: '14px 0 22px' }}>
                 {TOP_TAB_VIEWS.admin.map((v) => {
                   const on = view === v;
                   return (
@@ -593,14 +643,15 @@ export default function AdminHome() {
                       key={v}
                       onClick={() => setView(v)}
                       style={{
-                        border: 'none', background: 'none', padding: '6px 14px', fontSize: 14,
+                        border: 'none', borderRadius: 7, padding: '6px 13px', fontSize: 13,
                         fontWeight: on ? 800 : 600,
                         color: on ? 'var(--accent, #2563eb)' : 'var(--fg-1)',
-                        borderBottom: on ? '2px solid var(--accent, #2563eb)' : '2px solid transparent',
+                        background: on ? 'var(--bg-1)' : 'transparent',
+                        boxShadow: on ? '0 1px 3px rgba(0,0,0,0.18)' : 'none',
                         cursor: 'pointer',
                       }}
                     >
-                      {t(VIEW_LABEL_KEY[v])}
+                      {t(VIEW_LABEL_KEY[v])}{badge(viewBadge[v] || 0)}
                     </button>
                   );
                 })}
@@ -711,20 +762,20 @@ export default function AdminHome() {
                 <div style={sectionBox}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr style={{ background: 'var(--bg-0)' }}>
-                        <th style={td}>{t('admin.colDate')}</th>
-                        <th style={td}>{t('admin.colCompany')}</th>
-                        <th style={td}>{t('admin.colEmail')}</th>
-                        <th style={td}>{t('admin.colPhone')}</th>
-                        <th style={td}>{t('admin.fPackage')}</th>
-                        <th style={td}>{t('admin.colStatus')}</th>
-                        <th style={td}></th>
+                      <tr>
+                        <th style={th}>{t('admin.colDate')}</th>
+                        <th style={th}>{t('admin.colCompany')}</th>
+                        <th style={th}>{t('admin.colEmail')}</th>
+                        <th style={th}>{t('admin.colPhone')}</th>
+                        <th style={th}>{t('admin.fPackage')}</th>
+                        <th style={th}>{t('admin.colStatus')}</th>
+                        <th style={th}></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.map((l) => (
+                      {visible.map((l, idx) => (
                         <Fragment key={l.id}>
-                          <tr id={'lead-' + l.id} style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : undefined}>
+                          <tr id={'lead-' + l.id} style={l.status === 'new' ? { background: 'rgba(37, 99, 235, 0.06)' } : zebra(idx)}>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtTs(l.createdAt)}</td>
                             <td style={{ ...td, fontWeight: l.status === 'new' ? 700 : 400 }}>
                               {l.data.companyName || '—'}
@@ -755,68 +806,86 @@ export default function AdminHome() {
                           {openLead === l.id && (
                             <tr>
                               <td style={{ ...td, background: 'var(--bg-0)' }} colSpan={7}>
-                                <OnboardingDetail detail={l.data} />
-                                {l.data.website ? (
-                                  <div style={{ marginTop: 10 }}>
-                                    <button className="btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setSeoPrefillUrl(l.data.website); setView('seo'); }}>
-                                      🔍 {t('admin.seo.run')} — {l.data.website}
-                                    </button>
-                                  </div>
-                                ) : null}
-                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                                  <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
-                                    {t('admin.notesLabel')}
-                                    <textarea
-                                      value={notesDraft}
-                                      maxLength={LEAD_NOTES_MAX}
-                                      placeholder={t('admin.notesPlaceholder')}
-                                      onChange={(e) => {
-                                        setNotesDraft(e.target.value);
-                                        setNotesState('idle');
-                                      }}
-                                      style={{ minHeight: 70, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, fontWeight: 400, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-1)' }}
-                                    />
-                                  </label>
-                                  <button
-                                    className="btn btn-primary"
-                                    style={{ marginTop: 8, padding: '5px 14px', fontSize: 12 }}
-                                    disabled={notesState === 'saving'}
-                                    onClick={() => void saveNotes(l.id)}
-                                  >
-                                    {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
-                                  </button>
-                                </div>
-                                {user && <OpportunityBoard leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
-                                {user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
-                                {user && <LeadActivity leadId={l.id} adminUid={user.uid} />}
-                                {user && <LeadPrediction leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
-
-                                {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
-                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                                  <strong style={{ fontSize: 13 }}>{t('admin.linkClientTitle')}</strong>
-                                  {l.clientUid ? (
-                                    <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: 13 }}>✓ {t('admin.linkConnected')} <strong>{l.clientEmail || l.clientUid}</strong></span>
-                                      <button className="btn" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => void unlinkClient(l.id)}>{t('admin.linkUnlink')}</button>
-                                    </div>
-                                  ) : clients && clients.length > 0 ? (
-                                    <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                      <select value={linkSelect} onChange={(e) => setLinkSelect(e.target.value)} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, background: 'var(--bg-1)' }}>
-                                        <option value="">{t('admin.linkPick')}</option>
-                                        {clients.map((c) => <option key={c.uid} value={c.uid}>{c.profile.email || c.uid}</option>)}
-                                      </select>
-                                      <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }} disabled={!linkSelect} onClick={() => { const c = clients.find((x) => x.uid === linkSelect); void linkClient(l.id, linkSelect, c?.profile.email || ''); }}>{t('admin.linkBtn')}</button>
-                                    </div>
-                                  ) : (
-                                    <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.linkNoAccounts')}</p>
-                                  )}
+                                {/* Sub-tab-uri în expander — înlocuiesc cele 8 secțiuni stivuite (mai puțin scroll, focus pe o sarcină). */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, marginBottom: 14 }}>
+                                  {LEAD_DETAIL_TABS.map((tb) => {
+                                    const on = leadTab === tb.id;
+                                    return (
+                                      <button key={tb.id} type="button" onClick={() => setLeadTab(tb.id)}
+                                        style={{ border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--accent, #2563eb)' : 'var(--fg-1)', background: on ? 'var(--bg-0)' : 'transparent', cursor: 'pointer' }}>
+                                        {t(tb.labelKey)}
+                                      </button>
+                                    );
+                                  })}
                                 </div>
 
-                                <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10, textAlign: 'right' }}>
-                                  <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: '#c0392b' }} onClick={() => void deleteLead(l.id)}>
-                                    {t('admin.leadDelete')}
-                                  </button>
-                                </div>
+                                {leadTab === 'detail' && (
+                                  <>
+                                    <OnboardingDetail detail={l.data} />
+                                    {l.data.website ? (
+                                      <div style={{ marginTop: 10 }}>
+                                        <button className="btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setSeoPrefillUrl(l.data.website); setView('seo'); }}>
+                                          🔍 {t('admin.seo.run')} — {l.data.website}
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                                      <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                                        {t('admin.notesLabel')}
+                                        <textarea
+                                          value={notesDraft}
+                                          maxLength={LEAD_NOTES_MAX}
+                                          placeholder={t('admin.notesPlaceholder')}
+                                          onChange={(e) => {
+                                            setNotesDraft(e.target.value);
+                                            setNotesState('idle');
+                                          }}
+                                          style={{ minHeight: 70, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, fontWeight: 400, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-1)' }}
+                                        />
+                                      </label>
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ marginTop: 8, padding: '5px 14px', fontSize: 12 }}
+                                        disabled={notesState === 'saving'}
+                                        onClick={() => void saveNotes(l.id)}
+                                      >
+                                        {notesState === 'saving' ? t('admin.notesSaving') : notesState === 'saved' ? t('admin.notesSaved') : t('admin.notesSave')}
+                                      </button>
+                                    </div>
+
+                                    {/* Cont client (portal): conectează un cont logat la datele acestui client. */}
+                                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                                      <strong style={{ fontSize: 13 }}>{t('admin.linkClientTitle')}</strong>
+                                      {l.clientUid ? (
+                                        <div style={{ marginTop: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                          <span style={{ fontSize: 13 }}>✓ {t('admin.linkConnected')} <strong>{l.clientEmail || l.clientUid}</strong></span>
+                                          <button className="btn" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => void unlinkClient(l.id)}>{t('admin.linkUnlink')}</button>
+                                        </div>
+                                      ) : clients && clients.length > 0 ? (
+                                        <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                          <select value={linkSelect} onChange={(e) => setLinkSelect(e.target.value)} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 13, background: 'var(--bg-1)' }}>
+                                            <option value="">{t('admin.linkPick')}</option>
+                                            {clients.map((c) => <option key={c.uid} value={c.uid}>{c.profile.email || c.uid}</option>)}
+                                          </select>
+                                          <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }} disabled={!linkSelect} onClick={() => { const c = clients.find((x) => x.uid === linkSelect); void linkClient(l.id, linkSelect, c?.profile.email || ''); }}>{t('admin.linkBtn')}</button>
+                                        </div>
+                                      ) : (
+                                        <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.linkNoAccounts')}</p>
+                                      )}
+                                    </div>
+
+                                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10, textAlign: 'right' }}>
+                                      <button className="btn" style={{ padding: '4px 12px', fontSize: 12, color: 'var(--danger)' }} onClick={() => void deleteLead(l.id)}>
+                                        {t('admin.leadDelete')}
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+
+                                {leadTab === 'opportunities' && user && <OpportunityBoard leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
+                                {leadTab === 'requests' && user && <LeadRequests leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
+                                {leadTab === 'activity' && user && <LeadActivity leadId={l.id} adminUid={user.uid} />}
+                                {leadTab === 'prediction' && user && <LeadPrediction leadId={l.id} adminUid={user.uid} clientUid={l.clientUid} />}
                               </td>
                             </tr>
                           )}
@@ -839,18 +908,18 @@ export default function AdminHome() {
         <div style={sectionBox}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: 'var(--bg-0)' }}>
-                <th style={td}>{t('admin.colEmail')}</th>
-                <th style={td}>{t('admin.colName')}</th>
-                <th style={td}>{t('admin.colOnboarding')}</th>
-                <th style={td}>{t('admin.colSubscription')}</th>
-                <th style={td}></th>
+              <tr>
+                <th style={th}>{t('admin.colEmail')}</th>
+                <th style={th}>{t('admin.colName')}</th>
+                <th style={th}>{t('admin.colOnboarding')}</th>
+                <th style={th}>{t('admin.colSubscription')}</th>
+                <th style={th}></th>
               </tr>
             </thead>
             <tbody>
-              {clients.map(({ uid, profile }) => (
+              {clients.map(({ uid, profile }, idx) => (
                 <Fragment key={uid}>
-                  <tr>
+                  <tr style={zebra(idx)}>
                     <td style={td}>{profile.email ?? '—'}</td>
                     <td style={td}>{profile.displayName ?? '—'}</td>
                     <td style={td}>{profile.onboardingStatus === 'submitted' ? `✓ ${t('admin.onboardingYes')}` : t('admin.onboardingNo')}</td>

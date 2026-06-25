@@ -684,6 +684,13 @@ const en: typeof ro = {
     },
     leadSort_recent: 'Recent',
     leadSort_priority: 'Priority',
+    leadTab: {
+      detail: 'Details',
+      opportunities: 'Opportunities',
+      requests: 'Requests',
+      activity: 'Activity',
+      prediction: 'Prediction',
+    },
     priority: {
       r_followUpDue: 'Follow-up due today',
       r_hot: 'Hot lead (prediction)',
