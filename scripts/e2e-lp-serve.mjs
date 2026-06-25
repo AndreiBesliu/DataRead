@@ -62,6 +62,11 @@ function makeCol(recKey) {
 }
 const fakeDb = {
   collection(name) { return makeCol(name); },
+  // Tranzacție minimă (pt. rate-limit anti-abuz din handleSubmit/handleTrack): get/set pe doc-ref-urile false.
+  async runTransaction(fn) {
+    const tx = { async get(ref) { return ref.get(); }, set(ref, data) { return ref.set(data); } };
+    return fn(tx);
+  },
   batch() {
     const ops = [];
     return {
@@ -1796,6 +1801,36 @@ console.log('\nSEO) audit on-page — SSRF guard + extract + score');
   const badScore = fns.scoreSeoSignals(bad, '');
   ok(badScore.score < 70 && badScore.issues.some((i) => i.severity === 'critical'), 'SEO: pagina slaba → scor mic + probleme critice');
   ok(fns.buildSeoPrompt(sig, scored.issues, 'curatenie bucuresti', 'https://exemplu.ro/curatenie').includes('SEMNALE ON-PAGE'), 'SEO: promptul include semnalele grounding');
+}
+
+// ── TEST ABUSE: rate-limit anti-abuz pe endpointurile publice (/p/_submit & /p/_track). ──
+console.log('\nABUSE) rate-limit per-IP/slug + clientIpHash');
+{
+  // clientIpHash: deterministic, hex 24, derivat din primul IP din x-forwarded-for; gol → 'unknown'.
+  const h1 = fns.clientIpHash({ headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' } });
+  const h2 = fns.clientIpHash({ headers: { 'x-forwarded-for': '203.0.113.7' } });
+  const h3 = fns.clientIpHash({ headers: {} });
+  ok(/^[0-9a-f]{24}$/.test(h1) && h1 === h2, 'clientIpHash: primul IP din XFF, stabil (24 hex)');
+  ok(h3 === fns.clientIpHash({ headers: {} }), 'clientIpHash: fără IP → bucket stabil (unknown)');
+  ok(h1 !== fns.clientIpHash({ headers: { 'x-forwarded-for': '198.51.100.9' } }), 'clientIpHash: IP-uri diferite → buckete diferite');
+
+  // Store în memorie cu runTransaction (ca makeSelfStore) pentru lpRateExceeded.
+  function makeRateStore() {
+    const store = new Map();
+    const docRef = (p) => ({ _path: p });
+    const tx = {
+      async get(r) { return { exists: store.has(r._path), data: () => store.get(r._path) }; },
+      set(r, data, opts) { store.set(r._path, opts && opts.merge ? Object.assign({}, store.get(r._path) || {}, data) : Object.assign({}, data)); },
+    };
+    return { collection: (c) => ({ doc: (id) => docRef(`${c}/${id}`) }), async runTransaction(fn) { return fn(tx); } };
+  }
+  const db = makeRateStore();
+  // cap=3: primele 3 permise (false), a 4-a peste plafon (true).
+  const r = [];
+  for (let i = 0; i < 4; i++) r.push(await fns.lpRateExceeded(db, 'sub_ip_X', 3));
+  ok(r[0] === false && r[1] === false && r[2] === false && r[3] === true, 'lpRateExceeded: permite până la cap, apoi blochează');
+  // Cheie diferită = bucket separat (nu se contaminează).
+  ok(await fns.lpRateExceeded(db, 'sub_slug_altul', 3) === false, 'lpRateExceeded: bucket per-cheie izolat');
 }
 
 rmSync(tmp, { force: true });

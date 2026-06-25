@@ -2371,6 +2371,22 @@ normaliser, secretele niciodată în chat/repo.
 > 6. **Instrumentare funnel** — track() nou: packages_view + package_cta, start_view + form_start (o dată), contact_view, self_marketing_view.
 > Verificat: typecheck + 21/21 suites + build + boot + e2e. Review adversarial single-agent (5/6 corecte; gap sinergic filtre↔deep-link reparat). Frontend + functions. DEPLOYED: hosting + functions.
 
+**2026-06-23 - Task Completed — Hardening securitate #7 + #8 (din auditul multi-agent)**
+> Model: Claude Opus 4.8 (1M context). Pachetul de securitate; #9 (suită reguli pe emulator) AMÂNAT (vezi mai jos).
+> - **#7 Anti-abuz pe endpointurile publice `/p/_submit` & `/p/_track`** (neautentificate): rate-limit zilnic
+>   tranzacțional per-IP (`clientIpHash` = sha256(primul XFF), fără PII brut) + per-slug, în `abuseGuard/{key}_{day}`
+>   (reguli: read admin, write false). Plafoane: submit 30/IP + 500/slug (→429), track 1000/IP (→204). Fail-OPEN la
+>   eroare de guard (nu rupe traficul legit). App Check hard-enforce = NEfezabil (paginile LP servite n-au SDK App Check
+>   → ar rupe submit-urile) — notat ca limitare; honeypot + rate-limit rămân apărarea.
+> - **#8 Gardă de calitate în `runAiJson`**: detectează `stop_reason==='max_tokens'` (livrabil TRUNCHIAT → aruncă, nu mai
+>   trece tăcut) + răspuns gol → eroare clară. Bug-ul „livrabil plătit tăiat la mijloc trece ca valid", închis pentru TOATE
+>   callable-urile AI dintr-un loc.
+> Verificat: typecheck + 21/21 suites + build + boot + e2e (bloc NOU ABUSE: clientIpHash + lpRateExceeded cap/izolare;
+> fakeFirestore capătă runTransaction). DEPLOYED: hosting + rules + functions.
+> **#9 AMÂNAT (onest):** suita de reguli pe emulator necesită Firestore emulator (Java 11+) + `@firebase/rules-unit-testing`;
+> mediul are doar Java 1.8 și libul nu e instalat → NU poate fi rulată/verificată aici. De făcut în CI/mediu cu Java 11+
+> (rămâne pe lista de îmbunătățiri).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

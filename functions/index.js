@@ -1615,7 +1615,17 @@ async function runAiJson({ schema, system, prompt, maxTokens = 6000 }) {
   if (response.stop_reason === 'refusal') {
     throw new HttpsError('failed-precondition', 'Modelul a refuzat cererea. Verifică dacă oferta/contextul conține elemente sensibile (promisiuni medicale/financiare, conținut interzis sau formulări înșelătoare) și reformulează mai neutru.');
   }
+  // Gardă de calitate: max_tokens = livrabil TRUNCHIAT la mijloc → NU-l accepta tăcut (chiar dacă JSON-ul ar parsa
+  // parțial). Operatorul reîncearcă (eventual cu input mai scurt). Bug-ul „livrabil plătit tăiat trece ca valid".
+  if (response.stop_reason === 'max_tokens') {
+    logger.error('ai response truncated (max_tokens)', { maxTokens });
+    throw new HttpsError('internal', 'Răspunsul AI a fost prea lung și s-a tăiat. Reîncearcă (eventual cu mai puține detalii în cerere).');
+  }
   const text = (response.content.find((b) => b.type === 'text') || {}).text || '';
+  if (!text.trim()) {
+    logger.error('ai response empty', { stop: response.stop_reason });
+    throw new HttpsError('internal', 'Răspunsul AI a venit gol. Reîncearcă.');
+  }
   let out;
   try {
     out = JSON.parse(text);
@@ -3574,6 +3584,41 @@ function mapSubmissionToLead(values, fields, slug, lang) {
   };
 }
 
+// ── Anti-abuz pe endpointurile PUBLICE /p/_submit & /p/_track (neautentificate). App Check hard-enforce nu e
+// fezabil aici (paginile LP servite n-au SDK-ul App Check → ar rupe submit-urile legitime), deci: rate-limit
+// zilnic per-IP + per-slug, peste honeypot. Plafoanele mărginesc inundarea pipeline-ului de lead-uri + costul. ──
+const SUBMIT_IP_DAILY_CAP = 30;     // submisii/zi de la același IP (pe toate paginile)
+const SUBMIT_SLUG_DAILY_CAP = 500;  // submisii/zi pe o pagină (backstop pe slug)
+const TRACK_IP_DAILY_CAP = 1000;    // beacon-uri/zi de la același IP (generos; mărginește scrierile de contoare)
+
+function clientIpHash(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = xff || String((req.socket && req.socket.remoteAddress) || req.ip || 'unknown');
+  return require('crypto').createHash('sha256').update(ip || 'unknown').digest('hex').slice(0, 24);
+}
+
+// Rate-limit zilnic per cheie (tranzacțional). true = peste plafon → respinge. Fail-OPEN la eroare de guard
+// (nu rupem traficul legit; plafonul rămâne backstop). Cheia (IP hash / slug) nu conține PII brut.
+async function lpRateExceeded(db, key, cap) {
+  const day = new Date().toISOString().slice(0, 10);
+  const ref = db.collection('abuseGuard').doc(`${key}_${day}`);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const n = snap.exists && snap.data().day === day ? Number(snap.data().count) || 0 : 0;
+      if (n >= cap) return true;
+      tx.set(ref, { day, count: n + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      return false;
+    });
+  } catch (e) {
+    logger.warn('lpRateExceeded guard error (fail-open)', { key, e: String(e).slice(0, 120) });
+    return false;
+  }
+}
+
+exports.clientIpHash = clientIpHash;
+exports.lpRateExceeded = lpRateExceeded;
+
 async function handleTrack(req, res) {
   const body = req.body || {};
   const slug = typeof body.slug === 'string' ? body.slug.toLowerCase() : '';
@@ -3590,6 +3635,11 @@ async function handleTrack(req, res) {
   const ts = admin.firestore.FieldValue.serverTimestamp();
   try {
     const db = admin.firestore();
+    // Anti-abuz: plafon zilnic per-IP pe beacon-uri (peste plafon → 204 silențios, fără scrieri de contoare).
+    if (await lpRateExceeded(db, 'trk_ip_' + clientIpHash(req), TRACK_IP_DAILY_CAP)) {
+      res.status(204).end();
+      return;
+    }
     const base = db.collection('landingPages').doc(slug);
     // Integritate: scriem statistici DOAR pentru o pagină existentă și publicată — altfel un POST direct
     // ar putea polua/umfla statistici pentru slug-uri arbitrare sau inexistente.
@@ -3628,6 +3678,11 @@ async function handleSubmit(req, res) {
   }
   try {
     const db = admin.firestore();
+    // Anti-abuz: plafon zilnic per-IP + per-slug pe submisii (mărginește inundarea pipeline-ului de lead-uri + costul triggerelor).
+    if (await lpRateExceeded(db, 'sub_ip_' + clientIpHash(req), SUBMIT_IP_DAILY_CAP) || await lpRateExceeded(db, 'sub_slug_' + slug, SUBMIT_SLUG_DAILY_CAP)) {
+      res.status(429).json({ ok: false });
+      return;
+    }
     const snap = await db.collection('landingPages').doc(slug).get();
     const lp = snap.exists ? snap.data() : null;
     if (!lp || lp.status !== 'published' || !lp.hasForm) {

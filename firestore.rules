@@ -48,6 +48,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Contoare anti-abuz (rate-limit per-IP/slug pe /p/_submit & /p/_track) — scrise DOAR de functions (Admin SDK).
+    match /abuseGuard/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Comenzi de servicii (Felia 2 catalog) — operatorul le gestionează din /admin; clientul logat își poate
     // cere singur un serviciu din /app. CLIENT-SAFE: doc fără note interne/UID operator. Adminul vede tot;
     // clientul DOAR comenzile lui (clientUid == uid). Crearea de către client e strict constrânsă (source 'client',
