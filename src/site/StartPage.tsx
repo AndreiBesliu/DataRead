@@ -100,7 +100,7 @@ export default function StartPage() {
       instagram: normaliseUrl(data.instagram),
       tiktok: normaliseUrl(data.tiktok),
     };
-    const v = validateOnboarding(clean);
+    const v = validateOnboarding(clean, 'lead');
     setErrors(v.errors);
     if (!v.ok) return;
     setSaving(true);
@@ -158,7 +158,7 @@ export default function StartPage() {
       )}
 
       <form onSubmit={submit} className="card" style={{ display: 'grid', gap: 14 }}>
-        <OnboardingFields data={data} errors={errors} set={set} toggleObjective={toggleObjective} />
+        <OnboardingFields data={data} errors={errors} set={set} toggleObjective={toggleObjective} leadMode />
         {errors._submit && <div role="alert" style={{ color: '#e05666', fontSize: 13 }}>{t(errors._submit)}</div>}
         <button className="btn btn-primary" type="submit" disabled={saving} style={{ justifySelf: 'center', padding: '12px 32px', fontSize: 15 }}>
           {saving ? t('start.saving') : t('start.submit')}

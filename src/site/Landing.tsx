@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
 import { track } from '../services/analytics';
 import { SERVICES } from '../config/services';
+import SocialProof from './SocialProof';
 
 /** Iconurile serviciilor din banner (chart / target / funnel / rachetă) — SVG inline roșu. */
 function ServiceIcon({ kind }: { kind: 1 | 2 | 3 | 4 }) {
@@ -114,6 +115,9 @@ export default function Landing() {
           ))}
         </div>
       </section>
+
+      {/* Dovadă socială: cifre/capabilități reale (+ testimoniale când le adaugă Andrei). */}
+      <SocialProof />
 
       {/* Teaser catalog servicii → /servicii (toate cele 7 servicii). */}
       <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '52px 24px 8px', textAlign: 'center' }}>

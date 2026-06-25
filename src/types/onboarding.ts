@@ -138,8 +138,15 @@ export interface ValidationResult {
   errors: Record<string, string>;
 }
 
+/** Modul de validare:
+ *  - 'full' (cont client /app): profil complet — industrie, buget, descriere OBLIGATORII (comportamentul de dinainte).
+ *  - 'lead' (formularul public /start): doar nucleul de contact + intenție (firmă, nume, CEL PUȚIN un contact, obiectiv);
+ *    restul sunt opționale (formularul promite „2 minute" → fricțiune mică). Modelul `leads` nu se schimbă; coerce-ul
+ *    tolerează deja golurile. Format-urile (email/telefon/URL) se validează când câmpul ESTE completat, în ambele moduri. */
+export type OnboardingValidateMode = 'full' | 'lead';
+
 /** Validare pură — fără DOM, fără Firestore — ca să fie testabilă headless. */
-export function validateOnboarding(d: OnboardingData): ValidationResult {
+export function validateOnboarding(d: OnboardingData, mode: OnboardingValidateMode = 'full'): ValidationResult {
   const errors: Record<string, string> = {};
   const req = (field: keyof OnboardingData) => {
     if (!String(d[field] ?? '').trim()) errors[field] = 'onboarding.errors.required';
@@ -147,20 +154,28 @@ export function validateOnboarding(d: OnboardingData): ValidationResult {
 
   req('companyName');
   req('contactName');
-  req('contactPhone');
 
-  if (!d.contactEmail.trim()) errors.contactEmail = 'onboarding.errors.required';
-  else if (!EMAIL_RE.test(d.contactEmail.trim())) errors.contactEmail = 'onboarding.errors.email';
-
-  if (d.contactPhone.trim() && !phoneOk(d.contactPhone)) errors.contactPhone = 'onboarding.errors.phone';
-
-  if (!d.industry) errors.industry = 'onboarding.errors.required';
-  if (d.industry === 'other' && !d.industryOther.trim()) errors.industryOther = 'onboarding.errors.required';
+  const emailFilled = !!d.contactEmail.trim();
+  const phoneFilled = !!d.contactPhone.trim();
+  if (mode === 'lead') {
+    // Cel puțin o cale de contact; format validat doar pe cele completate.
+    if (!emailFilled && !phoneFilled) errors.contactEmail = 'onboarding.errors.contactRequired';
+  } else {
+    // Cont complet: ambele obligatorii.
+    if (!emailFilled) errors.contactEmail = 'onboarding.errors.required';
+    req('contactPhone');
+  }
+  if (emailFilled && !EMAIL_RE.test(d.contactEmail.trim())) errors.contactEmail = 'onboarding.errors.email';
+  if (phoneFilled && !phoneOk(d.contactPhone)) errors.contactPhone = 'onboarding.errors.phone';
 
   if (d.objectives.length === 0) errors.objectives = 'onboarding.errors.objectives';
-  if (!d.adBudget) errors.adBudget = 'onboarding.errors.required';
+  if (d.industry === 'other' && !d.industryOther.trim()) errors.industryOther = 'onboarding.errors.required';
 
-  if (!d.description.trim()) errors.description = 'onboarding.errors.required';
+  if (mode === 'full') {
+    if (!d.industry) errors.industry = 'onboarding.errors.required';
+    if (!d.adBudget) errors.adBudget = 'onboarding.errors.required';
+    if (!d.description.trim()) errors.description = 'onboarding.errors.required';
+  }
   if (d.description.length > 2000) errors.description = 'onboarding.errors.tooLong';
 
   for (const f of ['website', 'facebook', 'instagram', 'tiktok'] as const) {

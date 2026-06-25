@@ -799,6 +799,22 @@ export default function AppHome() {
         </span>
       </header>
 
+      {/* Bara „Următorul pas" (#13) — direcție unică, derivată din date deja încărcate (onboarding/abonament). */}
+      {(() => {
+        const step = !onboardingDone
+          ? { label: t('appHome.next_onboarding'), cta: t('appHome.next_onboardingCta'), to: '/app/onboarding', accent: true }
+          : !subActive
+            ? { label: t('appHome.next_subscription'), cta: t('appHome.next_subscriptionCta'), to: '/pachete', accent: true }
+            : { label: t('appHome.next_explore'), cta: t('appHome.next_exploreCta'), to: '/app/self-marketing', accent: false };
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 20, padding: '12px 16px', borderRadius: 'var(--radius)', border: `1px solid ${step.accent ? 'var(--accent)' : 'var(--border)'}`, background: step.accent ? 'rgba(224, 38, 57, 0.06)' : 'var(--bg-1)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--fg-1)' }}>{t('appHome.nextStep')}</span>
+            <span style={{ fontSize: 14, flex: 1, minWidth: 180 }}>{step.label}</span>
+            <Link to={step.to} className={step.accent ? 'btn btn-primary' : 'btn'} style={{ fontSize: 13, padding: '7px 16px' }}>{step.cta}</Link>
+          </div>
+        );
+      })()}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <Card title={t('appHome.onboardingTitle')}>
           <p style={{ margin: '0 0 10px', color: 'var(--fg-1)', fontSize: 14 }}>

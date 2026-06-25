@@ -2401,6 +2401,21 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 22/22 suites (test-leadpriority nou) + build + boot + e2e (bloc FOLLOWUP: sumar+prompt+nota).
 > Review adversarial single-agent: CLEAN pe 7 verificări (securitate callable, paritate i18n motive, hooks, izolare). DEPLOYED: hosting + functions.
 
+**2026-06-23 - Task Completed — Conversie & portal #12+#13+#14 (din audit)**
+> Model: Claude Opus 4.8 (1M context). Ultimul pachet din auditul multi-agent. Frontend-only.
+> - **#12 Scurtare `/start`**: `validateOnboarding(d, mode)` — mod 'lead' (public) cere DOAR nucleul (firmă+nume+CEL PUȚIN
+>   un contact+obiectiv); industrie/buget/descriere/social = OPȚIONALE. Mod 'full' (cont /app) = neschimbat (default,
+>   backward-compatible). `OnboardingFields` capătă `leadMode`: nucleu vizibil + „Adaugă mai multe detalii (opțional)"
+>   colapsat (se auto-deschide dacă un câmp opțional are eroare). Modelul `leads` NESCHIMBAT (coerce tolerează golurile).
+>   Teste lead-mode în test-onboarding-validate.
+> - **#13 Bară „Următorul pas" în `/app`**: derivată din date deja încărcate (onboardingDone/subActive) → o singură
+>   direcție (completează profilul → alege pachet → generează strategie). Fără date noi, fără hooks noi.
+> - **#14 Dovadă socială pe site**: `src/config/socialProof.ts` (cifre/capabilități ADEVĂRATE) + `SocialProof.tsx` între
+>   „Ce facem" și catalog. **ONESTITATE: testimonialele rămân GOALE până le dă Andrei** (citate reale + acord) — componenta
+>   le afișează doar când există; NU inventăm pe site live.
+> Verificat: typecheck + 22/22 suites + build + boot (incl /start). Review adversarial single-agent: CLEAN (niciun câmp pierdut
+> în refactor, 'full' neschimbat, paritate i18n). Frontend-only. DEPLOYED: hosting. **TODO Andrei:** testimoniale reale în socialProof.ts.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
