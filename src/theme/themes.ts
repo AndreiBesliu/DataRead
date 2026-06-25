@@ -62,11 +62,45 @@ export function themeById(id: string): AdminTheme {
   return ADMIN_THEMES.find((th) => th.id === id) ?? ADMIN_THEMES.find((th) => th.id === DEFAULT_ADMIN_THEME)!;
 }
 
+// ── Culori semantice de stare, în două palete (fundal deschis vs întunecat). Sincron cu styles.css
+//    (:root = light, .theme-banner = dark). Injectate per temă (admin/app/per-pagină) după luminanța
+//    fundalului, ca un buton de stare (succes/eroare) să rămână lizibil pe ORICE temă aleasă.
+const SEMANTIC_LIGHT: Record<string, string> = {
+  success: '#15803d', 'success-soft': '#dcfce7',
+  warn: '#b45309', 'warn-soft': '#fef3c7',
+  danger: '#b91c1c', 'danger-soft': '#fee2e2',
+  info: '#1d4ed8', 'info-soft': '#dbeafe',
+};
+const SEMANTIC_DARK: Record<string, string> = {
+  success: '#4ade80', 'success-soft': 'rgba(34,197,94,0.16)',
+  warn: '#fbbf24', 'warn-soft': 'rgba(245,158,11,0.16)',
+  danger: '#f87171', 'danger-soft': 'rgba(239,68,68,0.16)',
+  info: '#60a5fa', 'info-soft': 'rgba(59,130,246,0.16)',
+};
+
+/** Fundal întunecat? (luminanță percepută sRGB mică). Hex invalid → presupune dark (temele admin sunt dark). */
+function isDarkBg(hex: string): boolean {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return true;
+  const n = parseInt(m[1], 16);
+  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return lum < 140;
+}
+
+/** Variabilele semantice (--success/--danger/…) potrivite pentru fundalul dat, ca obiect cu chei `--x`. */
+export function semanticVars(bg0: string): Record<string, string> {
+  const pal = isDarkBg(bg0) ? SEMANTIC_DARK : SEMANTIC_LIGHT;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(pal)) out[`--${k}`] = v;
+  return out;
+}
+
 /** Stilul de aplicat pe wrapperul de admin: variabilele temei + fundal (cu grid pentru cele digitale). */
 export function themeStyle(id: string): CSSProperties {
   const th = themeById(id);
   const style: Record<string, string | number> = { minHeight: '100vh', color: th.vars['fg-0'] };
   for (const [k, v] of Object.entries(th.vars)) style[`--${k}`] = v;
+  Object.assign(style, semanticVars(th.vars['bg-0']));
   style.background = th.digital
     ? `radial-gradient(${th.vars.border} 1px, transparent 1px) 0 0 / 24px 24px, ${th.vars['bg-0']}`
     : th.vars['bg-0'];
@@ -213,6 +247,7 @@ function customThemeBg(c: CustomTheme): BgLayers {
 export function customThemeStyle(c: CustomTheme): CSSProperties {
   const style: Record<string, string | number> = { minHeight: '100vh', color: c.vars['fg-0'] };
   for (const k of THEME_COLOR_KEYS) style[`--${k}`] = c.vars[k];
+  Object.assign(style, semanticVars(c.vars['bg-0']));
   const bg = customThemeBg(c);
   style.backgroundColor = bg.backgroundColor;
   if (bg.backgroundImage) {
@@ -228,7 +263,8 @@ export function customThemeStyle(c: CustomTheme): CSSProperties {
 /** Design-ul ca text CSS — pentru pagina LP (preview iframe + SSR serveLp): variabilele pe :root,
  *  fundalul pe body. Aceeași compunere ca customThemeStyle. */
 export function customThemeCss(c: CustomTheme): string {
-  const vars = THEME_COLOR_KEYS.map((k) => `--${k}:${c.vars[k]}`).join(';');
+  const sem = Object.entries(semanticVars(c.vars['bg-0'])).map(([k, v]) => `${k}:${v}`).join(';');
+  const vars = THEME_COLOR_KEYS.map((k) => `--${k}:${c.vars[k]}`).join(';') + ';' + sem;
   const bg = customThemeBg(c);
   const bgDecl = [`background-color:${bg.backgroundColor}`];
   if (bg.backgroundImage) {

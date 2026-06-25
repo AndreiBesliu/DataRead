@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
@@ -17,6 +17,17 @@ const field: CSSProperties = {
   fontSize: 15,
   background: 'var(--bg-0)',
 };
+
+/** Câmp cu etichetă VIZIBILĂ (a11y): inputul stă în interiorul `<label>` → asociere implicită, citit
+ *  de screen-reader și rămâne vizibil după ce începi să scrii (spre deosebire de placeholder). */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600, color: 'var(--fg-0)' }}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
 
 export default function AuthPanel() {
   const { t } = useTranslation();
@@ -103,23 +114,28 @@ export default function AuthPanel() {
 
         <form onSubmit={submit} style={{ display: 'grid', gap: 12 }}>
           {mode === 'signup' && (
-            <input style={field} type="text" placeholder={t('auth.displayName')} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+            <Field label={t('auth.displayName')}>
+              <input style={field} type="text" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+            </Field>
           )}
-          <input style={field} type="email" required placeholder={t('auth.email')} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          <Field label={t('auth.email')}>
+            <input style={field} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          </Field>
           {mode !== 'reset' && (
-            <input
-              style={field}
-              type="password"
-              required
-              placeholder={t('auth.password')}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            />
+            <Field label={t('auth.password')}>
+              <input
+                style={field}
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              />
+            </Field>
           )}
 
           {mode === 'signup' && (
-            <label style={{ display: 'flex', gap: 8, fontSize: 13, color: tosError ? '#c0392b' : 'var(--fg-1)', alignItems: 'flex-start' }}>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13, color: tosError ? 'var(--danger)' : 'var(--fg-1)', alignItems: 'flex-start' }}>
               <input type="checkbox" checked={tos} onChange={(e) => { setTos(e.target.checked); setTosError(false); }} style={{ marginTop: 3 }} />
               <span>
                 {t('auth.tos')}{' '}
@@ -128,9 +144,9 @@ export default function AuthPanel() {
               </span>
             </label>
           )}
-          {tosError && <div style={{ color: '#c0392b', fontSize: 13 }}>{t('auth.tosRequired')}</div>}
-          {error && <div role="alert" style={{ color: '#c0392b', fontSize: 13 }}>{t(error)}</div>}
-          {info && <div role="status" style={{ color: '#1e7e34', fontSize: 13 }}>{t(info)}</div>}
+          {tosError && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{t('auth.tosRequired')}</div>}
+          {error && <div role="alert" style={{ color: 'var(--danger)', fontSize: 13 }}>{t(error)}</div>}
+          {info && <div role="status" style={{ color: 'var(--success)', fontSize: 13 }}>{t(info)}</div>}
 
           <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
             {busy ? t('auth.busy') : mode === 'signup' ? t('auth.signUp') : mode === 'reset' ? t('auth.sendReset') : t('auth.signIn')}

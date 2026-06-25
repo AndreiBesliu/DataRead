@@ -968,6 +968,8 @@ const en: typeof ro = {
         previewTitle: 'Header & footer preview',
         langPreview: 'Preview language',
         publishHint: 'Applies to the site immediately. Menu labels are per-language literals (EN falls back to RO if empty). For zero flash, the snapshot is re-baked on the next deploy.',
+        restoreDefault: '↺ Default menu',
+        restoreDefaultHint: 'Reload the platform default header/menu (with new pages, e.g. “Services”), then “Save & publish”.',
         emphasis: 'Style',
         anim: 'Animation',
         color: 'Color',

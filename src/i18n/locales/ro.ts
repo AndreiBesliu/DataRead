@@ -984,6 +984,8 @@ const ro = {
         previewTitle: 'Previzualizare header & footer',
         langPreview: 'Limbă previzualizare',
         publishHint: 'Se aplică imediat pe site. Etichetele de meniu sunt literale per-limbă (EN cade pe RO dacă e gol). Pentru zero flash, re-coc snapshot-ul la următorul deploy.',
+        restoreDefault: '↺ Meniul implicit',
+        restoreDefaultHint: 'Reîncarcă header-ul/meniul implicit al platformei (cu paginile noi, ex. „Servicii"), apoi „Salvează & publică".',
         emphasis: 'Stil',
         anim: 'Animație',
         color: 'Culoare',

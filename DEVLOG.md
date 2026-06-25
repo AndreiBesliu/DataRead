@@ -2416,6 +2416,36 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 22/22 suites + build + boot (incl /start). Review adversarial single-agent: CLEAN (niciun câmp pierdut
 > în refactor, 'full' neschimbat, paritate i18n). Frontend-only. DEPLOYED: hosting. **TODO Andrei:** testimoniale reale în socialProof.ts.
 
+**2026-06-25 - Task Completed — Fundație design + accesibilitate (din auditul UI) + self-fix bug „Servicii" header**
+> Model: Claude Opus 4.8 (1M context). Răspuns la „analizează starea UI-ului + sugestii". Am rulat un audit UI multi-agent
+> (5 perspective, 30 sugestii) → utilizatorul a ales pachetul „Fundație design + a11y". Frontend/CSS-only.
+> - **Tokeni de design** în `src/styles.css` `:root`: scară de spațiere (`--space-1..7`), tipografie (`--text-xs..display`),
+>   raze (`--radius-sm/lg/pill`) + **culori semantice de stare** (`--success/--warn/--danger/--info` + `-soft`) cu paletă
+>   pentru fundal DESCHIS în `:root` și ÎNTUNECAT în `.theme-banner` (pe dark, variantele light pică sub AA).
+> - **Injectare per temă** (`src/theme/themes.ts`): `semanticVars(bg0)` alege paleta după luminanța fundalului și e
+>   adăugată în `themeStyle`/`customThemeStyle`/`customThemeCss` → admin (orice preset), `/app` și paginile per-pagină
+>   primesc automat `--danger` etc. potrivite, fără a extinde modelul `AdminTheme`.
+> - **`:focus-visible` global**: inel de focus VIZIBIL (2px accent) la navigarea cu tastatura pe ORICE element focusabil
+>   (multe butoane inline cu `border:none` erau invizibile la Tab — eșec WCAG 2.4.7); `:focus:not(:focus-visible)` curăță
+>   inelul UA la click cu mouse-ul. Verificat în preview: regula e în stylesheet; mouse/programatic = fără inel, Tab = inel.
+> - **Label-uri reale pe `AuthPanel`**: inputurile (nume/email/parolă) sunt acum în `<label>` cu text VIZIBIL (era doar
+>   placeholder, care dispare la tastare și nu e citit de screen-reader). (`OnboardingFields` avea deja label-uri.)
+> - **Contrast**: `.theme-banner --fg-1` ridicat la `#aebcd8` (≈7.5:1 pe navy, era ≈6.1:1).
+> - **`.chip` + base `.section-title`**: clasă unică de pill (înlocuiește stiluri inline copiate) + scară unică de titlu de
+>   secțiune (`var(--text-2xl)`), aplicate în `Landing.tsx` (chips catalog + 4 titluri, fără mărimi inline divergente).
+> - **Literali de status → tokeni** în fișierele atinse (AuthPanel/OnboardingFields/SiteAdminPanel): `#c0392b`→`var(--danger)`,
+>   `#1e7e34`→`var(--success)`, `#e05666`→`var(--danger)`.
+> - **Self-fix bug live „Servicii" lipsă din meniu:** docul `siteConfig/publicChrome` publicat e mai vechi decât catalogul
+>   → override-ul runtime ascunde „Servicii" + CTA-ul stilizat. NU am cale de scriere admin în Firestore din acest mediu
+>   (fără ADC/service-account; reguli = write admin-only). Soluție livrabilă: buton **„↺ Meniul implicit"** în ChromeEditor
+>   (`SiteAdminPanel`) care reîncarcă `PUBLIC_CHROME_DEFAULT` (deja conține Servicii + Self Marketing stilizat) → Andrei dă
+>   „Salvează & publică" (o singură dată, ~10s). Snapshot-ul copt a fost lăsat cu Servicii (NU am rulat pull-public-chrome,
+>   care ar fi re-copt docul stale).
+> Verificat: typecheck + 22/22 suites + build + boot (10/10) + preview live (chip/section-title/labels/--danger dark/focus-visible).
+> DEPLOYED: hosting + rules. **TODO Andrei (≈10s):** /admin → Design & Pagini → Site → (deschide design) → Header & Footer →
+> „↺ Meniul implicit" → „Salvează & publică" pentru a aduce „Servicii" în meniul live. Restul auditului (mobile/hamburger,
+> skeletoane /app, badge-uri /admin, /servicii/:id, sweep literali în 36 fișiere) = pachete viitoare.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

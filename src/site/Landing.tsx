@@ -104,7 +104,7 @@ export default function Landing() {
 
       {/* Serviciile din banner — 4 carduri cu iconuri roșii. */}
       <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '52px 24px 8px' }}>
-        <h2 className="section-title" style={{ fontSize: 28 }}>{t('landing.whatTitle')}</h2>
+        <h2 className="section-title">{t('landing.whatTitle')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginTop: 28 }}>
           {([1, 2, 3, 4] as const).map((i) => (
             <div key={i} className="card" style={{ textAlign: 'center' }}>
@@ -121,11 +121,11 @@ export default function Landing() {
 
       {/* Teaser catalog servicii → /servicii (toate cele 7 servicii). */}
       <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '52px 24px 8px', textAlign: 'center' }}>
-        <h2 className="section-title" style={{ fontSize: 28 }}>{t('services.kicker')}</h2>
+        <h2 className="section-title">{t('services.kicker')}</h2>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', margin: '24px 0 22px' }}>
           {SERVICES.map((s) => (
-            <span key={s.id} style={{ fontSize: 13, fontWeight: 700, color: '#dbe4f5', border: '1px solid var(--border)', borderRadius: 999, padding: '7px 15px' }}>
-              <span aria-hidden style={{ marginRight: 6 }}>{s.emoji}</span>{t(`services.${s.id}.name`)}
+            <span key={s.id} className="chip">
+              <span aria-hidden>{s.emoji}</span>{t(`services.${s.id}.name`)}
             </span>
           ))}
         </div>
@@ -136,7 +136,7 @@ export default function Landing() {
 
       {/* Cum funcționează. */}
       <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '52px 24px 8px' }}>
-        <h2 className="section-title" style={{ fontSize: 28 }}>{t('landing.howTitle')}</h2>
+        <h2 className="section-title">{t('landing.howTitle')}</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginTop: 28 }}>
           {([1, 2, 3] as const).map((i) => (
             <div key={i} className="card">
@@ -149,7 +149,7 @@ export default function Landing() {
 
       {/* CTA final — „Să creștem împreună" (badge-ul din banner). */}
       <section style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '48px 24px 56px', textAlign: 'center' }}>
-        <h2 className="section-title" style={{ fontSize: 26 }}>{t('landing.ctaTitle')}</h2>
+        <h2 className="section-title">{t('landing.ctaTitle')}</h2>
         <p style={{ color: 'var(--fg-1)', margin: '18px 0 22px' }}>{t('landing.ctaBody')}</p>
         <Link to={p('/start')} className="btn btn-primary" style={{ fontSize: 15, padding: '13px 28px' }}>
           {t('landing.ctaButton')}

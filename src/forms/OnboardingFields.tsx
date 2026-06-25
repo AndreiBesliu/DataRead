@@ -22,7 +22,7 @@ function Label({ text, error, children }: { text: string; error?: string; childr
     <label style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600, color: 'var(--fg-0)' }}>
       <span>
         {text}
-        {error && <span style={{ color: '#e05666', fontWeight: 500 }}> — {t(error)}</span>}
+        {error && <span style={{ color: 'var(--danger)', fontWeight: 500 }}> — {t(error)}</span>}
       </span>
       {children}
     </label>
@@ -68,7 +68,7 @@ export default function OnboardingFields({ data, errors, set, toggleObjective, l
       <fieldset style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
         <legend style={{ fontSize: 13, fontWeight: 600, padding: '0 6px' }}>
           {t('onboarding.objectives')}
-          {errors.objectives && <span style={{ color: '#e05666', fontWeight: 500 }}> — {t(errors.objectives)}</span>}
+          {errors.objectives && <span style={{ color: 'var(--danger)', fontWeight: 500 }}> — {t(errors.objectives)}</span>}
         </legend>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
           {OBJECTIVES.map((o) => (

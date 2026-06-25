@@ -105,6 +105,16 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   repopulează din Auth → tabelul arată adresa, nu UID-ul. Amânat: invitație pe email; permisiuni per-modul; suită reguli cu emulator.
 - **Design:** tema bannerului oficial (navy #0a1228, roșu #e02639, albastru electric #2e7fff,
   diagonale + dot grid) e scoped pe clasa `.theme-banner` = DOAR site-ul public.
+- **Fundație design (tokeni + a11y) (ACTIV 25.06.2026, din auditul UI):** `src/styles.css` `:root` definește tokeni de
+  spațiere (`--space-1..7`), tipografie (`--text-xs..display`), raze (`--radius-sm/lg/pill`) + **culori semantice de stare**
+  (`--success/--warn/--danger/--info` + `-soft`) — paletă pentru fundal DESCHIS în `:root`, ÎNTUNECAT în `.theme-banner`.
+  `themes.ts:semanticVars(bg0)` alege paleta după luminanța fundalului și e injectată în `themeStyle`/`customThemeStyle`/
+  `customThemeCss` → orice temă admin/`/app`/per-pagină primește automat `--danger` etc. potrivite. **Folosește `var(--danger)`
+  etc. în loc de literali hex de status** (sweep complet în cele ~36 fișiere rămase = incremental). **`:focus-visible` global**
+  (inel 2px accent la tastatură; `:focus:not(:focus-visible)` curăță inelul la mouse) — NU mai adăuga `outline:none` fără
+  înlocuitor. Utilitare: `.chip` (pill) + base `.section-title` (`var(--text-2xl)`). Label-uri reale pe formulare (AuthPanel +
+  OnboardingFields). Rămas din audit: breakpoint-uri reale + hamburger header; skeletoane/empty states `/app`; badge-uri pe
+  tab-urile `/admin`; primitive Card/Field/Button; pagini `/servicii/:id`.
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech
   (Midnight/Carbon/Matrix/Ocean/Light) — `src/theme/themes.ts` (seturi de variabile CSS + grid
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`

@@ -15,6 +15,42 @@
   --accent-contrast: #ffffff;
   --radius: 10px;
   --max-width: 1080px;
+
+  /* ── Scară de spațiere (tokeni) — adoptată incremental în locul valorilor px hardcodate. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ── Scară tipografică (tokeni). */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-display: clamp(30px, 5.4vw, 52px);
+
+  /* ── Raze suplimentare (--radius rămâne 10px, valoarea de bază). */
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ── Culori semantice de stare — valori pentru fundal DESCHIS (light).
+       Suprascrise pe temele întunecate (.theme-banner + injectate per temă admin/app în themes.ts).
+       Folosește var(--danger) etc. în loc de literali hex de status împrăștiați. */
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warn: #b45309;
+  --warn-soft: #fef3c7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --info: #1d4ed8;
+  --info-soft: #dbeafe;
 }
 
 /* Tema bannerului — DOAR pe site-ul public (aplicată pe rădăcina SiteLayout). */
@@ -22,7 +58,8 @@
   --bg-0: #0a1228;
   --bg-1: #101c3a;
   --fg-0: #ffffff;
-  --fg-1: #9fb0d0;
+  /* Contrast text secundar ridicat: #aebcd8 pe #0a1228 ≈ 7.5:1 (era #9fb0d0 ≈ 6.1:1) — confort AA+. */
+  --fg-1: #aebcd8;
   --border: #21335e;
   --accent: #e02639;
   --accent-dark: #b81d2e;
@@ -30,6 +67,15 @@
   --blue: #2e7fff;
   --blue-glow: rgba(46, 127, 255, 0.45);
   --red-glow: rgba(224, 38, 57, 0.4);
+  /* Culori semantice pentru fundal ÎNTUNECAT (pe dark, variantele light pică sub AA). */
+  --success: #4ade80;
+  --success-soft: rgba(34, 197, 94, 0.16);
+  --warn: #fbbf24;
+  --warn-soft: rgba(245, 158, 11, 0.16);
+  --danger: #f87171;
+  --danger-soft: rgba(239, 68, 68, 0.16);
+  --info: #60a5fa;
+  --info-soft: rgba(59, 130, 246, 0.16);
   background: var(--bg-0);
   color: var(--fg-0);
 }
@@ -68,11 +114,49 @@ a:hover {
   text-decoration: underline;
 }
 
+/* ── Accesibilitate: indicator de focus VIZIBIL la navigarea cu tastatura (Tab), pe ORICE element
+   focusabil. Multe butoane sunt inline cu `border:none` → fără asta, focusul e invizibil (eșec WCAG
+   2.4.7). `:focus-visible` apare doar la tastatură, nu la click cu mouse-ul, deci nu adaugă zgomot
+   vizual. `--accent` se adaptează la temă (albastru pe app/admin, roșu pe site-ul public). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* Curăță inelul implicit al UA când focusul NU vine de la tastatură (evită dublarea). */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 h1,
 h2,
 h3 {
   line-height: 1.25;
   color: var(--fg-0);
+}
+
+/* ── Scară unică pentru titlurile de secțiune (h2). Pe site-ul public, `.theme-banner .section-title`
+   adaugă uppercase + linia roșie; aici stabilim DOAR mărimea/greutatea de bază, ca toate paginile
+   (app/admin/site) să aibă aceeași scară fără mărimi inline divergente. */
+.section-title {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+/* ── Chip/pill reutilizabil (eticheta rotunjită) — înlocuiește stilurile inline copiate prin cod. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--fg-0);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 7px 15px;
+  line-height: 1.2;
 }
 
 .btn {

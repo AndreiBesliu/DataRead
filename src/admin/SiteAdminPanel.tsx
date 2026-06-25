@@ -273,7 +273,7 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
                 {scope !== 'global' && pageThemesMap[scope] && (
                   <button type="button" disabled={state === 'saving'} onClick={() => void resetPageTheme()} style={{ marginTop: 8, marginLeft: 8, ...linkBtn }}>{t('admin.site.resetToGlobal')}</button>
                 )}
-                {state === 'err' && <p role="alert" style={{ color: '#c0392b', fontSize: 12, marginTop: 8 }}>{t('admin.site.publishErr')}</p>}
+                {state === 'err' && <p role="alert" style={{ color: 'var(--danger)', fontSize: 12, marginTop: 8 }}>{t('admin.site.publishErr')}</p>}
                 <p style={{ fontSize: 11, color: 'var(--fg-1)', marginTop: 8 }}>{scope === 'global' ? t('admin.site.publishHint') : t('admin.site.publishPageHint')}</p>
               </div>
 
@@ -302,8 +302,13 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
                 <button className="btn btn-primary" disabled={chromeState === 'saving'} onClick={() => void publishChrome()} style={{ padding: '9px 18px', fontSize: 14 }}>
                   {chromeState === 'saving' ? t('admin.site.publishing') : chromeState === 'saved' ? t('admin.site.published') : t('admin.site.publish')}
                 </button>
-                {chromeState === 'err' && <span role="alert" style={{ color: '#c0392b', fontSize: 12 }}>{t('admin.site.publishErr')}</span>}
-                <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.site.chrome.publishHint')}</span>
+                {/* Reîncarcă meniul/header-ul IMPLICIT al platformei (include paginile noi, ex. „Servicii"). Util când
+                    un meniu publicat mai demult e în urma codului — apoi „Salvează & publică" îl scrie în site. */}
+                <button type="button" className="btn" disabled={chromeState === 'saving'} onClick={() => setChrome(PUBLIC_CHROME_DEFAULT)} style={{ padding: '9px 14px', fontSize: 13 }}>
+                  {t('admin.site.chrome.restoreDefault')}
+                </button>
+                {chromeState === 'err' && <span role="alert" style={{ color: 'var(--danger)', fontSize: 12 }}>{t('admin.site.publishErr')}</span>}
+                <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.site.chrome.restoreDefaultHint')}</span>
               </div>
             </div>
           </div>
