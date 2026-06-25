@@ -2446,6 +2446,32 @@ normaliser, secretele niciodată în chat/repo.
 > „↺ Meniul implicit" → „Salvează & publică" pentru a aduce „Servicii" în meniul live. Restul auditului (mobile/hamburger,
 > skeletoane /app, badge-uri /admin, /servicii/:id, sweep literali în 36 fișiere) = pachete viitoare.
 
+**2026-06-25 - Task Completed — FIX critic: publicarea în /admin scotea operatorul la login + preview header ≠ live**
+> Model: Claude Opus 4.8 (1M context). Două bug-uri raportate de Andrei pe /admin → Site.
+> **BUG 1 (critic) — sign-out la „Salvează & publică":** iframe-ul de preview live (same-origin, `allow-same-origin`,
+> remontat la fiecare publicare prin `key={previewKey}`) pornea o A DOUA instanță Firebase pe sesiunea PARTAJATĂ
+> (browserLocalPersistence = IndexedDB same-origin). A doua instanță Auth face `initializeCurrentUser()/reload()` pe
+> sesiunea partajată și o poate ȘTERGE; ștergerea se sincronizează în tab-ul părinte /admin → operatorul ajunge delogat.
+> Cauză confirmată prin workflow multi-agent (5 ipoteze + verificare adversarială): nu e claim-ul admin (gate-ul e
+> `if (!user) return <AuthPanel/>` → user e null = sign-out real), nu form-submit (butoanele-s type=button), nu pierderea
+> `?preview=1`. **FIX (`src/firebase.ts`) — închide TOATE mecanismele, indiferent de enforcement-ul App Check:** în
+> „context de preview" (`?preview=1` SAU `window.self !== window.top`) Auth folosește **persistență IN-MEMORY proprie**
+> (`initializeAuth(app,{persistence:inMemoryPersistence})`) → iframe-ul NU citește/scrie/șterge sesiunea operatorului; +
+> sare `initializeAppCheck` (a doua instanță reCAPTCHA pe același domeniu) + sare `setPersistence(browserLocal)` în iframe.
+> Top-level (operatori/vizitatori reali, ne-încadrați) = NESCHIMBAT (getAuth + browserLocalPersistence + App Check). Verificatorul
+> adversarial a respins fix-ul „doar App Check" (App Check e în MONITOR, nu blochează Auth; cauza portantă = a doua sesiune
+> Auth partajată) → de aceea izolăm persistența, nu doar App Check. **#89 reparase doar iframe-ul să AFIȘEZE un shell, nu
+> pierderea sesiunii părintelui** — bug distinct, mai adânc.
+> **BUG 2 — preview header ≠ site live (WYSIWYG):** previzualizarea din `ChromeEditor` era o re-implementare care diverge de
+> `SiteLayout` (fără clasa `.theme-banner`, brand fără `.wordmark`, CTA hand-rolled în loc de `.btn btn-primary`, alt fundal) →
+> un item „degradeu+sclipire" arăta altfel în admin vs live. FIX: preview-ul randează acum cu ACELEAȘI clase/culori/fundal ca
+> SiteLayout → identic cu live-ul.
+> Verificat: typecheck + 22/22 suites + build + boot (10/10, incl /app?preview=1 cu auth in-memory). DEPLOYED: hosting + rules.
+> **De știut:** docul publicat `siteConfig/publicChrome` are eticheta CTA coruptă (mojibake „ÃŽncepe acum" din „Începe acum",
+> dintr-o publicare veche) — se repară cu „↺ Meniul implicit" → Salvează & publică (text curat din PUBLIC_CHROME_DEFAULT).
+> Risc viitor notat: dacă se pornește enforcement App Check pe Firestore, citirile publice siteConfig din iframe (fără App Check
+> acum) ar pica → preview-ul ar cădea pe snapshot-ul copt; atunci = preview din srcDoc fără Firebase (alternativă documentată).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

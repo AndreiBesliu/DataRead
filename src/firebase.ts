@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
-import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { getAuth, initializeAuth, inMemoryPersistence, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -23,14 +23,27 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig);
 
+// „Context de preview" = iframe-ul de previzualizare live din /admin (URL cu `?preview=1`, întotdeauna
+// încadrat — window.top ≠ window.self). E același ORIGIN ca /admin, deci ar partaja sesiunea Firebase Auth
+// (browserLocalPersistence = IndexedDB partajat). CAUZA bug-ului „publici → te scoate la login": o A DOUA
+// instanță Auth pornește în iframe la fiecare remount (reloadPreview bumpează key), face un
+// initializeCurrentUser()/reload() pe sesiunea PARTAJATĂ și o poate ȘTERGE, iar ștergerea se sincronizează
+// în tab-ul părinte /admin → operatorul ajunge delogat. Remediu (închide TOATE mecanismele, indiferent de
+// enforcement-ul App Check): în contextul de preview dăm Auth o persistență IN-MEMORY proprie (izolată — NU
+// citește/șterge sesiunea operatorului) ȘI sărim App Check (a doua instanță reCAPTCHA contează degeaba).
+const isPreviewContext =
+  typeof window !== 'undefined' &&
+  (new URLSearchParams(window.location.search).get('preview') === '1' || window.self !== window.top);
+
 // App Check (reCAPTCHA v3) — inițializat ÎNAINTE de auth/firestore/functions, ca SDK-ul să atașeze
 // token-ul App Check de la PRIMA cerere. Altfel listener-ele Firestore pornesc la boot înainte de
 // inițializarea App Check și pleacă fără token (→ 0% verified pe Firestore, deși Auth, care apelează la
 // login mai târziu, e 100%). Inert până se setează VITE_RECAPTCHA_V3_KEY. `navigator.webdriver` = true sub
 // automatizare (Playwright: prerender + boot-smoke) → sărim init-ul, altfel reCAPTCHA aruncă headless
-// „placeholder must be empty". Utilizatorii reali (webdriver=false) primesc App Check normal.
+// „placeholder must be empty". În iframe-ul de preview (isPreviewContext) NU inițializăm App Check (a doua
+// instanță pe același domeniu). Utilizatorii reali top-level (webdriver=false, ne-încadrați) primesc App Check normal.
 const appCheckKey = import.meta.env.VITE_RECAPTCHA_V3_KEY as string | undefined;
-if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver) {
+if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver && !isPreviewContext) {
   try {
     if (import.meta.env.DEV) {
       // Lasă originul de dev să treacă App Check (tokenul de debug se înregistrează în consolă).
@@ -45,7 +58,12 @@ if (appCheckKey && typeof window !== 'undefined' && !navigator.webdriver) {
   }
 }
 
-export const auth = getAuth(firebaseApp);
+// În contextul de preview, Auth folosește persistență IN-MEMORY (izolată de sesiunea operatorului din
+// tab-ul /admin) → iframe-ul NU poate citi/șterge sesiunea partajată. Top-level = getAuth normal
+// (browserLocalPersistence, setată mai jos). initializeAuth trebuie apelat ÎNAINTE de orice getAuth pe app.
+export const auth = isPreviewContext
+  ? initializeAuth(firebaseApp, { persistence: inMemoryPersistence })
+  : getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
 // Cloud Functions (callables + extensia Stripe). TREBUIE să coincidă cu regiunea în care sunt
@@ -55,7 +73,10 @@ export const db = getFirestore(firebaseApp);
 const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'europe-central2';
 export const functions = getFunctions(firebaseApp, functionsRegion);
 
-// Utilizatorul rămâne logat între lansări.
-setPersistence(auth, browserLocalPersistence).catch((e) => {
-  console.warn('Auth persistence setup failed:', e);
-});
+// Utilizatorul rămâne logat între lansări — DOAR în contextul top-level. În iframe-ul de preview Auth e
+// deja in-memory (izolat); a seta browserLocalPersistence acolo ar reataca sesiunea partajată a operatorului.
+if (!isPreviewContext) {
+  setPersistence(auth, browserLocalPersistence).catch((e) => {
+    console.warn('Auth persistence setup failed:', e);
+  });
+}

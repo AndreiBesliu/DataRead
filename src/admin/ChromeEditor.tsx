@@ -158,22 +158,27 @@ export default function ChromeEditor({ value, theme, onChange }: {
             </button>
           ))}
         </div>
-        <div style={{ ...customThemeStyle(theme), borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
+        {/* Previzualizare FIDELĂ: aceleași clase ca SiteLayout (site-ul live) — `.theme-banner` pe wrapper,
+            `.wordmark` pe brand, clasele navcta-* pe meniu, `.btn btn-primary` pe CTA, aceleași culori/fundal.
+            Astfel un item „degradeu + sclipire" arată IDENTIC aici și pe site (WYSIWYG). */}
+        <div className="theme-banner" style={{ ...customThemeStyle(theme), borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
           {/* Header */}
-          <div style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-1)' }}>
+          <div style={{ borderBottom: '1px solid var(--border)', background: 'rgba(10, 18, 40, 0.92)' }}>
             <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--fg-0)' }}>{value.brandName}</span>
-              {tagline ? <span style={{ fontSize: 10, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 }}>{tagline}</span> : null}
-              <nav style={{ display: 'flex', gap: 14, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
+              <span className="wordmark" style={{ fontSize: 22, fontWeight: 800 }}>{value.brandName}</span>
+              {tagline ? <span style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700 }}>{tagline}</span> : null}
+              <nav style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
                 {value.nav.map((it, i) => {
                   const cls = chromeItemClass(it);
-                  const stl: CSSProperties = cls
-                    ? (it.color ? ({ ['--navcta-color']: it.color, fontSize: 13 } as CSSProperties) : { fontSize: 13 })
-                    : { color: 'var(--fg-0)', fontSize: 13 };
-                  return <span key={i} className={cls || undefined} title={lp(it.href)} style={stl}>{chromeLabel(it, lang)}</span>;
+                  // Aceeași logică de stil ca SiteLayout: navcta items folosesc --navcta-color (sau accentul temei);
+                  // item simplu = culoarea text a navului din banner.
+                  const style: CSSProperties = cls
+                    ? (it.color ? ({ ['--navcta-color']: it.color } as CSSProperties) : {})
+                    : { color: '#dbe4f5' };
+                  return <span key={i} className={cls || undefined} title={lp(it.href)} style={style}>{chromeLabel(it, lang)}</span>;
                 })}
                 {value.ctaHref && ctaLabel ? (
-                  <span style={{ background: 'var(--accent)', color: 'var(--accent-contrast)', padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700 }}>{ctaLabel}</span>
+                  <span className="btn btn-primary" style={{ padding: '7px 14px', fontSize: 13 }}>{ctaLabel}</span>
                 ) : null}
               </nav>
             </div>
@@ -183,7 +188,7 @@ export default function ChromeEditor({ value, theme, onChange }: {
             <span style={{ opacity: 0.6 }}>— {t('admin.site.previewTitle')} —</span>
           </div>
           {/* Footer */}
-          <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-1)' }}>
+          <div style={{ borderTop: '1px solid var(--border)', background: 'rgba(16, 28, 58, 0.6)' }}>
             <div style={{ padding: '16px 20px', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 12, color: 'var(--fg-1)' }}>
               {footerText ? <span>{footerText}</span> : null}
               {value.footerLinks.map((it, i) => (
