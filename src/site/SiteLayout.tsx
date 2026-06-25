@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { persistLanguage } from '../i18n';
@@ -39,6 +39,10 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
     setConsent(v);
   };
 
+  // Meniu mobil (hamburger): deschis/închis; se închide automat la navigare (schimbarea path-ului).
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
+
   return (
     <div className="theme-banner" style={{ ...customThemeStyle(publicTheme), display: 'flex', flexDirection: 'column' }}>
       <Seo titleKey={route.titleKey} descriptionKey={route.descriptionKey} noindex={route.noindex} />
@@ -50,11 +54,21 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
             {chrome.brandName}
           </Link>
           {(lang === 'en' ? chrome.taglineEn : chrome.taglineRo) ? (
-            <span style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700 }}>
+            <span className="site-tagline" style={{ fontSize: 11, color: 'var(--fg-1)', textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700 }}>
               {lang === 'en' ? chrome.taglineEn : chrome.taglineRo}
             </span>
           ) : null}
-          <nav style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
+          {/* Hamburger — vizibil DOAR pe mobil (CSS); deschide/închide sertarul .site-nav. */}
+          <button
+            type="button"
+            className="site-hamburger"
+            aria-label={t('nav.menu')}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? '✕' : '☰'}
+          </button>
+          <nav className={`site-nav${menuOpen ? ' open' : ''}`}>
             {chrome.nav.map((it, i) => {
               const cls = chromeItemClass(it); // gol = link simplu; altfel navcta-* + navanim-*
               const style: CSSProperties = cls

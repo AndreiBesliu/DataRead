@@ -444,3 +444,37 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .navanim-pulse, .navanim-bounce, .navanim-flash, .navanim-shine { animation: none !important; }
 }
+
+/* ── Header public responsive — meniu hamburger sub breakpoint (înlocuiește înfășurarea haotică). */
+.site-nav { display: flex; gap: 16px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.site-hamburger { display: none; }
+@media (max-width: 760px) {
+  .site-hamburger {
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: auto; background: transparent; border: 1px solid var(--border);
+    border-radius: 8px; color: var(--fg-0); font-size: 20px; line-height: 1;
+    padding: 6px 12px; cursor: pointer;
+  }
+  /* Meniul devine un sertar vertical sub bara de sus (full-width prin wrap). */
+  .site-nav {
+    display: none; width: 100%; margin-left: 0; flex-direction: column;
+    align-items: stretch; gap: 10px; padding-top: 12px;
+  }
+  .site-nav.open { display: flex; }
+  .site-nav > a, .site-nav > button { width: 100%; text-align: center; }
+}
+@media (max-width: 480px) {
+  .site-tagline { display: none; } /* păstrează bara de sus curată pe ecrane foarte mici */
+}
+
+/* ── Skeletoane de încărcare (înlocuiesc „…"/return null → fără pâlpâit, structură vizibilă imediat). */
+.skeleton {
+  background: linear-gradient(100deg, var(--bg-1) 30%, color-mix(in srgb, var(--fg-1) 14%, var(--bg-1)) 50%, var(--bg-1) 70%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeleton-shimmer 1.3s linear infinite;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

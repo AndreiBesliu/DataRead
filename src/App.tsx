@@ -64,7 +64,13 @@ function publicElement(route: PublicRoute): ReactElement {
 }
 
 function RouteFallback() {
-  return <main data-page="route-loading" style={{ padding: 64, textAlign: 'center', color: 'var(--fg-1)' }}>…</main>;
+  // Skeleton neutru cât se încarcă chunk-ul lazy (/app, /admin) — fără „…" și fără salt de layout.
+  return (
+    <main data-page="route-loading" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '40px 24px' }}>
+      <div className="skeleton" style={{ width: 220, height: 24, borderRadius: 6 }} aria-hidden="true" />
+      <div className="skeleton" style={{ width: '100%', height: 160, borderRadius: 10, marginTop: 18 }} aria-hidden="true" />
+    </main>
+  );
 }
 
 function AppShell() {

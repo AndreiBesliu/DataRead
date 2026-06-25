@@ -2492,6 +2492,20 @@ normaliser, secretele niciodată în chat/repo.
 > intern), incompatibil cu rândul expandabil; zebra + sub-tab-urile acoperă deja „scanabil". Badge de „Sugestii" amânat (ar dubla
 > 4 listenere; badge-urile concrete lead/comenzi/cereri acoperă inbox-ul).
 
+**2026-06-26 - Task Completed — Mobile + portal /app (din auditul UI): hamburger header + skeletoane**
+> Model: Claude Opus 4.8 (1M context). Frontend/CSS-only.
+> - **Header public responsiv (hamburger):** `SiteLayout` capătă un buton hamburger (`.site-hamburger`, vizibil DOAR sub
+>   760px prin CSS) care comută un sertar vertical (`.site-nav.open`); meniul se închide automat la navigare (`useEffect` pe
+>   `pathname`). Nav-ul a trecut din stil inline în clasa `.site-nav` (desktop: rând cu margin-left auto; mobil: coloană
+>   full-width). Tagline ascuns sub 480px. Verificat în preview: 375px → hamburger + sertar vertical; 1280px → nav inline (hamburger `display:none`).
+> - **Skeletoane de încărcare (anti-pâlpâit) în `/app`:** clasă `.skeleton` (shimmer, respectă reduced-motion) + helperi
+>   `Skel`/`SkelCard` în AppHome. Înlocuit `…` de la `initializing` cu un skeleton care reflectă layout-ul real (antet + bară
+>   pas + 3 carduri); `MarketingPortal` nu mai face `return null` cât se încarcă (camps===null) → arată titlul + 2 carduri-skeleton,
+>   apoi conținut SAU empty state (`portalNotLinked`). `App.tsx` RouteFallback (`…` pt. chunk-urile lazy /app,/admin) → skeleton neutru.
+> Verificat: typecheck + 22/22 suites + build + boot (10/10) + preview live (hamburger mobil/desktop). DEPLOYED: hosting + rules.
+> i18n `nav.menu` (ro+en). NOTĂ: empty-state-urile celorlalte secțiuni (/app) rămân „hide când gol" (corect — fără clutter);
+> bara „Următorul pas" + 3 cardurile fixe asigură că un client nou NU vede ecran gol.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

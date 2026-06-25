@@ -42,6 +42,7 @@ const en: typeof ro = {
     admin: 'Admin',
     login: 'Sign in',
     logout: 'Sign out',
+    menu: 'Menu',
   },
   socialProof: {
     s_services: 'integrated services, in one place',

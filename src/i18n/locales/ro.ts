@@ -44,6 +44,7 @@ const ro = {
     admin: 'Admin',
     login: 'Autentificare',
     logout: 'Ieși',
+    menu: 'Meniu',
   },
   socialProof: {
     s_services: 'servicii integrate, dintr-un loc',

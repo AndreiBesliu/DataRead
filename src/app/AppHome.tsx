@@ -83,6 +83,22 @@ function VersionHistory({ uid, reqId, kind }: { uid: string; reqId: string; kind
   );
 }
 
+/** Bară-skeleton (clasa .skeleton din styles.css) — placeholder de încărcare, fără pâlpâit. */
+function Skel({ w, h = 14, r = 6, mt = 0 }: { w: number | string; h?: number; r?: number; mt?: number }) {
+  return <div className="skeleton" style={{ width: w, height: h, borderRadius: r, marginTop: mt }} aria-hidden="true" />;
+}
+
+/** Card-skeleton reutilizabil (titlu + linii). */
+function SkelCard() {
+  return (
+    <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 18 }}>
+      <Skel w="55%" h={16} />
+      <Skel w="100%" h={12} mt={12} />
+      <Skel w="80%" h={12} mt={8} />
+    </div>
+  );
+}
+
 /** Portalul de marketing al clientului: campaniile LUI (scoped pe clientUid prin rules) cu KPI +
  *  raportul lunar (oglindit în clients/{uid} de functions). Read-only — operatorii gestionează tot. */
 function MarketingPortal({ uid }: { uid: string }) {
@@ -129,7 +145,17 @@ function MarketingPortal({ uid }: { uid: string }) {
     };
   }, [uid]);
 
-  if (camps === null) return null;
+  // În loc de `return null` cât se încarcă (pâlpâit): arată titlul + carduri-skeleton; după load → conținut SAU empty state.
+  if (camps === null) {
+    return (
+      <section style={{ marginTop: 28 }}>
+        <h2 style={{ fontSize: 20, marginBottom: 12 }}>{t('appHome.portalTitle')}</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+          <SkelCard /><SkelCard />
+        </div>
+      </section>
+    );
+  }
   const hasData = camps.length > 0 || report !== null || deliv.length > 0;
 
   const pdfReport = () => {
@@ -737,7 +763,19 @@ export default function AppHome() {
   if (previewMode) return <AppThemePreview />;
 
   if (initializing) {
-    return <main data-page="app-loading" style={{ padding: 64, textAlign: 'center', color: 'var(--fg-1)' }}>…</main>;
+    // Skeleton care reflectă layout-ul real (antet + bară pas + 3 carduri) → fără „…", fără salt la încărcare.
+    return (
+      <main data-page="app-loading" style={{ maxWidth: 'var(--max-width)', margin: '0 auto', padding: '28px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
+          <Skel w={200} h={26} />
+          <Skel w={140} h={14} />
+        </div>
+        <Skel w="100%" h={52} r={10} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 20 }}>
+          <SkelCard /><SkelCard /><SkelCard />
+        </div>
+      </main>
+    );
   }
   if (!user) return <AuthPanel />;
 
