@@ -116,7 +116,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   OnboardingFields). **Mobile + skeletoane (ACTIV 26.06.2026):** header public responsiv cu **hamburger** (`.site-hamburger`
   vizibil <760px → sertar `.site-nav.open`; meniul se închide la navigare; nav mutat din inline în clasa `.site-nav`); clasă
   **`.skeleton`** (shimmer, reduced-motion) + helperi `Skel`/`SkelCard` în AppHome → `…` de la loading înlocuit cu skeletoane
-  (AppHome initializing + MarketingPortal loading + App.tsx RouteFallback). Rămas din audit: primitive Card/Field/Button; pagini `/servicii/:id`.
+  (AppHome initializing + MarketingPortal loading + App.tsx RouteFallback). **Primitive UI (ACTIV 26.06.2026):** `src/ui/Button.tsx`
+  (`Button`/`LinkButton` — variante primary/secondary/blue/ghost/danger + mărimi sm/md, `type="button"` implicit) + `src/ui/Field.tsx`
+  (etichetă vizibilă + error/hint i18n), peste clasele `.btn`. Folosește-le în loc de butoane/câmpuri cu stil inline. Adoptate în
+  Packages (ierarhie CTA: recomandat=primary, rest=blue) + Contact (CTA primar→/start) + AuthPanel; sweep în restul fișierelor = incremental.
+  Rămas din audit: pagini `/servicii/:id`.
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech
   (Midnight/Carbon/Matrix/Ocean/Light) — `src/theme/themes.ts` (seturi de variabile CSS + grid
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`
