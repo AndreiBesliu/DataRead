@@ -353,6 +353,10 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
             <span style={{ background: VERDICT_COLOR[insight.verdict], color: '#fff', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, borderRadius: 5, padding: '2px 10px' }}>
               {t(VERDICT_KEY[insight.verdict])}
             </span>
+            {/* Pachet C: badge de încredere — 'low' (eșantion subțire) marcat warn, NU declanșează automatizări. */}
+            <span title={t('admin.insightConfHint')} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, borderRadius: 5, padding: '2px 8px', background: insight.confidence === 'low' ? 'var(--warn-soft)' : 'var(--success-soft)', color: insight.confidence === 'low' ? 'var(--warn)' : 'var(--success)' }}>
+              {t('admin.insightConf_' + insight.confidence)}
+            </span>
             <strong style={{ fontSize: 14 }}>{insight.headline}</strong>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.aiInsightAt')} {fmtTs(insightAt)}</span>
           </div>

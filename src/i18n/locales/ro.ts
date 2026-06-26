@@ -1686,6 +1686,10 @@ const ro = {
     verdictMaintain: 'Menține',
     verdictPause: 'Oprește',
     verdictTest: 'Testează',
+    insightConf_low: 'încredere mică',
+    insightConf_med: 'încredere medie',
+    insightConf_high: 'încredere mare',
+    insightConfHint: 'Încrederea e calibrată după volumul de date. „Mică" = eșantion subțire (sub ~50 click-uri / ~15 lead-uri) — verdict orientativ, nu declanșează automatizări.',
     // Felia 5b: acțiuni de insight tipate (changeType / target / magnitude).
     insChange_scale: 'Crește',
     insChange_reduce: 'Scade',

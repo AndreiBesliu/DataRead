@@ -10,6 +10,7 @@ import {
   coerceToTotals,
   emptyTotals,
   kpisByPlatform,
+  insightConfidence,
   type DailyMetric,
 } from '../src/analytics/kpi';
 
@@ -148,6 +149,15 @@ check('raport: tipuri greșite → stringuri goale (dar păstrat dacă măcar un
   check('byPlatform: gol → []', kpisByPlatform([]).length === 0);
   check('byPlatform: platformă necunoscută → grupată la „other"', kpisByPlatform([{ platform: 'linkedin' as never, totals: emptyTotals() }])[0].platform === 'other');
 }
+
+// Pachet C: încrederea în insight calibrată după eșantion
+check('insightConfidence: eșantion bogat → ce zice modelul (high)', insightConfidence(500, 40, 'high') === 'high');
+check('insightConfidence: click-uri puține → low (override)', insightConfidence(20, 40, 'high') === 'low');
+check('insightConfidence: lead-uri puține → low (override)', insightConfidence(500, 5, 'high') === 'low');
+check('insightConfidence: model invalid + eșantion ok → med', insightConfidence(500, 40, 'banana') === 'med');
+check('insightConfidence: la prag exact (50/15) → ce zice modelul', insightConfidence(50, 15, 'high') === 'high');
+check('coerceToInsight: confidence vechi lipsă → med', coerceToInsight({ verdict: 'scale', headline: 'x' })?.confidence === 'med');
+check('coerceToInsight: confidence valid păstrat', coerceToInsight({ verdict: 'scale', confidence: 'low' })?.confidence === 'low');
 
 if (failures) {
   console.error(`${failures} checks failed`);

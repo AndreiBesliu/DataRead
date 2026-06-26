@@ -325,6 +325,18 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   cheiat pe conținut+model la nivel de organizație (nu „una pe API key"). Test pur `scripts/test-personas.ts`
   (structură + plasare cache_control + invarianți) + e2e TEST FND. Ghid operator: „Cum funcționează AI-ul" (tab Ghid,
   `opAi`). Următorii pași AI: vezi memoria `project_dataread_ai_roadmap`.
+- **Bucla de ÎNVĂȚARE + calibrare + onestitate (ACTIV 26.06.2026, din auditul analytics/AI):** sistemul nu mai doar „grounds"
+  pe date live — acum **învață** și **se calibrează**. (A) **Feedback loop:** `performPrediction`/`performCampaignInsight` scriu
+  snapshot append-only în `predictionLog`/`campaignInsightLog` (imutabil); jobul zilnic `reconcilePredictions` (05:30, ungated)
+  reconciliază snapshot-urile ≥14 zile cu rezultatul real (lead won/lost; contact lifecycle) → `outcome`. Acuratețea se măsoară
+  cu `src/analytics/predictionAccuracy.ts` (PUR, testat) în cardul „Acuratețea predicțiilor" din HealthPanel (rată direcțională +
+  calibrare hot>cold). (B) **Benchmark calibrat:** jobul săptămânal `calibrateBenchmarks` (luni 04:00) agregă cross-tenant pe
+  industrie×platformă → p25/p50/p75 în `benchmarkStats/{industrie}` (DOAR agregate, privacy-safe); `buildL2Text(industry, calibrated)`
+  preferă reperele REALE (≥5 campanii) peste static `BENCHMARKS_RO`; insight+raport pasează `calibrated`. (C) **Onestitate pe eșantion:**
+  `AiInsight.confidence` (insightConfidence: <50 click/<15 lead → 'low'); `onCampaignAutomation` NU se declanșează pe 'low'; badge UI;
+  `metricAnomalies` injectează spike-urile (zile 0-lead, salt CPL) precalculate în promptul de insight. Reguli noi: `predictionLog`/
+  `campaignInsightLog`/`benchmarkStats` = read admin / write false. **Amânat:** C2 `aiBudgetAllocation` (realocare buget cross-campanie),
+  B2 bază per-client, axă monetară (value ContactEvent + invoice↔contact pt. LTV/CAC), contact↔campanie FK, insight-accuracy (delta ROAS).
 - **Grounding quick wins AI (ACTIV 23.06.2026, felia 2):** `adBudget` mutat în `leadContextBlock` (acum în TOATE prompturile pe
   lead: campanie/insight/raport/canale; dedus din `AD_BUDGET_RO`); `buildInsightPrompt` capătă regulă de calibrare a verdictului
   DUPĂ obiectivul firmei (awareness/trafic → nu penaliza ROAS mic; leads → CPL; sales → ROAS/AOV); carry-over

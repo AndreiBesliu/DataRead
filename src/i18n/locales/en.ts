@@ -1669,6 +1669,10 @@ const en: typeof ro = {
     verdictMaintain: 'Maintain',
     verdictPause: 'Pause',
     verdictTest: 'Test',
+    insightConf_low: 'low confidence',
+    insightConf_med: 'medium confidence',
+    insightConf_high: 'high confidence',
+    insightConfHint: 'Confidence is calibrated by data volume. "Low" = thin sample (under ~50 clicks / ~15 leads) — advisory verdict, does not trigger automations.',
     // Felia 5b: typed insight actions (changeType / target / magnitude).
     insChange_scale: 'Increase',
     insChange_reduce: 'Reduce',

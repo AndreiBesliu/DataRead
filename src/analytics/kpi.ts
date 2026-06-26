@@ -177,6 +177,22 @@ export type InsightChangeType = (typeof INSIGHT_CHANGE_TYPES)[number];
 export const INSIGHT_TARGETS = ['budget', 'audience', 'creative', 'placement', 'bid'] as const;
 export type InsightTarget = (typeof INSIGHT_TARGETS)[number];
 export const INSIGHT_MAGNITUDES = ['small', 'medium', 'large'] as const;
+// Încrederea în analiză (Pachet C) — calibrată DUPĂ cantitatea de date (clicuri/lead-uri). 'low' = eșantion subțire
+// → UI o marchează + automatizarea NU se declanșează pe ea. Pragul exact = insightConfidence (mai jos).
+export const INSIGHT_CONFIDENCES = ['low', 'med', 'high'] as const;
+export type InsightConfidence = (typeof INSIGHT_CONFIDENCES)[number];
+export const INSIGHT_MIN_CLICKS = 50; // sub acest prag de clicuri SAU lead-uri → confidence forțat 'low'
+export const INSIGHT_MIN_LEADS = 15;
+
+/** Încrederea finală în insight: plafonată de eșantion (date subțiri → 'low'), altfel ce a raportat modelul.
+ *  PUR — folosit în functions (port) + testabil. */
+export function insightConfidence(totalClicks: number, totalLeads: number, modelConfidence: unknown): InsightConfidence {
+  const c = INSIGHT_CONFIDENCES.includes(modelConfidence as InsightConfidence) ? (modelConfidence as InsightConfidence) : 'med';
+  const clicks = typeof totalClicks === 'number' && totalClicks >= 0 ? totalClicks : 0;
+  const leads = typeof totalLeads === 'number' && totalLeads >= 0 ? totalLeads : 0;
+  if (clicks < INSIGHT_MIN_CLICKS || leads < INSIGHT_MIN_LEADS) return 'low'; // eșantion insuficient → niciodată peste 'low'
+  return c;
+}
 export type InsightMagnitude = (typeof INSIGHT_MAGNITUDES)[number];
 export const INSIGHT_ACTIONS_MAX = 8;
 export const INSIGHT_TEXT_MAX = 4000;
@@ -192,6 +208,7 @@ export interface AiInsight {
   headline: string;
   reasoning: string;
   actions: InsightAction[];
+  confidence: InsightConfidence; // calibrată după eșantion (vezi insightConfidence)
 }
 
 function inInsightEnum<T extends string>(list: readonly T[], v: unknown, fb: T): T {
@@ -215,7 +232,9 @@ export function coerceToInsight(v: unknown): AiInsight | null {
   const s = (x: unknown) => (typeof x === 'string' ? x.slice(0, INSIGHT_TEXT_MAX) : '');
   // Clean break: format vechi (string) / non-array → listă goală, fără throw/parsare.
   const actions = Array.isArray(d.actions) ? d.actions.slice(0, INSIGHT_ACTIONS_MAX).map(coerceInsightAction) : [];
-  return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions };
+  // confidence: insight-urile vechi (fără câmp) → 'med' (neutru), ca să nu fie marcate fals drept incerte.
+  const confidence = INSIGHT_CONFIDENCES.includes(d.confidence as InsightConfidence) ? (d.confidence as InsightConfidence) : 'med';
+  return { verdict: d.verdict as Verdict, headline: s(d.headline), reasoning: s(d.reasoning), actions, confidence };
 }
 
 /** Flatten acțiunile → text numerotat pt. copy/PDF (reutilizat de MarketingCenter; pe modelul deliverablesToSections). */

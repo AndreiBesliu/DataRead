@@ -727,6 +727,19 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
     ok(!l2low.includes('[REAL'), 'buildL2Text: eșantion sub prag → NU folosește calibrarea');
   }
 
+  // Pachet C: detecție anomalii precalculată în promptul de insight
+  {
+    const an = fns.metricAnomalies([
+      { date: '2026-06-01', spend: 50, clicks: 100, leads: 5 },  // CPL 10
+      { date: '2026-06-02', spend: 60, clicks: 90, leads: 2 },   // CPL 30 → salt 200% (zile consecutive cu lead-uri)
+      { date: '2026-06-03', spend: 40, clicks: 80, leads: 0 },   // bani irosiți (zi cu spend, 0 lead-uri)
+    ]);
+    ok(an.some((x) => x.includes('0 lead-uri')), 'metricAnomalies: detectează zi cu cheltuială și 0 lead-uri');
+    ok(an.some((x) => x.includes('CPL a crescut brusc')), 'metricAnomalies: detectează saltul de CPL');
+    ok(fns.metricAnomalies([{ date: '2026-06-01', spend: 50, clicks: 100, leads: 10 }]).length === 0, 'metricAnomalies: campanie sănătoasă → fără anomalii');
+    ok(fns.metricAnomalies([]).length === 0 && fns.metricAnomalies(null).length === 0, 'metricAnomalies: gol/null → []');
+  }
+
   // Felia 5b: prevInsight.actions e ARRAY tipat (forma reală persistată în campaignInsights). NU trebuie să apară „[object Object]".
   const prevBlk = fns.prevInsightBlock({ verdict: 'scale', headline: 'merge bine', actions: [{ changeType: 'scale', target: 'budget', magnitude: 'large' }] });
   ok(prevBlk.includes('ANALIZA TA ANTERIOARĂ'), 'prevInsightBlock: insight anterior formatat');

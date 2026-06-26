@@ -2590,6 +2590,26 @@ normaliser, secretele niciodată în chat/repo.
 > **AMÂNAT (B2):** bază per-client (mediana proprie a clientului injectată în prompt „CTR-ul tău vs mediana ta") — sub-felie viitoare.
 > Următor: C (profunzime AI — confidence/dataGaps + prag eșantion + aiBudgetAllocation + anomalii).
 
+**2026-06-26 - Task Completed — Audit analytics/AI · Pachet C: profunzime AI (confidence + prag eșantion + anomalii)**
+> Model: Claude Opus 4.8 (1M context). Remediază finding #6 (insight pe 8 click-uri avea aceeași autoritate ca pe 4000).
+> - **C1 — confidence calibrat de eșantion:** `AiInsight` capătă `confidence` (low/med/high); `INSIGHT_SCHEMA` cere câmpul.
+>   `insightConfidence(clicks, leads, model)` PUR (kpi.ts, testat) + port JS în performCampaignInsight: sub 50 click-uri SAU 15
+>   lead-uri → `confidence='low'` (override peste model). `onCampaignAutomation` NU se mai declanșează pe verdict cu confidence
+>   'low' (gata cu automatizări pe zgomot). Badge în MarketingCenter (low=warn). `coerceToInsight` default 'med' pe docuri vechi.
+> - **C3 — anomalii precalculate:** `metricAnomalies(metrics)` PUR (JS, testat e2e) — zile cu cheltuială și 0 lead-uri (bani
+>   irosiți) + cel mai mare salt de CPL între zile consecutive → bloc „ANOMALII DETECTATE" în buildInsightPrompt (modelul
+>   primește spike-urile gata găsite, nu „se uită" la 14 rânduri).
+> Verificat: typecheck + 23/23 suites (insightConfidence în test-analytics) + build + boot + e2e-lp (metricAnomalies + confidence).
+> DEPLOYED: hosting + rules + functions. i18n `admin.insightConf_*`.
+> **AMÂNAT (C2 — felie dedicată):** `aiBudgetAllocation` (callable nou + schemă + UI: realocare buget între campanii — analiza
+> cu cel mai mare impact, dar e o funcție AI nouă completă, merită felie proprie). Notat ca următorul pas major AI.
+>
+> **═══ AUDIT ANALYTICS/AI — SUMAR (D+A+B+C livrate; C2 + B2 amânate) ═══** Răspuns la „poate AI-ul să analizeze și să
+> ÎNVEȚE din date": ACUM DA. D = corectitudine (CSV/A-B/MoM/plafoane). A = bucla de învățare (snapshot→reconciliere→acuratețe
+> măsurată). B = benchmark calibrat din date reale (nu mai ghicește). C = onestitate pe eșantion (confidence) + anomalii.
+> Rămase (felii viitoare, low-urgență): C2 aiBudgetAllocation; B2 bază per-client; D#5 totals server-side; axă monetară
+> (value ContactEvent + invoice↔contact) + contact↔campanie FK pentru LTV/CAC; insight-accuracy (delta ROAS din campaignInsightLog).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -1687,16 +1687,45 @@ const INSIGHT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    confidence: { type: 'string', enum: ['low', 'med', 'high'], description: 'Încrederea în analiză, calibrată DUPĂ cantitatea de date: low dacă sub ~50 click-uri sau ~15 lead-uri (prea devreme), high doar pe set bogat și stabil.' },
   },
-  required: ['verdict', 'headline', 'reasoning', 'actions'],
+  required: ['verdict', 'headline', 'reasoning', 'actions', 'confidence'],
   additionalProperties: false,
 };
 exports.INSIGHT_SCHEMA = INSIGHT_SCHEMA; // pt. aserțiuni de formă în e2e (TEST INS)
 
 const r2 = (n) => (n === null ? '—' : Math.round(n * 100) / 100);
 
+// Pachet C: detecție de anomalii PRECALCULATĂ (pur, fără AI) — în loc să lăsăm modelul „să se uite" la 14 rânduri,
+// îi dăm spike-urile gata găsite. Zile cu cheltuială și 0 lead-uri (bani irosiți) + cel mai mare salt de CPL între
+// zile consecutive. Returnează propoziții RO; gol dacă nu sunt anomalii. Exportat + testat e2e.
+function metricAnomalies(metrics) {
+  const out = [];
+  const ms = (Array.isArray(metrics) ? metrics : []).map((m) => ({
+    date: String((m && m.date) || ''), spend: Number(m && m.spend) || 0, leads: Number(m && m.leads) || 0,
+  }));
+  const r2a = (x) => Math.round(x * 100) / 100;
+  const dead = ms.filter((m) => m.spend > 0 && m.leads === 0);
+  if (dead.length) {
+    const totalDead = dead.reduce((s, m) => s + m.spend, 0);
+    out.push(`${dead.length} ${dead.length === 1 ? 'zi' : 'zile'} cu cheltuială dar 0 lead-uri (total ${r2a(totalDead)}€ fără rezultat): ${dead.slice(-5).map((m) => m.date).join(', ')}`);
+  }
+  let worst = null;
+  for (let i = 1; i < ms.length; i++) {
+    const a = ms[i - 1], b = ms[i];
+    if (a.leads > 0 && b.leads > 0 && a.spend > 0 && b.spend > 0) {
+      const ca = a.spend / a.leads, cb = b.spend / b.leads;
+      if (ca > 0) { const jump = (cb - ca) / ca; if (!worst || jump > worst.jump) worst = { jump, from: a.date, to: b.date, ca, cb }; }
+    }
+  }
+  if (worst && worst.jump >= 0.5) out.push(`CPL a crescut brusc ${Math.round(worst.jump * 100)}% (${r2a(worst.ca)}€ → ${r2a(worst.cb)}€) între ${worst.from} și ${worst.to}.`);
+  return out;
+}
+exports.metricAnomalies = metricAnomalies;
+
 function buildInsightPrompt(lead, camp, metrics, prevInsight) {
   const pib = prevInsightBlock(prevInsight);
+  const anomalies = metricAnomalies(metrics);
   const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
   for (const m of metrics) {
     t.spend += Number(m.spend) || 0;
@@ -1733,6 +1762,7 @@ function buildInsightPrompt(lead, camp, metrics, prevInsight) {
     '',
     '== EVOLUȚIE ZILNICĂ (recent) ==',
     recent || '(fără zile introduse)',
+    ...(anomalies.length ? ['', '== ANOMALII DETECTATE (precalculate — tratează-le prioritar) ==', ...anomalies.map((a) => `- ${a}`)] : []),
     ...(pib ? ['', pib] : []),
     '',
     'Sarcină: pe baza cifrelor, alege un verdict (scale/maintain/pause/test) și explică-l în `reasoning`',
@@ -1936,17 +1966,25 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry, calibrated }),
     prompt: buildInsightPrompt(lead, camp, metrics, prevInsight),
   });
+  // Pachet C: încrederea finală e PLAFONATĂ de eșantion (clicuri/lead-uri totale) — un verdict pe 8 click-uri NU mai
+  // are autoritate de high. 'low' → UI marchează + automatizarea NU se declanșează (vezi onCampaignAutomation).
+  const totalClicks = Number(totals.clicks) || 0, totalLeads = Number(totals.leads) || 0;
+  // Port JS al insightConfidence (src/analytics/kpi.ts; paritate: praguri 50 click-uri / 15 lead-uri).
+  const confidence = (totalClicks < 50 || totalLeads < 15)
+    ? 'low'
+    : (['low', 'med', 'high'].includes(out.confidence) ? out.confidence : 'med');
   const insight = {
     verdict: ['scale', 'maintain', 'pause', 'test'].includes(out.verdict) ? out.verdict : 'maintain',
     headline: clampText(out.headline, 4000),
     reasoning: clampText(out.reasoning, 4000),
     actions: clampInsightActions(out), // felia 5b: array tipat {changeType,target,magnitude}, NU string
+    confidence,
   };
   // Analiza AI = judecată INTERNĂ a operatorului (verdict/reasoning + UID-ul lui). NU se scrie pe campaigns/{id}
   // (citibilă de client) — ci pe campaignInsights/{id} (admin-only), ca să nu se scurgă către client. Denormalizăm
   // leadId/clientUid/platform pentru triggerul de automatizare + listenerele admin (fără citire suplimentară a campaniei).
   await db.collection('campaignInsights').doc(campaignId).set({
-    schema: 2, verdict: insight.verdict, headline: insight.headline, reasoning: insight.reasoning, actions: insight.actions,
+    schema: 2, verdict: insight.verdict, headline: insight.headline, reasoning: insight.reasoning, actions: insight.actions, confidence,
     leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
     at: admin.firestore.FieldValue.serverTimestamp(), by: actorUid,
   }, { merge: true });
@@ -4988,6 +5026,8 @@ if (AUTOMATION_ENABLED) {
       const bv = (before && before.verdict) || '';
       const av = after.verdict || '';
       if (!av || av === bv) return; // doar la SCHIMBARE de verdict
+      // Pachet C: nu declanșa automatizări pe un verdict cu încredere joasă (eșantion subțire) — ar fi zgomot acționabil.
+      if (after.confidence === 'low') return;
       const ctx = { 'campaign.aiInsight.verdict': av, 'campaign.platform': after.platform || '' };
       const event = { trigger: 'campaign.insight', targetId: ev.params.campaignId, clientUid: after.clientUid || '', ctx, stateHash: av };
       await dispatchAutomationEvent(admin.firestore(), event, { nowMs: Date.now() });
