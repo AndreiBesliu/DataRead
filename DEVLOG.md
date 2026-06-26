@@ -2554,6 +2554,26 @@ normaliser, secretele niciodată în chat/repo.
 > valoarea reală de conversie în `revenue`; atribuirea spend→lead→revenue ESTE legată (campania poartă leadId+clientUid, metricile=subcolecție);
 > doar contact↔campanie e nelegat. Restul pachetelor: A (bucla de învățare), B (calibrare benchmark), C (profunzime AI) — următoarele.
 
+**2026-06-26 - Task Completed — Audit analytics/AI · Pachet A: BUCLA DE ÎNVĂȚARE (snapshot → reconciliere → acuratețe)**
+> Model: Claude Opus 4.8 (1M context). Cea mai consecventă lipsă din audit: softul NU învăța (doar grounding live, write-once).
+> Acum: prima buclă de feedback închisă — predicțiile se compară cu rezultatul real și acuratețea devine MĂSURABILĂ.
+> - **A1 — snapshot imutabil:** `performPrediction` scrie acum și un doc append-only în `predictionLog` (kind/subjectId/clientUid/
+>   temperature/conversionLikelihood/confidence/predictedAtMs/reconciled:false); `performCampaignInsight` în `campaignInsightLog`
+>   (verdict + `totalsAt` = totalurile campaniei la momentul analizei, pt. delta ROAS viitoare). Best-effort (nu rup generarea).
+>   Docul „live" (leadPredictions/{id}, campaignInsights/{id}) rămâne overwrite; istoricul e separat, imutabil.
+> - **A2 — motor pur + job de reconciliere:** `src/analytics/predictionAccuracy.ts` (PUR, testat headless `test-prediction-accuracy.ts`):
+>   leadOutcome/contactOutcome (won/lost/open), isPositivePrediction, accuracyByTemperature/Likelihood (curbă de calibrare),
+>   directionalAccuracy, isCalibrated (hot convertește > cold?). Job nou `reconcilePredictions` (onSchedule 05:30, UNGATED, fără AI):
+>   pt. snapshot-urile ≥14 zile citește statusul real (lead won/lost; contact lifecycle) și stampează `outcome`; cele „open" >60 zile
+>   = timed-out. eq pe un câmp (reconciled==false) → fără index compus.
+> - **A3 — dashboard:** card „Acuratețea predicțiilor" în HealthPanel — citește `predictionLog` reconciliat (≤500) și rulează modulul
+>   pur: acuratețe direcțională %, nr. predicții decise, badge calibrat/necalibrat, tabel rată reală de conversie pe temperatură.
+> - Reguli: `predictionLog` + `campaignInsightLog` read admin / write false (Admin SDK only). i18n `admin.health.acc*` (ro+en).
+> Verificat: typecheck + 23/23 suites (test-prediction-accuracy nou) + build + boot + e2e-lp. DEPLOYED: hosting + rules + functions
+> (incl. `reconcilePredictions`). NOTĂ: jobul scheduled nu e testabil headless (fără emulator) — logica de scorare e însă acoperită
+> de modulul pur testat. Datele de acuratețe apar după ce predicțiile au ≥14 zile și lead-urile se decid. Insight-accuracy (delta
+> ROAS din campaignInsightLog) = sub-felie viitoare; snapshot-ul se acumulează de pe acum. Următor: B (calibrare benchmark), C (profunzime AI).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

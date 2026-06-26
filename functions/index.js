@@ -1919,6 +1919,17 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
     at: admin.firestore.FieldValue.serverTimestamp(), by: actorUid,
   }, { merge: true });
+  // BUCLA DE ÎNVĂȚARE (Pachet A): snapshot IMUTABIL al verdictului + totalurile campaniei LA MOMENTUL analizei
+  // (documentul de mai sus se suprascrie). Sursă pentru a măsura ulterior dacă „scale/pause" a mers (delta ROAS).
+  try {
+    const tt = camp.totals || {};
+    await db.collection('campaignInsightLog').add({
+      campaignId, leadId: String(camp.leadId || ''), clientUid: String(camp.clientUid || ''), platform: String(camp.platform || ''),
+      verdict: insight.verdict, predictedAtMs: Date.now(), reconciled: false,
+      totalsAt: { spend: Number(tt.spend) || 0, revenue: Number(tt.revenue) || 0, leads: Number(tt.leads) || 0, clicks: Number(tt.clicks) || 0, impressions: Number(tt.impressions) || 0 },
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) { logger.warn('campaignInsightLog snapshot failed', { campaignId, err: String(e) }); }
   logger.info('campaign analyzed', { campaignId, verdict: insight.verdict, by: actorUid, usage });
   return { insight };
 }
@@ -2104,6 +2115,17 @@ async function performPrediction(db, opts) {
     ...prediction, kind, clientUid,
     at: admin.firestore.FieldValue.serverTimestamp(), by: opts.actorUid || '',
   }, { merge: true });
+  // BUCLA DE ÎNVĂȚARE (Pachet A): snapshot IMUTABIL al predicției (append-only) — documentul de mai sus se
+  // SUPRASCRIE la fiecare regenerare; aici păstrăm istoricul ca să-l putem reconcilia mai târziu cu rezultatul
+  // real (lead won/lost, contact câștigat/pierdut) și să măsurăm acuratețea. Best-effort: nu rupe generarea.
+  try {
+    await db.collection('predictionLog').add({
+      kind, subjectId, clientUid: clientUid || '',
+      temperature: prediction.temperature, conversionLikelihood: prediction.conversionLikelihood, confidence: prediction.confidence,
+      predictedAtMs: Date.now(), reconciled: false,
+      at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) { logger.warn('predictionLog snapshot failed', { subjectId, err: String(e) }); }
   logger.info('prediction generated', { kind, subjectId, by: opts.actorUid, usage });
   return { prediction };
 }
@@ -4985,6 +5007,52 @@ if (AUTOMATION_ENABLED) {
       } catch (e) { console.error('automationDailyScan failed:', e); }
     });
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// BUCLA DE ÎNVĂȚARE (Pachet A, audit analytics/AI): reconciliere zilnică a predicțiilor cu REZULTATUL real.
+// Predicțiile sunt snapshot-uite imutabil în `predictionLog` (reconciled:false). Aici, pentru cele suficient de
+// vechi (≥ HORIZON), citim statusul real al subiectului (lead won/lost; contact lifecycle) și stampăm `outcome` →
+// astfel acuratețea devine MĂSURABILĂ (dashboard în HealthPanel, prin src/analytics/predictionAccuracy.ts — modul pur testat).
+// Cele rămase „open" prea mult (≥ MAX) sunt închise ca timed-out, ca scanul să nu le revadă la infinit. Zero AI, zero cost de model.
+// Ungated (nu e AI): rulează mereu; dacă nu există predicții, nu face nimic. Echivalent JS al leadOutcome/contactOutcome din modulul pur.
+{
+  const { onSchedule } = require('firebase-functions/v2/scheduler');
+  exports.reconcilePredictions = onSchedule({ schedule: '30 5 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    try {
+      const db = admin.firestore();
+      const now = Date.now();
+      const HORIZON = 14 * 86400000, MAXH = 60 * 86400000;
+      const leadOutcome = (s) => (s === 'won' ? 'won' : s === 'lost' ? 'lost' : 'open');
+      const contactOutcome = (l) => ((l === 'castigat' || l === 'client' || l === 'won') ? 'won' : (l === 'pierdut' || l === 'lost') ? 'lost' : 'open');
+      // eq pe un singur câmp (reconciled==false) → fără index compus; filtrăm vârsta în cod.
+      const snap = await db.collection('predictionLog').where('reconciled', '==', false).limit(500).get();
+      let done = 0;
+      for (const d of snap.docs) {
+        const p = d.data() || {};
+        const age = now - (Number(p.predictedAtMs) || 0);
+        if (age < HORIZON) continue; // prea proaspăt pentru a judeca rezultatul
+        let outcome = 'open';
+        try {
+          if (p.kind === 'lead') {
+            const ls = await db.collection('leads').doc(String(p.subjectId)).get();
+            outcome = ls.exists ? leadOutcome((ls.data() || {}).status) : 'open';
+          } else if (p.kind === 'contact' && p.clientUid) {
+            const cs = await db.collection('clients').doc(String(p.clientUid)).collection('contacts').doc(String(p.subjectId)).get();
+            outcome = cs.exists ? contactOutcome((cs.data() || {}).lifecycle) : 'open';
+          }
+        } catch (e) { logger.warn('reconcile read failed', { id: d.id, err: String(e) }); continue; }
+        if (outcome !== 'open') {
+          await d.ref.set({ reconciled: true, outcome, reconciledAtMs: now }, { merge: true });
+          done++;
+        } else if (age >= MAXH) {
+          await d.ref.set({ reconciled: true, outcome: 'open', reconciledAtMs: now, timedOut: true }, { merge: true });
+          done++;
+        }
+      }
+      logger.info('reconcilePredictions done', { scanned: snap.size, reconciled: done });
+    } catch (e) { console.error('reconcilePredictions failed:', e); }
+  });
 }
 
 const CONNECTORS_ANY = META_ENABLED || GOOGLE_ENABLED || TIKTOK_ENABLED;

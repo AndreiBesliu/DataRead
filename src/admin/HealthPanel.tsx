@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import {
@@ -18,6 +18,8 @@ import {
   SELF_POOL_TRIAL_DOC,
   type SelfMarketingConfig,
 } from '../types/selfMarketingConfig';
+import { accuracyByTemperature, directionalAccuracy, isCalibrated, type ScoredPrediction, type RealizedOutcome } from '../analytics/predictionAccuracy';
+import { CONVERSION_LIKELIHOODS, TEMPERATURES, type ConversionLikelihood, type Temperature } from '../types/prediction';
 
 interface ErrRow { id: string; name?: string; message?: string; kind?: string; version?: string; at?: { toMillis?: () => number } }
 interface Counter { day: string; count: number }
@@ -30,6 +32,7 @@ export default function HealthPanel() {
   const [trial, setTrial] = useState<Counter | null>(null);
   const [entitled, setEntitled] = useState<Counter | null>(null);
   const [autoGlobal, setAutoGlobal] = useState<Counter | null>(null);
+  const [scored, setScored] = useState<ScoredPrediction[]>([]); // predicții reconciliate (bucla de învățare)
   const [cfg, setCfg] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [form, setForm] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [saveState, setSaveState] = useState<'idle' | 'busy' | 'saved' | 'err'>('idle');
@@ -51,7 +54,17 @@ export default function HealthPanel() {
       setCfg(c); // contoarele afișează plafonul curent (sursa de adevăr), indiferent de editări
       if (!dirty.current) setForm(c); // sincronizăm formularul DOAR dacă admin nu are editări nesalvate
     }, () => { setCfg(SELF_MKT_CONFIG_DEFAULT); });
-    return () => { o1(); o2(); o3(); o4(); o5(); };
+    // Bucla de învățare: predicțiile reconciliate (reconcilePredictions a stampat outcome) → acuratețe măsurată live
+    // prin modulul pur testat predictionAccuracy.ts. Eq pe un câmp → fără index compus.
+    const inEnum = <T extends string,>(list: readonly T[], v: unknown, fb: T): T => (list.includes(v as T) ? (v as T) : fb);
+    const o6 = onSnapshot(query(collection(db, 'predictionLog'), where('reconciled', '==', true), limit(500)), (s) => {
+      setScored(s.docs.map((dd) => { const x = dd.data() as Record<string, unknown>; return {
+        temperature: inEnum<Temperature>(TEMPERATURES, x.temperature, 'cold'),
+        conversionLikelihood: inEnum<ConversionLikelihood>(CONVERSION_LIKELIHOODS, x.conversionLikelihood, 'low'),
+        outcome: (x.outcome === 'won' || x.outcome === 'lost' ? x.outcome : 'open') as RealizedOutcome,
+      }; }));
+    }, () => setScored([]));
+    return () => { o1(); o2(); o3(); o4(); o5(); o6(); };
   }, []);
 
   // Editare formular: marchează „murdar" (snapshot-urile nu mai suprascriu) + resetează un mesaj de salvare vechi.
@@ -165,6 +178,54 @@ export default function HealthPanel() {
           <div style={{ fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.health.last50')}</div>
         </div>
       </div>
+
+      {/* ── Bucla de învățare: acuratețea predicțiilor vs rezultatul real (reconciliat zilnic) ── */}
+      {(() => {
+        const decided = scored.filter((s) => s.outcome !== 'open').length;
+        const byTemp = accuracyByTemperature(scored);
+        const dir = directionalAccuracy(scored);
+        const calibrated = isCalibrated(byTemp);
+        const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
+        return (
+          <div style={{ ...card, marginBottom: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{t('admin.health.accTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 12px', maxWidth: 680 }}>{t('admin.health.accHint')}</p>
+            {decided === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--fg-1)' }}>{t('admin.health.accEmpty')}</p>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div><div style={{ fontSize: 11, color: 'var(--fg-1)', fontWeight: 700 }}>{t('admin.health.accDirectional')}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{pct(dir.rate)}</div></div>
+                  <div><div style={{ fontSize: 11, color: 'var(--fg-1)', fontWeight: 700 }}>{t('admin.health.accSample')}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{decided}</div></div>
+                  <div style={{ alignSelf: 'center' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '3px 12px', background: calibrated ? 'var(--success-soft)' : 'var(--warn-soft)', color: calibrated ? 'var(--success)' : 'var(--warn)' }}>
+                      {calibrated ? t('admin.health.accCalibrated') : t('admin.health.accNotCalibrated')}
+                    </span>
+                  </div>
+                </div>
+                <table style={{ width: '100%', maxWidth: 460, borderCollapse: 'collapse' }}>
+                  <thead><tr style={{ background: 'var(--bg-0)' }}>
+                    <th style={td}>{t('admin.health.accColTemp')}</th>
+                    <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.accColDecided')}</th>
+                    <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.accColWon')}</th>
+                    <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.accColRate')}</th>
+                  </tr></thead>
+                  <tbody>
+                    {byTemp.map((b) => (
+                      <tr key={b.bucket}>
+                        <td style={td}>{t('admin.predTemp_' + b.bucket)}</td>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{b.decided}</td>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{b.won}</td>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--fg-1)' }}>{pct(b.convRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>{t('admin.health.errors')}</h3>
       {errs.length === 0 ? (

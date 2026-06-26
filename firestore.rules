@@ -418,6 +418,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Bucla de învățare (Pachet A): snapshot-uri IMUTABILE ale predicțiilor + verdictelor de insight, reconciliate
+    // ulterior cu rezultatul real (reconcilePredictions). Conțin `by`/clientUid → STRICT admin read; scrise EXCLUSIV
+    // de functions (Admin SDK). Dashboard-ul de acuratețe (HealthPanel) citește predictionLog (admin).
+    match /predictionLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /campaignInsightLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Coada de email (extensia Trigger Email / firestore-send-email) — scrisă EXCLUSIV de functions (Admin SDK) +
     // procesată de extensie (Admin SDK). Clientul NU atinge niciodată (conține adrese + conținut). Vezi sendLeadEmail.
     match /mail/{id} {
