@@ -120,7 +120,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   (`Button`/`LinkButton` — variante primary/secondary/blue/ghost/danger + mărimi sm/md, `type="button"` implicit) + `src/ui/Field.tsx`
   (etichetă vizibilă + error/hint i18n), peste clasele `.btn`. Folosește-le în loc de butoane/câmpuri cu stil inline. Adoptate în
   Packages (ierarhie CTA: recomandat=primary, rest=blue) + Contact (CTA primar→/start) + AuthPanel; sweep în restul fișierelor = incremental.
-  Rămas din audit: pagini `/servicii/:id`.
+- **Pagini detaliu per-serviciu `/servicii/:id` (ACTIV 26.06.2026):** `src/site/ServiceDetail.tsx` (problemă + ce livrăm + FAQ + CTA contextual);
+  7 rute concrete `/servicii/<id>` generate din `SERVICE_IDS` în `publicRoutes` (prerenderizate, SEO per serviciu din `services.<id>.metaTitle/metaDesc`);
+  `App.tsx:publicElement` randează ServiceDetail din slug. Conținut RO+EN grounded în bullet-uri (fără fabricare). **Auditul UI e acoperit integral**
+  (rămas doar sweep-ul incremental al primitivelor Button/Field în restul fișierelor).
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech
   (Midnight/Carbon/Matrix/Ocean/Light) — `src/theme/themes.ts` (seturi de variabile CSS + grid
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`
