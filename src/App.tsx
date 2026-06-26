@@ -14,8 +14,10 @@ import StartPage from './site/StartPage';
 import SelfMarketing from './site/SelfMarketing';
 import SelfMarketingPackages from './site/SelfMarketingPackages';
 import Services from './site/Services';
+import ServiceDetail from './site/ServiceDetail';
 import Contact from './site/Contact';
 import Legal from './site/Legal';
+import { isValidServiceId } from './config/services';
 // Rutele auth-gated (NU sunt prerenderizate) = lazy → ies din bundle-ul principal, se încarcă la cerere.
 const AppHome = lazy(() => import('./app/AppHome'));
 const OnboardingForm = lazy(() => import('./app/OnboardingForm'));
@@ -60,7 +62,10 @@ const PAGE_FOR_SLUG: Record<string, ReactElement> = {
 };
 
 function publicElement(route: PublicRoute): ReactElement {
-  return <SiteLayout route={route}>{PAGE_FOR_SLUG[route.slug]}</SiteLayout>;
+  // Paginile de detaliu /servicii/<id> nu au intrare statică în PAGE_FOR_SLUG → randăm ServiceDetail din slug.
+  const m = /^\/servicii\/(.+)$/.exec(route.slug);
+  const page = m && isValidServiceId(m[1]) ? <ServiceDetail id={m[1]} /> : PAGE_FOR_SLUG[route.slug];
+  return <SiteLayout route={route}>{page}</SiteLayout>;
 }
 
 function RouteFallback() {

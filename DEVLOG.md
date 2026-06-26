@@ -2520,6 +2520,20 @@ normaliser, secretele niciodată în chat/repo.
 > ierarhie). DEPLOYED: hosting + rules. i18n `contact.ctaStart`. **Restul auditului UI: sweep complet al primitivelor în cele ~59
 > fișiere = follow-up incremental (primitivele există + sunt adoptate în paginile de conversie + AuthPanel).**
 
+**2026-06-26 - Task Completed — Pagini detaliu per-serviciu /servicii/:id (ultimul item din auditul UI)**
+> Model: Claude Opus 4.8 (1M context). Conținut + rutare + SEO prerender.
+> - **`src/site/ServiceDetail.tsx`** (NOU): hero (emoji+nume+tagline+intro) + „Provocarea" + „Ce livrăm" (bullet-urile existente) +
+>   FAQ (3 Q&A) + CTA contextual (self→/self-marketing, lead→/start?service=id) + breadcrumb. Folosește primitiva LinkButton. Text 100% i18n.
+> - **Rutare + SEO:** `publicRoutes.ts` generează 7 rute `/servicii/<id>` din `SERVICE_IDS` (titleKey/descKey = `services.<id>.metaTitle/metaDesc`);
+>   `App.tsx:publicElement` randează `ServiceDetail` din slug (regex `/servicii/(.+)` + `isValidServiceId`); import STATIC (pagini publice
+>   prerenderizate). Prerender confirmat: **32 pagini** (incl. 7 servicii × ro/en), sitemap 28 URL-uri. SEO per serviciu din SiteLayout.
+> - **Catalog → detaliu:** fiecare card din `/servicii` capătă link „Detalii →" către pagina de detaliu (pe lângă CTA).
+> - **Conținut RO+EN** generat printr-un Workflow paralel (7 agenți, 1/serviciu), GROUNDED strict în bullet-urile existente
+>   (fără metrici/termene/garanții inventate — regula „nu inventăm funcționalități"). Corectat manual: diacritice RO lipsă la saas/web/seo,
+>   typo „Încearci"→„Încearcă". Conținut: metaTitle/metaDesc/intro/problem/3×FAQ per serviciu × ro/en.
+> Verificat: typecheck + 22/22 + build:site (prerender 32 pagini, 0 erori) + boot + preview live (titlu+diacritice+secțiuni+FAQ corecte; 7 link-uri „Detalii").
+> DEPLOYED: hosting + rules. **Auditul UI e acum acoperit integral** (rămâne doar sweep-ul incremental al primitivelor în restul fișierelor).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

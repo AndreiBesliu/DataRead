@@ -72,14 +72,19 @@ export default function Services() {
                     <li key={k}>{t(k)}</li>
                   ))}
                 </ul>
-                <Link
-                  to={cta.to}
-                  className={s.cta === 'self' ? 'btn btn-primary' : 'btn btn-blue'}
-                  style={{ fontSize: 14, padding: '10px 18px', textAlign: 'center', alignSelf: 'flex-start' }}
-                  onClick={() => track('service_cta', { service: s.id, kind: s.cta })}
-                >
-                  {cta.label}
-                </Link>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Link
+                    to={cta.to}
+                    className={s.cta === 'self' ? 'btn btn-primary' : 'btn btn-blue'}
+                    style={{ fontSize: 14, padding: '10px 18px', textAlign: 'center' }}
+                    onClick={() => track('service_cta', { service: s.id, kind: s.cta })}
+                  >
+                    {cta.label}
+                  </Link>
+                  <Link to={p(`/servicii/${s.id}`)} style={{ fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 }}>
+                    {t('services.detail.more')} →
+                  </Link>
+                </div>
               </div>
             );
           })}
