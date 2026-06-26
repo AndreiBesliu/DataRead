@@ -259,6 +259,46 @@ export function coerceToReport(v: unknown): ClientReport | null {
   return r.summary || r.highlights || r.recommendations ? r : null;
 }
 
+// Pachet C2: realocare buget cross-campanie (aiBudgetAllocation). Acțiunile = enum stabil — PARITATE cu
+// ALLOCATION_SCHEMA.properties.moves.items.properties.action.enum din functions/index.js. UI-ul operatorului
+// citește budgetAllocations/{leadId} prin coerceToAllocation (defensiv: doc corupt → null/mișcare ignorată).
+export const ALLOCATION_ACTIONS = ['scale', 'reduce', 'pause', 'keep'] as const;
+export type AllocationAction = (typeof ALLOCATION_ACTIONS)[number];
+
+export interface AllocationMove {
+  campaign: string;
+  action: AllocationAction;
+  reason: string;
+}
+
+export interface BudgetAllocation {
+  headline: string;
+  summary: string;
+  moves: AllocationMove[];
+}
+
+export function coerceToAllocation(v: unknown): BudgetAllocation | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  const moves: AllocationMove[] = Array.isArray(d.moves)
+    ? d.moves
+        .slice(0, 24)
+        .map((m) => {
+          const x = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>;
+          return {
+            campaign: typeof x.campaign === 'string' ? x.campaign.slice(0, 200) : '',
+            action: ALLOCATION_ACTIONS.includes(x.action as AllocationAction) ? (x.action as AllocationAction) : 'keep',
+            reason: typeof x.reason === 'string' ? x.reason.slice(0, 600) : '',
+          };
+        })
+        .filter((m) => m.campaign)
+    : [];
+  const headline = typeof d.headline === 'string' ? d.headline.slice(0, 500) : '';
+  const summary = typeof d.summary === 'string' ? d.summary.slice(0, 3000) : '';
+  // Doc gol/corupt → null (UI nu afișează card gol). Util dacă există măcar headline/summary sau o mișcare.
+  return headline || summary || moves.length ? { headline, summary, moves } : null;
+}
+
 export function coerceToTotals(v: unknown): Totals {
   const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
   // numCap (nu num): un rollup `totals` corupt e citit DIRECT de dashboard, defalcarea pe platformă și prompturile AI —

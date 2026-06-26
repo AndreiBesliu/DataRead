@@ -756,6 +756,23 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
   ok(rep.includes('TREND'), 'buildClientReportPrompt: trend MoM inclus');
   ok(!fns.buildClientReportPrompt({ companyName: 'Y' }, [{ name: 'C', totals: { spend: 100 } }]).includes('TREND (lună'), 'buildClientReportPrompt: fără mom → fără trend (compat)');
 
+  // Pachet C2: realocare buget cross-campanie — schema + prompt.
+  const allocSchema = fns.ALLOCATION_SCHEMA;
+  ok(allocSchema && allocSchema.additionalProperties === false, 'ALLOCATION_SCHEMA: additionalProperties:false');
+  const allocActions = allocSchema.properties.moves.items.properties.action.enum;
+  ok(JSON.stringify(allocActions) === JSON.stringify(['scale', 'reduce', 'pause', 'keep']), 'ALLOCATION_SCHEMA.action enum = scale/reduce/pause/keep (paritate coerceToAllocation TS)');
+  ok(JSON.stringify(allocSchema.properties.moves.items.required) === JSON.stringify(['campaign', 'action', 'reason']), 'ALLOCATION_SCHEMA.moves.required = campaign/action/reason');
+  const allocCamps = [
+    { name: 'Camp Bun', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 500, leads: 20 } },
+    { name: 'Camp Slab', platform: 'google', status: 'active', totals: { spend: 200, revenue: 50, leads: 1 } },
+    { name: 'Camp Zero', platform: 'tiktok', status: 'paused', totals: { spend: 0, revenue: 0, leads: 0 } },
+  ];
+  const allocP = fns.buildAllocationPrompt({ companyName: 'Y', industry: 'retail', objectives: ['leads'] }, allocCamps);
+  ok(allocP.includes('Camp Bun') && allocP.includes('Camp Slab'), 'buildAllocationPrompt: campaniile cu cheltuială sunt în prompt');
+  ok(!allocP.includes('Camp Zero'), 'buildAllocationPrompt: campania fără cheltuială e exclusă (filtru spend>0)');
+  ok(allocP.includes('TOTAL PORTOFOLIU') && allocP.includes('ROAS general'), 'buildAllocationPrompt: bloc total portofoliu cu ROAS general');
+  ok(allocP.includes('aproximativ neutră ca buget total'), 'buildAllocationPrompt: constrângerea zero-sum (nu „crește tot")');
+
   const prof = { companyName: 'Z', industry: 'retail', productsServices: 'X', audience: 'Y', goals: 'G' };
   const liveC = [{ name: 'C1', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 300, leads: 5 } }];
   ok(fns.buildStrategyPrompt(prof, liveC).includes('DATE REALE DIN CAMPANIILE TALE'), 'buildStrategyPrompt: date live incluse');

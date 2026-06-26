@@ -437,6 +437,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Realocare buget cross-campanie (Pachet C2): analiza AI de portofoliu (ce campanie scalezi/tai/oprești).
+    // Decizie INTERNĂ de agenție (conține `by` operator) → STRICT admin read; scrisă EXCLUSIV de
+    // aiBudgetAllocation (Admin SDK). Cheia doc = leadId.
+    match /budgetAllocations/{leadId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Coada de email (extensia Trigger Email / firestore-send-email) — scrisă EXCLUSIV de functions (Admin SDK) +
     // procesată de extensie (Admin SDK). Clientul NU atinge niciodată (conține adrese + conținut). Vezi sendLeadEmail.
     match /mail/{id} {

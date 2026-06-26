@@ -1936,6 +1936,72 @@ function buildClientReportPrompt(lead, camps, mom) {
 }
 exports.buildClientReportPrompt = buildClientReportPrompt;
 
+// ── Pachet C2: realocare buget cross-campanie (aiBudgetAllocation) ──
+// Analiză de PORTOFOLIU: clasează campaniile lead-ului după eficiență pentru obiectivul firmei și
+// recomandă mutări concrete de buget (scale/reduce/pause/keep). Diferă de aiAnalyzeCampaign (o singură
+// campanie izolată) — aici comparația e ÎNTRE campanii (de unde muți banii spre unde). Acțiuni = enum
+// stabil (paritate cu coerceToAllocation din src/analytics/kpi.ts). Persist în budgetAllocations/{leadId}.
+const ALLOCATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    headline: { type: 'string', description: 'O propoziție în română: mutarea principală de buget (verdictul de portofoliu).' },
+    summary: { type: 'string', description: '2-4 fraze în română: cum stă portofoliul și logica realocării, pe baza cifrelor (ROAS/CPL/lead-uri). Fără jargon inutil.' },
+    moves: {
+      type: 'array',
+      description: 'Câte o mișcare pentru fiecare campanie relevantă, ordonate de la cea cu impactul cel mai mare. Folosește numele EXACT al campaniei din listă.',
+      items: {
+        type: 'object',
+        properties: {
+          campaign: { type: 'string', description: 'Numele EXACT al campaniei vizate (din lista dată).' },
+          action: { type: 'string', enum: ['scale', 'reduce', 'pause', 'keep'], description: 'scale (mută buget SPRE ea), reduce (taie din buget), pause (oprește, eliberează buget), keep (menține neschimbat).' },
+          reason: { type: 'string', description: '1-2 fraze în română cu justificarea pe cifre (de ce această mișcare față de celelalte campanii).' },
+        },
+        required: ['campaign', 'action', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['headline', 'summary', 'moves'],
+  additionalProperties: false,
+};
+exports.ALLOCATION_SCHEMA = ALLOCATION_SCHEMA; // pt. aserțiuni de formă în e2e (TEST ALLOC)
+
+function buildAllocationPrompt(lead, camps) {
+  const cs = (Array.isArray(camps) ? camps : []).filter((c) => c && c.totals && Number(c.totals.spend) > 0);
+  const o = { spend: 0, revenue: 0, leads: 0 };
+  for (const c of cs) {
+    const t = c.totals || {};
+    o.spend += Number(t.spend) || 0;
+    o.revenue += Number(t.revenue) || 0;
+    o.leads += Number(t.leads) || 0;
+  }
+  const div = (a, b) => (b > 0 ? a / b : null);
+  return [
+    'Ești strategul de media al agenției. Mai jos sunt TOATE campaniile active ale unui client, cu cifrele reale.',
+    'Sarcina ta: decide UNDE să muți bugetul ÎNTRE campanii ca să maximizezi rezultatul pentru OBIECTIVUL firmei.',
+    'Aceasta NU e analiza unei singure campanii — e o decizie de PORTOFOLIU: ce campanie merită mai mulți bani,',
+    'din ce campanie tai, ce oprești, ce lași neschimbat.',
+    '',
+    leadContextBlock(lead),
+    '',
+    '== CAMPANIILE ACTIVE (cu cheltuială) ==',
+    cs.map(campKpiLine).join('\n') || '(fără campanii cu cheltuială)',
+    '',
+    '== TOTAL PORTOFOLIU ==',
+    `Cheltuit: ${r2(o.spend)}€ · Venit: ${r2(o.revenue)}€ · ROAS general: ${r2(div(o.revenue, o.spend))} · Lead-uri: ${o.leads} · CPL mediu: ${r2(div(o.spend, o.leads))}€`,
+    '',
+    'Cerințe:',
+    '- Compară campaniile ÎNTRE ele (eficiență relativă), nu fiecare în izolare. Bugetul e limitat: ce dai uneia,',
+    '  iei din alta — realocarea trebuie să fie aproximativ neutră ca buget total (nu „crește tot").',
+    '- Pentru fiecare campanie dă o mișcare (scale/reduce/pause/keep), justificată pe cifrele ei vs. restul.',
+    '- Aliniază decizia la obiectivul declarat al firmei: dacă obiectivul e lead-uri, prioritizează CPL mic;',
+    '  dacă e venit/vânzări, prioritizează ROAS.',
+    '- headline = mutarea principală într-o propoziție; summary = logica de ansamblu; moves = ordonate după impact.',
+    '- Limba ROMÂNĂ, concret, fără promisiuni nerealiste. NU inventa cifre care nu sunt în date.',
+  ].join('\n');
+}
+exports.buildAllocationPrompt = buildAllocationPrompt;
+
 // ── Nuclee AI reutilizabile (anti-drift): folosite de callable-urile aiAnalyzeCampaign/aiClientReport ȘI de motorul
 //    de automatizare (acțiunile campaign.recommend / report.generate). `consume` = callback de cotă apelat DUPĂ
 //    validare, ÎNAINTE de model (callable → consumeAiQuota; automatizare → consumeAutomationAiQuota). ──
@@ -2241,6 +2307,58 @@ async function performClientReport(db, leadId, actorUid, consume) {
   logger.info('client report generated', { leadId, campaigns: camps.length, by: actorUid, usage });
   return { report };
 }
+
+// Pachet C2: realocare buget cross-campanie. Validează lead + ≥2 campanii cu cheltuială ÎNAINTE de a
+// consuma quota (consume = callback) — altfel un lead fără portofoliu ar epuiza quota fără a livra nimic.
+async function performBudgetAllocation(db, leadId, actorUid, consume) {
+  const leadSnap = await db.collection('leads').doc(leadId).get();
+  if (!leadSnap.exists) throw new HttpsError('not-found', 'Clientul nu există.');
+  const campsSnap = await db.collection('campaigns').where('leadId', '==', leadId).get();
+  const camps = campsSnap.docs.map((d) => d.data());
+  // Realocarea are sens DOAR cu ≥2 campanii cu cheltuială (altfel nu există „între ce" muți banii).
+  const withSpend = camps.filter((c) => c && c.totals && Number(c.totals.spend) > 0);
+  if (withSpend.length < 2) {
+    throw new HttpsError('failed-precondition', 'Ai nevoie de cel puțin 2 campanii cu cheltuială pentru o realocare de buget.');
+  }
+  if (consume) await consume();
+  const lead = leadSnap.data() || {};
+  const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
+  const { out, usage } = await runAiJson({
+    schema: ALLOCATION_SCHEMA,
+    maxTokens: 8000,
+    system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: lead.industry, calibrated }),
+    prompt: buildAllocationPrompt(lead, camps),
+  });
+  // Clamp + validare. Enum-ul se derivă din schemă (sursă unică) → fără drift între enum și clamp.
+  // Paritate cu coerceToAllocation din src/analytics/kpi.ts (aceleași valori).
+  const ACTIONS = ALLOCATION_SCHEMA.properties.moves.items.properties.action.enum;
+  const moves = (Array.isArray(out.moves) ? out.moves : [])
+    .slice(0, 24)
+    .map((m) => {
+      const x = m || {};
+      return {
+        campaign: String(x.campaign || '').slice(0, 200),
+        action: ACTIONS.includes(x.action) ? x.action : 'keep',
+        reason: String(x.reason || '').slice(0, 600),
+      };
+    })
+    .filter((m) => m.campaign);
+  const allocation = {
+    schema: 1,
+    headline: clampText(out.headline, 500),
+    summary: clampText(out.summary, 3000),
+    moves,
+  };
+  await db.collection('budgetAllocations').doc(leadId).set({
+    ...allocation,
+    campaignCount: withSpend.length,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+    by: actorUid,
+  });
+  logger.info('budget allocation generated', { leadId, moves: moves.length, by: actorUid, usage });
+  return { allocation };
+}
+exports.performBudgetAllocation = performBudgetAllocation;
 
 /** Plafon GLOBAL/zi pentru acțiunile AI declanșate de automatizări (configurabil din Admin — appConfig/automation).
  *  Backstop de cost: chiar și o regulă „nebună" e oprită la `cap` rulări AI/zi. Tranzacție pe aiUsage/__automationGlobal. */
@@ -2877,6 +2995,22 @@ if (AI_ENABLED) {
 
       logger.info('channels recommended', { leadId, count: channels.length, by: request.auth.uid, usage });
       return { channels };
+    }
+  );
+
+  // Pachet C2: realocare buget cross-campanie. Admin-only (decizie internă de portofoliu). Validează
+  // lead + ≥2 campanii cu cheltuială ÎNAINTE de a consuma quota (logica e în performBudgetAllocation).
+  // Scrie budgetAllocations/{leadId} (admin-only); UI-ul operatorului îl citește prin onSnapshot.
+  exports.aiBudgetAllocation = onCall(
+    { region: REGION, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: APP_CHECK_ENFORCED },
+    async (request) => {
+      assertAdmin(request, 'Doar operatorii pot genera realocări de buget.');
+      const { leadId } = request.data || {};
+      if (typeof leadId !== 'string' || !leadId) {
+        throw new HttpsError('invalid-argument', 'leadId este obligatoriu.');
+      }
+      const db = admin.firestore();
+      return performBudgetAllocation(db, leadId, request.auth.uid, () => consumeAiQuota(request.auth.uid));
     }
   );
 

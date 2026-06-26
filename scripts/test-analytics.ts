@@ -7,10 +7,12 @@ import {
   coerceToDailyMetric,
   coerceToInsight,
   coerceToReport,
+  coerceToAllocation,
   coerceToTotals,
   emptyTotals,
   kpisByPlatform,
   insightConfidence,
+  ALLOCATION_ACTIONS,
   type DailyMetric,
 } from '../src/analytics/kpi';
 
@@ -158,6 +160,30 @@ check('insightConfidence: model invalid + eșantion ok → med', insightConfiden
 check('insightConfidence: la prag exact (50/15) → ce zice modelul', insightConfidence(50, 15, 'high') === 'high');
 check('coerceToInsight: confidence vechi lipsă → med', coerceToInsight({ verdict: 'scale', headline: 'x' })?.confidence === 'med');
 check('coerceToInsight: confidence valid păstrat', coerceToInsight({ verdict: 'scale', confidence: 'low' })?.confidence === 'low');
+
+// Pachet C2: realocare buget — coerceToAllocation (paritate enum cu ALLOCATION_SCHEMA din functions).
+check('allocActions: enum = scale/reduce/pause/keep', JSON.stringify(ALLOCATION_ACTIONS) === JSON.stringify(['scale', 'reduce', 'pause', 'keep']));
+check('coerceToAllocation: null/gol → null', coerceToAllocation(null) === null && coerceToAllocation({}) === null);
+{
+  const a = coerceToAllocation({
+    headline: 'Mută buget spre Camp A',
+    summary: 'Camp A are ROAS 5, Camp B are 0.25.',
+    moves: [
+      { campaign: 'Camp A', action: 'scale', reason: 'ROAS cel mai bun' },
+      { campaign: 'Camp B', action: 'pause', reason: 'irosește buget' },
+      { campaign: '', action: 'keep', reason: 'fără nume → ignorată' },
+      { campaign: 'Camp C', action: 'banana', reason: 'enum invalid → keep' },
+    ],
+  });
+  check('coerceToAllocation: headline/summary păstrate', a?.headline === 'Mută buget spre Camp A' && !!a?.summary);
+  check('coerceToAllocation: mișcare fără nume ignorată (3 valide)', a?.moves.length === 3);
+  check('coerceToAllocation: acțiune validă păstrată', a?.moves[0].action === 'scale');
+  check('coerceToAllocation: enum invalid → keep (fallback)', a?.moves[2].action === 'keep');
+}
+{
+  const a = coerceToAllocation({ headline: 'Doar titlu', summary: '', moves: 'nu e array' as unknown });
+  check('coerceToAllocation: moves non-array → [] dar util prin headline', a !== null && a.moves.length === 0);
+}
 
 if (failures) {
   console.error(`${failures} checks failed`);

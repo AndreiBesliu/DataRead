@@ -32,12 +32,15 @@ import {
   coerceToDailyMetric,
   coerceToInsight,
   coerceToReport,
+  coerceToAllocation,
   emptyTotals,
   kpisByPlatform,
   kpisFromTotals,
   sumMetrics,
   type AiInsight,
   type ClientReport,
+  type BudgetAllocation,
+  type AllocationAction,
   type CampaignDef,
   type CampaignStatus,
   type DailyMetric,
@@ -49,6 +52,10 @@ import {
 
 const VERDICT_KEY: Record<Verdict, string> = { scale: 'admin.verdictScale', maintain: 'admin.verdictMaintain', pause: 'admin.verdictPause', test: 'admin.verdictTest' };
 const VERDICT_COLOR: Record<Verdict, string> = { scale: '#1e7e34', maintain: '#2563eb', pause: '#c0392b', test: '#b07b1e' };
+
+// Pachet C2: realocare buget — etichete + culori pe acțiune (scale=verde, reduce=chihlimbar, pause=roșu, keep=gri).
+const ALLOC_KEY: Record<AllocationAction, string> = { scale: 'admin.allocScale', reduce: 'admin.allocReduce', pause: 'admin.allocPause', keep: 'admin.allocKeep' };
+const ALLOC_COLOR: Record<AllocationAction, string> = { scale: '#1e7e34', reduce: '#b07b1e', pause: '#c0392b', keep: 'var(--fg-1)' };
 // Felia 5b: acțiunile tipate randate ca chips. changeType colorat (oglindă VERDICT_COLOR); target/magnitude = chips neutre.
 const CHANGE_KEY: Record<InsightChangeType, string> = { scale: 'admin.insChange_scale', reduce: 'admin.insChange_reduce', pause: 'admin.insChange_pause', keep: 'admin.insChange_keep', test: 'admin.insChange_test' };
 const CHANGE_COLOR: Record<InsightChangeType, string> = { scale: '#1e7e34', reduce: '#b07b1e', pause: '#c0392b', keep: '#2563eb', test: '#7c3aed' };
@@ -466,6 +473,11 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Pachet C2: realocare buget cross-campanie (analiză de portofoliu).
+  const [alloc, setAlloc] = useState<BudgetAllocation | null>(null);
+  const [allocAt, setAllocAt] = useState<unknown>(null);
+  const [allocBusy, setAllocBusy] = useState(false);
+  const [allocErr, setAllocErr] = useState<string | null>(null);
 
   const loadReport = async () => {
     try {
@@ -478,8 +490,20 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
     }
   };
 
+  const loadAllocation = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'budgetAllocations', leadId));
+      const d = snap.exists() ? snap.data() : {};
+      setAlloc(coerceToAllocation(d));
+      setAllocAt(d.at ?? null);
+    } catch {
+      /* read best-effort */
+    }
+  };
+
   useEffect(() => {
     void loadReport();
+    void loadAllocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId]);
 
@@ -499,6 +523,25 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const generateAllocation = async () => {
+    setAllocBusy(true);
+    setAllocErr(null);
+    try {
+      const fn = httpsCallable<{ leadId: string }, { allocation?: BudgetAllocation }>(functions, 'aiBudgetAllocation');
+      await fn({ leadId });
+      await loadAllocation();
+    } catch (e) {
+      const code = String((e as { code?: string }).code ?? '');
+      setAllocErr(
+        code.endsWith('failed-precondition') ? 'admin.allocNeedTwo'
+          : code.endsWith('not-found') || code.endsWith('internal') ? 'admin.reportNotReady'
+          : 'admin.reportError'
+      );
+    } finally {
+      setAllocBusy(false);
     }
   };
 
@@ -523,6 +566,8 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
   };
 
   const kpis = kpisFromTotals(addTotals(campaigns.map((c) => c.data.totals)));
+  // Realocarea cere ≥2 campanii cu cheltuială (gardă oglindă pe server în performBudgetAllocation).
+  const spendCampaigns = campaigns.filter((c) => (Number(c.data.totals?.spend) || 0) > 0).length;
   const section = (label: string, body: string) =>
     body.trim() ? (
       <div style={{ marginBottom: 10 }}>
@@ -574,6 +619,54 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
           </button>
         </div>
       )}
+
+      {/* Pachet C2: realocare buget AI — analiză de portofoliu (unde muți banii între campanii). */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            className="btn"
+            style={{ padding: '7px 16px', fontSize: 13 }}
+            disabled={allocBusy || spendCampaigns < 2}
+            onClick={() => void generateAllocation()}
+          >
+            {allocBusy ? t('admin.allocBusy') : t('admin.allocGenerate')}
+          </button>
+          {spendCampaigns < 2 ? (
+            <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>{t('admin.allocNeedTwo')}</span>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--fg-1)' }}>{t('admin.allocHint')}</span>
+          )}
+          {allocErr && <span role="alert" style={{ fontSize: 12, color: '#c0392b' }}>{t(allocErr)}</span>}
+        </div>
+        {alloc && (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', background: 'var(--bg-1)', marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <strong style={{ fontSize: 14 }}>{t('admin.allocTitle')}</strong>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-1)' }}>{t('admin.reportAt')} {fmtTs(allocAt)}</span>
+            </div>
+            {alloc.headline && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{alloc.headline}</div>}
+            {alloc.summary && <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', marginBottom: 10 }}>{alloc.summary}</div>}
+            <div style={{ display: 'grid', gap: 8 }}>
+              {alloc.moves.map((m, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span
+                    style={{
+                      flex: '0 0 auto', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4,
+                      color: '#fff', background: ALLOC_COLOR[m.action], borderRadius: 'var(--radius-pill, 999px)', padding: '2px 9px', marginTop: 1,
+                    }}
+                  >
+                    {t(ALLOC_KEY[m.action])}
+                  </span>
+                  <span style={{ fontSize: 13 }}>
+                    <strong>{m.campaign}</strong>
+                    {m.reason ? <> — {m.reason}</> : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

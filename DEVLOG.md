@@ -2610,6 +2610,26 @@ normaliser, secretele niciodată în chat/repo.
 > Rămase (felii viitoare, low-urgență): C2 aiBudgetAllocation; B2 bază per-client; D#5 totals server-side; axă monetară
 > (value ContactEvent + invoice↔contact) + contact↔campanie FK pentru LTV/CAC; insight-accuracy (delta ROAS din campaignInsightLog).
 
+**2026-06-26 - Task Completed — Audit analytics/AI · C2: aiBudgetAllocation (realocare buget cross-campanie)**
+> Model: Claude Opus 4.8 (1M context). Cel mai valoros pas AI amânat din audit: AI-ul nu mai analizează doar O campanie
+> izolată (aiAnalyzeCampaign), ci PORTOFOLIUL — compară campaniile între ele și spune unde să muți banii.
+> - **Backend (`functions/index.js`):** `ALLOCATION_SCHEMA` (headline + summary + `moves[]` cu `action` enum scale/reduce/
+>   pause/keep + reason; additionalProperties:false) · `buildAllocationPrompt(lead, camps)` (leadContextBlock + campaniile cu
+>   spend>0 prin campKpiLine + TOTAL PORTOFOLIU cu ROAS general; constrângere zero-sum „aproximativ neutră ca buget total, nu
+>   crește tot" + aliniere la obiectiv: lead-uri→CPL mic, venit→ROAS) · `performBudgetAllocation(db, leadId, actor, consume)`
+>   (validează lead + ≥2 campanii cu cheltuială ÎNAINTE de quota; persona strategist + benchmark calibrat (Pachet B); clamp cu
+>   enum derivat din schemă → fără drift) · callable `aiBudgetAllocation` (admin-only + App Check + consumeAiQuota, oglindă
+>   aiClientReport). Persist `budgetAllocations/{leadId}` (read admin / write false — conține `by` operator).
+> - **TS paritate (`src/analytics/kpi.ts`):** `ALLOCATION_ACTIONS` + `coerceToAllocation` (doc corupt→null, mișcare fără nume
+>   ignorată, enum invalid→keep). Aceleași 4 valori ca schema JS (testat la ambele capete).
+> - **UI (`MarketingCenter.tsx` → ClientReportPanel):** buton „⚖️ Realocare buget AI" (dezactivat <2 campanii cu spend, gardă
+>   oglindă pe server) → card cu headline/summary + listă de mișcări cu chip colorat pe acțiune (scale=verde, reduce=chihlimbar,
+>   pause=roșu, keep=gri); citește budgetAllocations/{leadId}. i18n `admin.alloc*` (RO+EN).
+> Verificat: typecheck + 23/23 suites (coerceToAllocation în test-analytics) + e2e-lp (ALLOCATION_SCHEMA + buildAllocationPrompt:
+> filtru spend>0, total portofoliu, zero-sum) + build + boot. DEPLOYED: hosting + rules + functions (aiBudgetAllocation confirmat
+> live, v2 callable europe-central2). Verificarea în browser a butonului = în spatele login-ului operator (necredențiabil aici);
+> logica e acoperită de teste unit/e2e. Cu C2 livrat, auditul analytics/AI e COMPLET (D+A+B+C+C2); rămân doar feliile low-urgență.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
