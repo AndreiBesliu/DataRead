@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
 import { track } from '../services/analytics';
 import { PACKAGES, UPSELLS, type PackageDef } from '../config/packages';
+import { LinkButton } from '../ui/Button';
 
 /** Cardul unui pachet. CTA: cu priceId setat → fluxul de cont/checkout (/app?pkg=…);
  *  fără priceId (pre-Stripe) → „Contactează-ne". */
@@ -61,9 +62,10 @@ function PackageCard({ pkg }: { pkg: PackageDef }) {
 
       {/* Site fără login (decizie 11.06): CTA-ul duce la formularul public /start cu pachetul
           preselectat. Când revine self-serve-ul Stripe, ramura cu priceId → /app?pkg= se reactivează. */}
-      <Link to={`${toLocalizedPath('/start', lang)}?pkg=${pkg.id}`} className="btn btn-primary" style={{ textAlign: 'center', marginTop: 12 }} onClick={() => track('package_cta', { pkg: pkg.id })}>
+      {/* Ierarhie CTA: pachetul recomandat = primary (roșu plin, iese în evidență); restul = blue (contur). */}
+      <LinkButton variant={pkg.highlighted ? 'primary' : 'blue'} to={`${toLocalizedPath('/start', lang)}?pkg=${pkg.id}`} style={{ textAlign: 'center', marginTop: 12 }} onClick={() => track('package_cta', { pkg: pkg.id })}>
         {t('pachete.choose', { name })}
-      </Link>
+      </LinkButton>
     </div>
   );
 }

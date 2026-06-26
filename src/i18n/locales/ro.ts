@@ -442,7 +442,8 @@ const ro = {
     title: 'Contact',
     body: 'Vrei să afli dacă DataRead se potrivește firmei tale? Scrie-ne — răspundem rapid.',
     emailLabel: 'Scrie-ne la',
-    ctaPackages: 'Înapoi la pachete',
+    ctaStart: 'Începe acum',
+    ctaPackages: 'Vezi pachetele',
   },
   legal: {
     draftBanner: 'DRAFT — acesta nu este încă un text legal final. Va fi înlocuit înainte de lansarea comercială.',

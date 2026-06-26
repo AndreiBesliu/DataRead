@@ -2506,6 +2506,20 @@ normaliser, secretele niciodată în chat/repo.
 > i18n `nav.menu` (ro+en). NOTĂ: empty-state-urile celorlalte secțiuni (/app) rămân „hide când gol" (corect — fără clutter);
 > bara „Următorul pas" + 3 cardurile fixe asigură că un client nou NU vede ecran gol.
 
+**2026-06-26 - Task Completed — Primitive UI (Button/Field) + ierarhie CTA (din auditul UI)**
+> Model: Claude Opus 4.8 (1M context). Frontend-only. Începe consolidarea celor ~1551 `style={{}}` + ~95 butoane reinventate.
+> - **`src/ui/Button.tsx`** — `Button` (<button>) + `LinkButton` (<Link>): variante tipate (primary/secondary/blue/ghost/danger)
+>   + mărimi (sm/md), peste clasele `.btn`; **`type="button"` implicit** (evită submit accidental). CSS nou: `.btn-ghost`,
+>   `.btn-danger` (contur roșu, lizibil pe orice temă via `--danger`), `.btn-sm`.
+> - **`src/ui/Field.tsx`** — câmp cu etichetă vizibilă + `error`/`hint` (chei i18n) — consolidează tiparul label+input.
+> - **Adopție cu payoff VIZIBIL (ierarhie CTA — quick win #4 din audit):** `Packages` — pachetul recomandat = `primary`
+>   (roșu plin), restul = `blue` (contur) → recomandatul iese în evidență (era: toate identice). `Contact` — acțiunea
+>   principală „Începe acum" = `primary` → /start (lead) + „Vezi pachetele" = secondary (era: un singur buton neutru spre /pachete).
+>   `AuthPanel` — Field local înlocuit cu primitiva partajată + butoanele submit/Google → `Button`.
+> Verificat: typecheck + 22/22 + build + boot (10/10) + preview live (Packages: recomandat roșu vs albastru; Contact: 2 CTA cu
+> ierarhie). DEPLOYED: hosting + rules. i18n `contact.ctaStart`. **Restul auditului UI: sweep complet al primitivelor în cele ~59
+> fișiere = follow-up incremental (primitivele există + sunt adoptate în paginile de conversie + AuthPanel).**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

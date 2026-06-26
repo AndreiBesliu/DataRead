@@ -426,7 +426,8 @@ const en: typeof ro = {
     title: 'Contact',
     body: 'Want to find out if DataRead fits your business? Write to us — we reply fast.',
     emailLabel: 'Write to us at',
-    ctaPackages: 'Back to packages',
+    ctaStart: 'Get started',
+    ctaPackages: 'See packages',
   },
   legal: {
     draftBanner: 'DRAFT — this is not a final legal text yet. It will be replaced before the commercial launch.',

@@ -188,6 +188,30 @@ h3 {
   background: var(--accent-dark);
 }
 
+/* Variante suplimentare folosite de primitiva Button (src/ui/Button.tsx). */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--fg-0) 8%, transparent);
+  border-color: transparent;
+}
+/* Danger = contur roșu (lizibil pe orice temă, --danger e calibrat per temă); pt. acțiuni distructive secundare. */
+.btn-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
 /* CTA-urile bannerului: roșu plin cu glow + varianta albastru-contur. */
 .theme-banner .btn-primary {
   /* text alb pe roșu — necesar EXPLICIT: `.theme-banner a` (link albastru) ar bate altfel

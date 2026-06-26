@@ -113,8 +113,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   etc. în loc de literali hex de status** (sweep complet în cele ~36 fișiere rămase = incremental). **`:focus-visible` global**
   (inel 2px accent la tastatură; `:focus:not(:focus-visible)` curăță inelul la mouse) — NU mai adăuga `outline:none` fără
   înlocuitor. Utilitare: `.chip` (pill) + base `.section-title` (`var(--text-2xl)`). Label-uri reale pe formulare (AuthPanel +
-  OnboardingFields). Rămas din audit: breakpoint-uri reale + hamburger header; skeletoane/empty states `/app`; badge-uri pe
-  tab-urile `/admin`; primitive Card/Field/Button; pagini `/servicii/:id`.
+  OnboardingFields). **Mobile + skeletoane (ACTIV 26.06.2026):** header public responsiv cu **hamburger** (`.site-hamburger`
+  vizibil <760px → sertar `.site-nav.open`; meniul se închide la navigare; nav mutat din inline în clasa `.site-nav`); clasă
+  **`.skeleton`** (shimmer, reduced-motion) + helperi `Skel`/`SkelCard` în AppHome → `…` de la loading înlocuit cu skeletoane
+  (AppHome initializing + MarketingPortal loading + App.tsx RouteFallback). Rămas din audit: primitive Card/Field/Button; pagini `/servicii/:id`.
 - **Teme backend (configurator):** `/admin` are un selector de temă (header) cu preset-uri tech
   (Midnight/Carbon/Matrix/Ocean/Light) — `src/theme/themes.ts` (seturi de variabile CSS + grid
   dot pentru cele „digital"), `useAdminTheme` persistă alegerea local. Aplicat prin `themeStyle()`

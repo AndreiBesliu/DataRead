@@ -1,8 +1,10 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { isValidPackageId } from '../config/packages';
+import { Field } from '../ui/Field';
+import { Button } from '../ui/Button';
 
 /** Cheia sessionStorage care păstrează pachetul ales pe site prin fluxul de autentificare. */
 export const PKG_INTENT_KEY = 'dataread_pkg_intent';
@@ -17,17 +19,6 @@ const field: CSSProperties = {
   fontSize: 15,
   background: 'var(--bg-0)',
 };
-
-/** Câmp cu etichetă VIZIBILĂ (a11y): inputul stă în interiorul `<label>` → asociere implicită, citit
- *  de screen-reader și rămâne vizibil după ce începi să scrii (spre deosebire de placeholder). */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label style={{ display: 'grid', gap: 4, fontSize: 13, fontWeight: 600, color: 'var(--fg-0)' }}>
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
 
 export default function AuthPanel() {
   const { t } = useTranslation();
@@ -148,17 +139,17 @@ export default function AuthPanel() {
           {error && <div role="alert" style={{ color: 'var(--danger)', fontSize: 13 }}>{t(error)}</div>}
           {info && <div role="status" style={{ color: 'var(--success)', fontSize: 13 }}>{t(info)}</div>}
 
-          <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
+          <Button variant="primary" type="submit" disabled={busy} style={{ width: '100%' }}>
             {busy ? t('auth.busy') : mode === 'signup' ? t('auth.signUp') : mode === 'reset' ? t('auth.sendReset') : t('auth.signIn')}
-          </button>
+          </Button>
         </form>
 
         {mode !== 'reset' && (
           <>
             <div style={{ textAlign: 'center', color: 'var(--fg-1)', fontSize: 13, margin: '12px 0' }}>{t('auth.or')}</div>
-            <button className="btn" type="button" disabled={busy} onClick={google} style={{ width: '100%' }}>
+            <Button variant="secondary" disabled={busy} onClick={google} style={{ width: '100%' }}>
               {t('auth.google')}
-            </button>
+            </Button>
           </>
         )}
 

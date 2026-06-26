@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pathLanguage, toLocalizedPath } from '../i18n/routing';
 import { track } from '../services/analytics';
 import { CONTACT_EMAIL } from '../config/site';
+import { LinkButton } from '../ui/Button';
 
 export default function Contact() {
   const { t } = useTranslation();
@@ -21,10 +22,14 @@ export default function Contact() {
           {CONTACT_EMAIL}
         </a>
       </div>
-      <div style={{ marginTop: 28 }}>
-        <Link to={p('/pachete')} className="btn">
+      {/* Ierarhie CTA: acțiunea principală (începe = generează lead) = primary; pachetele = secundar. */}
+      <div style={{ marginTop: 28, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <LinkButton variant="primary" to={p('/start')} onClick={() => track('contact_cta', { to: 'start' })}>
+          {t('contact.ctaStart')}
+        </LinkButton>
+        <LinkButton variant="secondary" to={p('/pachete')}>
           {t('contact.ctaPackages')}
-        </Link>
+        </LinkButton>
       </div>
     </main>
   );
