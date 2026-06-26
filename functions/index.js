@@ -1725,26 +1725,43 @@ exports.buildInsightPrompt = buildInsightPrompt;
 // ── Felia 4: grounding pe date REALE (best-effort). Helperi PURI (testabili e2e). Citirile care le
 //    alimentează sunt învelite în try/catch la call-site → grounding-ul nu poate rupe generarea. ──
 
+// Două luni calendaristice consecutive? (prevMo imediat înaintea curMo, ex. 2026-05 → 2026-06)
+function monthsAdjacent(prevMo, curMo) {
+  if (!/^\d{4}-\d{2}$/.test(prevMo || '') || !/^\d{4}-\d{2}$/.test(curMo || '')) return false;
+  const [py, pm] = prevMo.split('-').map(Number);
+  const [cy, cm] = curMo.split('-').map(Number);
+  return (cy * 12 + (cm - 1)) - (py * 12 + (pm - 1)) === 1;
+}
+
 // Bucketează metricile pe lună (YYYY-MM) și întoarce cele mai recente 2 luni CU date (cur=ultima, prev=penultima).
-function monthlyMoM(metrics) {
+// `nowMonth` (YYYY-MM, opțional) → marchează dacă luna curentă e PARȚIALĂ (în curs). `prevAdjacent` spune dacă cele
+// două luni sunt calendaristic consecutive (altfel e un interval cu gol, nu „lună-pe-lună"). Valori plafonate (anti-corupt).
+function monthlyMoM(metrics, nowMonth) {
+  const MAX = 1e12;
+  const cap = (x) => Math.min(Math.max(Number(x) || 0, 0), MAX);
   const by = {};
   for (const m of (Array.isArray(metrics) ? metrics : [])) {
     const mo = String((m && m.date) || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(mo)) continue;
     const b = by[mo] || (by[mo] = { spend: 0, revenue: 0, leads: 0, clicks: 0, impressions: 0 });
-    b.spend += Number(m.spend) || 0;
-    b.revenue += Number(m.revenue) || 0;
-    b.leads += Number(m.leads) || 0;
-    b.clicks += Number(m.clicks) || 0;
-    b.impressions += Number(m.impressions) || 0;
+    b.spend += cap(m.spend);
+    b.revenue += cap(m.revenue);
+    b.leads += cap(m.leads);
+    b.clicks += cap(m.clicks);
+    b.impressions += cap(m.impressions);
   }
   const months = Object.keys(by).sort();
   if (!months.length) return null;
   const curMonth = months[months.length - 1];
   const prevMonth = months.length >= 2 ? months[months.length - 2] : null;
-  return { curMonth, prevMonth, cur: by[curMonth], prev: prevMonth ? by[prevMonth] : null };
+  return {
+    curMonth, prevMonth, cur: by[curMonth], prev: prevMonth ? by[prevMonth] : null,
+    prevAdjacent: monthsAdjacent(prevMonth, curMonth),
+    curPartial: !!nowMonth && curMonth === nowMonth,
+  };
 }
 exports.monthlyMoM = monthlyMoM;
+exports.monthsAdjacent = monthsAdjacent;
 
 // (Agregarea MoM la nivel de raport se face pe UNIUNEA metricilor — un singur monthlyMoM în
 //  performClientReport — ca să nu amestece luni nealiniate între campanii.)
@@ -1760,13 +1777,20 @@ function momReportLine(mom) {
     return `Luna ${mom.curMonth}: cheltuit ${r2(cur.spend)}€, lead-uri ${cur.leads}, venit ${r2(cur.revenue)}€, ROAS ${roas(cur)} (fără lună precedentă pentru comparație).`;
   }
   const prev = mom.prev;
+  // Titlu onest: „lună-pe-lună" DOAR dacă lunile sunt consecutive; altfel = interval cu gol. Notă de lună parțială.
+  const header = mom.prevAdjacent
+    ? `Evoluție lună-pe-lună (${mom.prevMonth} → ${mom.curMonth}):`
+    : `Evoluție față de ultima lună cu date — ATENȚIE: interval cu gol, nu luni consecutive (${mom.prevMonth} → ${mom.curMonth}):`;
+  const partialNote = mom.curPartial
+    ? `\n(NOTĂ: ${mom.curMonth} e lună PARȚIALĂ/în curs — comparația cu o lună plină subestimează; tratează procentele ca orientative.)`
+    : '';
   return [
-    `Evoluție lună-pe-lună (${mom.prevMonth} → ${mom.curMonth}):`,
+    header,
     `- Cheltuit: ${r2(prev.spend)}€ → ${r2(cur.spend)}€ (${pct(cur.spend, prev.spend)})`,
     `- Lead-uri: ${prev.leads} → ${cur.leads} (${pct(cur.leads, prev.leads)})`,
     `- Venit: ${r2(prev.revenue)}€ → ${r2(cur.revenue)}€ (${pct(cur.revenue, prev.revenue)})`,
     `- ROAS: ${roas(prev)} → ${roas(cur)}`,
-  ].join('\n');
+  ].join('\n') + partialNote;
 }
 exports.momReportLine = momReportLine;
 
@@ -2103,7 +2127,8 @@ async function performClientReport(db, leadId, actorUid, consume) {
     // MoM pe UNIUNEA metricilor tuturor campaniilor → cur/prev = aceleași 2 luni calendaristice reale
     // (nu amestecă luni nealiniate între campanii, cum ar face o agregare per-campanie).
     const allMetrics = metricSnaps.flatMap((s) => s.docs.map((x) => x.data()));
-    mom = monthlyMoM(allMetrics);
+    mom = monthlyMoM(allMetrics, new Date().toISOString().slice(0, 7)); // luna curentă → detectează lună parțială
+
   } catch (e) { logger.warn('report MoM failed', { leadId, err: String(e) }); }
   // Fundația stratificată: persona „account manager" + L2 din verticala clientului.
   const { out, usage } = await runAiJson({

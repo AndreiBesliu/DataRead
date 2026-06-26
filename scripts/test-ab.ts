@@ -63,5 +63,24 @@ check('pick: <2 arme → insufficient', pickAbWinner([{ id: 'a', label: 'A', vis
   check('pick: sample mic + uplift aparent → NU winner (no-difference/insufficient)', v.status !== 'winner');
 }
 
+// pick — np≥5: destule VIZITE dar prea puține CONVERSII → insufficient (lowConversions), NU winner
+{
+  const v = pickAbWinner([
+    { id: 'a', label: 'A', visits: 200, submissions: 4 },
+    { id: 'b', label: 'B', visits: 200, submissions: 0 },
+  ], { minSamplePerArm: 200 });
+  check('pick: 4/200 vs 0/200 (np<5) → insufficient, NU winner', v.status === 'insufficient' && v.winnerId === null);
+  check('pick: motiv = lowConversions (nu „vizite insuficiente")', v.reasonKey === 'ab.verdict.lowConversions');
+}
+
+// pick — np≥5 satisfăcut (conversii suficiente, un arm la 0) → winner valid
+{
+  const v = pickAbWinner([
+    { id: 'a', label: 'A', visits: 1000, submissions: 50 },
+    { id: 'b', label: 'B', visits: 1000, submissions: 0 },
+  ], { minSamplePerArm: 200 });
+  check('pick: 50/1000 vs 0/1000 (np=25 ok) → winner', v.status === 'winner' && v.winnerId === 'a');
+}
+
 console.log(`\nA/B winner: ${failures ? failures + ' EȘUATE' : 'all checks passed'}`);
 if (failures) process.exit(1);

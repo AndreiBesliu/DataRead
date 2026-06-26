@@ -242,7 +242,9 @@ export function coerceToReport(v: unknown): ClientReport | null {
 
 export function coerceToTotals(v: unknown): Totals {
   const d = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
-  return { spend: num(d.spend), impressions: num(d.impressions), clicks: num(d.clicks), leads: num(d.leads), revenue: num(d.revenue) };
+  // numCap (nu num): un rollup `totals` corupt e citit DIRECT de dashboard, defalcarea pe platformă și prompturile AI —
+  // plafonul trebuie aplicat și aici, nu doar pe metricile zilnice, ca o valoare absurdă să nu otrăvească KPI/AI.
+  return { spend: numCap(d.spend), impressions: numCap(d.impressions), clicks: numCap(d.clicks), leads: numCap(d.leads), revenue: numCap(d.revenue) };
 }
 
 const VALID_DATE = /^\d{4}-\d{2}-\d{2}$/;

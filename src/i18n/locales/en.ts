@@ -1280,6 +1280,7 @@ const en: typeof ro = {
       abVerdict_winner: 'Winner',
       abPromote: 'Promote winner',
       abInsufficientHint: 'Verdict only after at least {{n}} visits per variant (z-test at 95%). Don’t stop the test early.',
+      abLowConversionsHint: 'Too few conversions for a reliable verdict (np≥5 rule). You have enough visits, but need more conversions — let the test keep running.',
       tabAnalytics: 'Analytics',
       formEnabled: 'This page has a contact form',
       formHint: 'Submissions appear in the Analytics tab. Tick "Create lead" to also push them into the pipeline.',

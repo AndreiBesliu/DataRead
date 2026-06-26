@@ -47,7 +47,11 @@ export function parseLooseNumber(raw: string): number {
     const dec = Math.max(lastComma, lastDot);
     s = s.slice(0, dec).replace(/[.,]/g, '') + '.' + s.slice(dec + 1).replace(/[.,]/g, '');
   } else if (lastComma >= 0) {
-    s = s.replace(/,/g, '.'); // o singură virgulă → zecimală
+    // Doar virgule (fără punct). Dacă e grupare de mii — grupuri de EXACT 3 cifre, ex. „1,000,000" / „1,234" —
+    // elimină virgulele (altfel „1,000,000" devenea 1). Altfel o virgulă e separator zecimal (ro: „12,50").
+    // Cazul „1,234" e ambiguu (1234 en vs 1,234 ro); regula de 3 cifre alege interpretarea de mii (uzuală în export-uri).
+    if (/^\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, '');
+    else s = s.replace(/,/g, '.');
   }
   const n = parseFloat(s);
   return Number.isFinite(n) && n >= 0 ? n : 0;

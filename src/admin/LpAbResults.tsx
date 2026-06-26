@@ -114,7 +114,7 @@ export default function LpAbResults({ slug }: { slug: string }) {
               ))}
             </tbody>
           </table>
-          {verdict.status === 'insufficient' ? <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.lpStudio.abInsufficientHint', { n: exp.minSample })}</p> : null}
+          {verdict.status === 'insufficient' ? <p style={{ fontSize: 11, color: 'var(--fg-1)', margin: '6px 0 0' }}>{t('admin.lpStudio.' + (verdict.reasonKey === 'ab.verdict.lowConversions' ? 'abLowConversionsHint' : 'abInsufficientHint'), { n: exp.minSample })}</p> : null}
         </div>
       ))}
     </div>

@@ -690,6 +690,22 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
   ok(fns.momReportLine(fns.monthlyMoM([{ date: '2026-05-01', spend: 10, leads: 1, revenue: 30 }])).includes('fără lună precedentă'),
     'momReportLine: o singură lună → notează lipsa comparației');
 
+  // Luni NE-adiacente (gap) → nu se prezintă ca „lună-pe-lună", ci ca interval cu gol.
+  ok(fns.monthsAdjacent('2026-04', '2026-05') === true && fns.monthsAdjacent('2026-01', '2026-06') === false,
+    'monthsAdjacent: consecutive vs gap');
+  const gapMom = fns.monthlyMoM([{ date: '2026-01-10', spend: 50, leads: 2, revenue: 100 }, { date: '2026-06-10', spend: 80, leads: 3, revenue: 200 }]);
+  ok(gapMom.prevAdjacent === false, 'monthlyMoM: prevAdjacent=false când lipsesc luni între prev și cur');
+  ok(fns.momReportLine(gapMom).includes('interval cu gol'), 'momReportLine: gap → framing onest „interval cu gol", nu „lună-pe-lună"');
+
+  // Lună curentă PARȚIALĂ → notă în linie + flag.
+  const partMom = fns.monthlyMoM([{ date: '2026-05-01', spend: 100, leads: 5, revenue: 300 }, { date: '2026-06-02', spend: 50, leads: 2, revenue: 120 }], '2026-06');
+  ok(partMom.curPartial === true, 'monthlyMoM: curPartial=true când curMonth === nowMonth');
+  ok(fns.momReportLine(partMom).includes('PARȚIALĂ'), 'momReportLine: lună parțială → notă orientativă');
+
+  // Plafon pe MoM: valoare corupt-uriașă pe o lună e plafonată (nu otrăvește totalul).
+  const cappedMom = fns.monthlyMoM([{ date: '2026-06-01', spend: 1e20, leads: 1, revenue: 1 }]);
+  ok(cappedMom.cur.spend <= 1e12, 'monthlyMoM: valoare absurdă plafonată la MAX (1e12)');
+
   const lcb = fns.liveCampaignsBlock([{ name: 'C1', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 300, leads: 5 } }]);
   ok(lcb.includes('DATE REALE DIN CAMPANIILE TALE') && lcb.includes('C1'), 'liveCampaignsBlock: sumar campanii cu spend');
   ok(fns.liveCampaignsBlock([]) === '' && fns.liveCampaignsBlock([{ name: 'X', totals: { spend: 0 } }]) === '', 'liveCampaignsBlock: fără spend → gol');

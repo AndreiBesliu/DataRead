@@ -2534,6 +2534,26 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 22/22 + build:site (prerender 32 pagini, 0 erori) + boot + preview live (titlu+diacritice+secțiuni+FAQ corecte; 7 link-uri „Detalii").
 > DEPLOYED: hosting + rules. **Auditul UI e acum acoperit integral** (rămâne doar sweep-ul incremental al primitivelor în restul fișierelor).
 
+**2026-06-26 - Task Completed — Audit analytics/AI · Pachet D: bug-uri + robustețe (verificat adversarial)**
+> Model: Claude Opus 4.8 (1M context). Din auditul analytics/AI (workflow 14 agenți, verificat adversarial). Corectitudine, risc mic.
+> - **CSV virgulă-mie (`metricsCsv.parseLooseNumber`):** `'1,000,000'` devenea `1` (virgula fără punct era mereu zecimală). Fix:
+>   dacă e grupare de mii (grupuri de EXACT 3 cifre, `^\d{1,3}(,\d{3})+$`) → elimină virgulele; altfel zecimală ro (`12,50`→12.5).
+>   Teste noi în test-connectors (1,000,000 / 12,345 / 1,234 / 1,234,567.89).
+> - **A/B winner gardă np≥5 (`lpABWinner`):** declara câștigător la `4/200 vs 0/200` (np<5, aproximare normală invalidă). Fix:
+>   după pragul de vizite, cer ca nr. AȘTEPTAT de conversii ȘI ne-conversii (sub proporția pooled) ≥5 în ambele arme; altfel
+>   `insufficient` cu reasonKey `ab.verdict.lowConversions` (+ hint UI dedicat „prea puține conversii, nu vizite"). `50/1000 vs 0/1000` (np=25) rămâne winner valid. Teste în test-ab.
+> - **MoM onest (`functions monthlyMoM`/`momReportLine`):** `monthsAdjacent` + flag `prevAdjacent` (luni ne-consecutive → titlu
+>   „interval cu gol", nu „lună-pe-lună") + `curPartial` (param `nowMonth`; lună în curs → notă „PARȚIALĂ, orientativ") + plafon
+>   1e12 pe agregare. `performClientReport` pasează luna curentă. Teste e2e (gap/partial/cap).
+> - **Plafon pe totals (`kpi.coerceToTotals`):** `num`→`numCap` — un rollup `totals` corupt nu mai otrăvește dashboard/AI (plafonul
+>   exista doar pe metrica zilnică).
+> Verificat: typecheck + 22/22 suites + build + boot + e2e-lp (toate). DEPLOYED: hosting + rules + functions.
+> **AMÂNAT conștient (D#5):** recompute `totals` server-side tranzacțional în `onMetricWrite` — atinge un trigger fierbinte +
+> ar dubla cu recompute-ul client/connector existent + NU se poate verifica headless (fără emulator, Java 11). Felie dedicată ulterior.
+> **Corecții din verificarea adversarială (alarme false evitate):** ROAS NU e „ficțiune" — conectorii Meta/Google/TikTok mapează
+> valoarea reală de conversie în `revenue`; atribuirea spend→lead→revenue ESTE legată (campania poartă leadId+clientUid, metricile=subcolecție);
+> doar contact↔campanie e nelegat. Restul pachetelor: A (bucla de învățare), B (calibrare benchmark), C (profunzime AI) — următoarele.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

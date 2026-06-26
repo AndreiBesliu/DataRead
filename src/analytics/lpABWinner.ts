@@ -6,6 +6,7 @@
  */
 
 export const AB_ALPHA = 0.05; // prag de semnificație (two-sided) → |z| > 1.96
+export const AB_MIN_EXPECTED = 5; // np≥5: aproximarea normală a z-testului e validă doar peste acest prag de conversii AȘTEPTATE
 
 export interface AbArmStat {
   id: string;
@@ -75,6 +76,15 @@ export function pickAbWinner(arms: AbArmStat[], opts: { minSamplePerArm: number 
     return { status: 'insufficient', winnerId: null, leaderId, pValue: null, reasonKey: 'ab.verdict.insufficient', arms: kpis };
   }
   const top = kpis[0], runner = kpis[1];
+  // Gardă np≥5: z-testul pe proporții e valid doar dacă numărul AȘTEPTAT de conversii ȘI de ne-conversii (sub
+  // proporția pooled) e ≥ 5 în AMBELE arme. Altfel (ex. 4/200 vs 0/200, prea puține conversii deși destule vizite)
+  // verdictul „semnificativ" e nesigur → cerem mai multe CONVERSII, nu doar vizite. (50/1000 vs 0/1000 trece: np=25.)
+  const totalVisits = top.visits + runner.visits;
+  const pPool = totalVisits > 0 ? (top.submissions + runner.submissions) / totalVisits : 0;
+  const approxValid = [top, runner].every((a) => a.visits * pPool >= AB_MIN_EXPECTED && a.visits * (1 - pPool) >= AB_MIN_EXPECTED);
+  if (!approxValid) {
+    return { status: 'insufficient', winnerId: null, leaderId, pValue: null, reasonKey: 'ab.verdict.lowConversions', arms: kpis };
+  }
   const p = twoProportionPValue(top.submissions, top.visits, runner.submissions, runner.visits);
   if (p !== null && p < AB_ALPHA && top.convRate > runner.convRate) {
     return { status: 'winner', winnerId: top.id, leaderId, pValue: p, reasonKey: 'ab.verdict.winner', arms: kpis };

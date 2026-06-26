@@ -1297,6 +1297,7 @@ const ro = {
       abVerdict_winner: 'Câștigător',
       abPromote: 'Promovează câștigătorul',
       abInsufficientHint: 'Verdict abia după minim {{n}} vizite pe fiecare variantă (z-test la 95%). Nu opri testul devreme.',
+      abLowConversionsHint: 'Prea puține conversii pentru un verdict sigur (regula np≥5). Ai destule vizite, dar ai nevoie de mai multe conversii — lasă testul să ruleze.',
       tabAnalytics: 'Analytics',
       formEnabled: 'Pagina are formular de contact',
       formHint: 'Trimiterile apar în tabul Analytics. Bifează „Creează lead" ca să intre și în pipeline.',

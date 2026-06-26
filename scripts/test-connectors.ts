@@ -18,6 +18,11 @@ check('num: en „1,234.56" → 1234.56', parseLooseNumber('1,234.56') === 1234.
 check('num: ro „1.234,56" → 1234.56', parseLooseNumber('1.234,56') === 1234.56);
 check('num: „12,50" (zecimală ro) → 12.5', parseLooseNumber('12,50') === 12.5);
 check('num: „€ 1 200,00" → 1200', parseLooseNumber('€ 1 200,00') === 1200);
+// Întregi cu virgulă-mie en (bug-fix: înainte „1,000,000" → 1). Grupuri de exact 3 cifre = separator de mii.
+check('num: en „1,000,000" (mii) → 1000000', parseLooseNumber('1,000,000') === 1000000);
+check('num: en „12,345" (mii) → 12345', parseLooseNumber('12,345') === 12345);
+check('num: en „1,234" (grup de 3) → 1234', parseLooseNumber('1,234') === 1234);
+check('num: en „1,234,567.89" → 1234567.89', parseLooseNumber('1,234,567.89') === 1234567.89);
 check('num: gol → 0', parseLooseNumber('') === 0);
 check('num: negativ → 0', parseLooseNumber('-5') === 0);
 check('num: text → 0', parseLooseNumber('abc') === 0);
