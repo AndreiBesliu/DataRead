@@ -166,6 +166,101 @@ export function kpisByPlatform(items: Array<{ platform: Platform; totals: Totals
   return out;
 }
 
+// ── B2: reperul PROPRIU al clientului (mediana propriilor campanii) ──
+// DESCRIPTIV (cum stă clientul față de propriul istoric), distinct de reperul de INDUSTRIE (Pachet B,
+// cross-tenant, în blocul L2 cache-uit). Pur: doar din `totals` (fără citiri de metrici zilnice).
+// Numeric core aici (TS, testat) + port byte-echivalent în functions/index.js; proza RO stă în functions.
+export const CLIENT_BASELINE_MIN_N = 3; // min campanii eligibile/KPI ca să emitem linia (sub 3 nu e „mediană")
+export const CLIENT_BASELINE_THIN_N = 5; // n în [MIN_N, THIN_N) → caveat „eșantion mic" (oglindă cu BENCHMARK_MIN_SAMPLES=5)
+// Polaritatea fiecărui KPI: la CPL „mai mic = mai bine"; la restul „mai mare = mai bine".
+export const KPI_LOWER_IS_BETTER = { cpl: true, roas: false, ctr: false, convRate: false } as const;
+export type BaselineKpiName = keyof typeof KPI_LOWER_IS_BETTER;
+
+export interface BaselineKpi {
+  median: number | null; // null dacă n < CLIENT_BASELINE_MIN_N
+  n: number; // câte campanii au contribuit (KPI non-null)
+  smallSample: boolean; // n în [MIN_N, THIN_N)
+}
+
+export interface ClientBaseline {
+  cohortSize: number; // campanii cu spend>0 (după excludeId)
+  platformsPresent: string[]; // platforme distincte în cohortă (pentru caveat-ul de mix)
+  roas: BaselineKpi;
+  cpl: BaselineKpi;
+  ctr: BaselineKpi;
+  convRate: BaselineKpi;
+  present: boolean; // cohortSize>=2 ȘI cel puțin un KPI are mediană
+}
+
+export interface BaselineComparison {
+  pct: number; // procent semnat față de mediană
+  dir: 'peste' | 'sub' | 'la nivelul';
+  verdict: 'mai bine' | 'mai slab' | 'la fel';
+}
+
+/** Mediana valorilor finite >=0; gol → null. Pură. (CTR/convRate rămân fracții 0..1; rotunjirea e la afișare.) */
+export function median(xs: number[]): number | null {
+  const clean = (Array.isArray(xs) ? xs : []).filter((x): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0);
+  if (!clean.length) return null;
+  clean.sort((a, b) => a - b);
+  const mid = clean.length >> 1;
+  return clean.length % 2 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
+}
+
+function baselineKpiFrom(values: Array<number | null>): BaselineKpi {
+  const kept = values.filter((v): v is number => v !== null && Number.isFinite(v) && v >= 0);
+  const n = kept.length;
+  return {
+    median: n >= CLIENT_BASELINE_MIN_N ? median(kept) : null,
+    n,
+    smallSample: n >= CLIENT_BASELINE_MIN_N && n < CLIENT_BASELINE_THIN_N,
+  };
+}
+
+/** Reperul intern al clientului din campaniile lui. Fiecare item are nevoie doar de { id?, platform?, totals }.
+ *  Cohortă = campanii cu spend>0 (după excludeId). Mediana per-KPI peste RATELE per-campanie (egal-ponderate —
+ *  „față de campania ta TIPICĂ", nu reformulare a marilor cheltuitori, pe care îi dă deja linia de TOTAL). */
+export function computeClientBaseline(
+  items: Array<{ id?: string; platform?: string; totals?: Totals }>,
+  opts?: { excludeId?: string }
+): ClientBaseline {
+  const excludeId = opts?.excludeId;
+  const cohort = (Array.isArray(items) ? items : [])
+    .filter((it) => it && it.totals && num(it.totals.spend) > 0)
+    .filter((it) => !(excludeId && it.id === excludeId));
+  const roasV: Array<number | null> = [];
+  const cplV: Array<number | null> = [];
+  const ctrV: Array<number | null> = [];
+  const convV: Array<number | null> = [];
+  for (const it of cohort) {
+    const t = it.totals as Totals;
+    const spend = num(t.spend), rev = num(t.revenue), leads = num(t.leads), clicks = num(t.clicks), impr = num(t.impressions);
+    roasV.push(div(rev, spend));
+    cplV.push(div(spend, leads));
+    ctrV.push(div(clicks, impr));
+    convV.push(div(leads, clicks));
+  }
+  const roas = baselineKpiFrom(roasV);
+  const cpl = baselineKpiFrom(cplV);
+  const ctr = baselineKpiFrom(ctrV);
+  const convRate = baselineKpiFrom(convV);
+  const platformsPresent = Array.from(new Set(cohort.map((it) => String(it.platform || '')).filter(Boolean)));
+  const present = cohort.length >= 2 && [roas, cpl, ctr, convRate].some((b) => b.median !== null);
+  return { cohortSize: cohort.length, platformsPresent, roas, cpl, ctr, convRate, present };
+}
+
+/** Compară o valoare cu mediana de reper, ținând cont de POLARITATE (la CPL mic = bine). null dacă lipsește
+ *  o latură sau mediana <= 0. |pct| <= 3 → „la nivelul / la fel" (fără peste/sub spurios pe zgomot). */
+export function compareToBaseline(kpi: BaselineKpiName, value: number | null, base: BaselineKpi | null): BaselineComparison | null {
+  if (value === null || !Number.isFinite(value) || value < 0) return null;
+  if (!base || base.median === null || !(base.median > 0)) return null;
+  const pct = Math.round(((value - base.median) / base.median) * 100);
+  if (Math.abs(pct) <= 3) return { pct, dir: 'la nivelul', verdict: 'la fel' };
+  const higher = pct > 0;
+  const better = higher !== KPI_LOWER_IS_BETTER[kpi]; // higher XOR lowerIsBetter
+  return { pct, dir: higher ? 'peste' : 'sub', verdict: better ? 'mai bine' : 'mai slab' };
+}
+
 // ── AI Optimization Engine (spec 5.5): recomandarea AI pe baza performanței campaniei ──
 export const VERDICTS = ['scale', 'maintain', 'pause', 'test'] as const;
 export type Verdict = (typeof VERDICTS)[number];

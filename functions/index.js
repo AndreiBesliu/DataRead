@@ -516,6 +516,65 @@ function tripletPercentiles(values) {
 exports.abPercentile = abPercentile;
 exports.tripletPercentiles = tripletPercentiles;
 
+// ── B2: reperul PROPRIU al clientului (mediana propriilor campanii) — port byte-echivalent al
+//    src/analytics/kpi.ts (median/computeClientBaseline/compareToBaseline). DESCRIPTIV, distinct de reperul
+//    de industrie (Pachet B). Pur, doar din `totals`. Constante = paritate asertată în e2e (TEST B2). ──
+const CLIENT_BASELINE_MIN_N = 3; // min campanii eligibile/KPI ca să emitem linia (sub 3 nu e „mediană")
+const CLIENT_BASELINE_THIN_N = 5; // n în [MIN_N, THIN_N) → caveat „eșantion mic"
+const KPI_LOWER_IS_BETTER = { cpl: true, roas: false, ctr: false, convRate: false };
+exports.CLIENT_BASELINE_MIN_N = CLIENT_BASELINE_MIN_N;
+exports.CLIENT_BASELINE_THIN_N = CLIENT_BASELINE_THIN_N;
+exports.KPI_LOWER_IS_BETTER = KPI_LOWER_IS_BETTER;
+
+const bnum = (v) => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+const bdiv = (a, b) => (b > 0 ? a / b : null);
+
+/** Mediana valorilor finite >=0; gol → null. */
+function median(xs) {
+  const clean = (Array.isArray(xs) ? xs : []).filter((x) => typeof x === 'number' && isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!clean.length) return null;
+  const mid = clean.length >> 1;
+  return clean.length % 2 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
+}
+function baselineKpiFrom(values) {
+  const kept = (Array.isArray(values) ? values : []).filter((v) => v !== null && typeof v === 'number' && isFinite(v) && v >= 0);
+  const n = kept.length;
+  return { median: n >= CLIENT_BASELINE_MIN_N ? median(kept) : null, n, smallSample: n >= CLIENT_BASELINE_MIN_N && n < CLIENT_BASELINE_THIN_N };
+}
+/** Reperul intern al clientului. items = [{ id?, platform?, totals }]. opts.excludeId scoate o campanie (exclude-self). */
+function computeClientBaseline(items, opts) {
+  const excludeId = opts && opts.excludeId;
+  const cohort = (Array.isArray(items) ? items : [])
+    .filter((it) => it && it.totals && bnum(it.totals.spend) > 0)
+    .filter((it) => !(excludeId && it.id === excludeId));
+  const roasV = [], cplV = [], ctrV = [], convV = [];
+  for (const it of cohort) {
+    const t = it.totals || {};
+    const spend = bnum(t.spend), rev = bnum(t.revenue), leads = bnum(t.leads), clicks = bnum(t.clicks), impr = bnum(t.impressions);
+    roasV.push(bdiv(rev, spend));
+    cplV.push(bdiv(spend, leads));
+    ctrV.push(bdiv(clicks, impr));
+    convV.push(bdiv(leads, clicks));
+  }
+  const roas = baselineKpiFrom(roasV), cpl = baselineKpiFrom(cplV), ctr = baselineKpiFrom(ctrV), convRate = baselineKpiFrom(convV);
+  const platformsPresent = Array.from(new Set(cohort.map((it) => String(it.platform || '')).filter(Boolean)));
+  const present = cohort.length >= 2 && [roas, cpl, ctr, convRate].some((b) => b.median !== null);
+  return { cohortSize: cohort.length, platformsPresent, roas, cpl, ctr, convRate, present };
+}
+/** Compară o valoare cu mediana de reper, ținând cont de polaritate (CPL mic = bine). null dacă lipsește o latură. */
+function compareToBaseline(kpi, value, base) {
+  if (value === null || typeof value !== 'number' || !isFinite(value) || value < 0) return null;
+  if (!base || base.median === null || !(base.median > 0)) return null;
+  const pct = Math.round(((value - base.median) / base.median) * 100);
+  if (Math.abs(pct) <= 3) return { pct, dir: 'la nivelul', verdict: 'la fel' };
+  const higher = pct > 0;
+  const better = higher !== KPI_LOWER_IS_BETTER[kpi];
+  return { pct, dir: higher ? 'peste' : 'sub', verdict: better ? 'mai bine' : 'mai slab' };
+}
+exports.median = median;
+exports.computeClientBaseline = computeClientBaseline;
+exports.compareToBaseline = compareToBaseline;
+
 // Reperul CALIBRAT pentru o industrie (benchmarkStats/{industrie}) — best-effort, pentru promptul de insight/raport.
 async function readBenchmark(db, industry) {
   try {
@@ -1723,17 +1782,24 @@ function metricAnomalies(metrics) {
 }
 exports.metricAnomalies = metricAnomalies;
 
-function buildInsightPrompt(lead, camp, metrics, prevInsight) {
+function buildInsightPrompt(lead, camp, metrics, prevInsight, baseline) {
   const pib = prevInsightBlock(prevInsight);
   const anomalies = metricAnomalies(metrics);
-  const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
-  for (const m of metrics) {
-    t.spend += Number(m.spend) || 0;
-    t.impressions += Number(m.impressions) || 0;
-    t.clicks += Number(m.clicks) || 0;
-    t.leads += Number(m.leads) || 0;
-    t.revenue += Number(m.revenue) || 0;
-  }
+  // B2: reperul propriu al clientului (mediana celorlalte campanii ale lui, exclude-self). subjectKpis din
+  // totals (aceeași bază ca cohorta → comparație apples-to-apples, nu fereastra de 60 zile a metricilor).
+  const ct = (camp && camp.totals) || {};
+  const subjectKpis = {
+    roas: bdiv(bnum(ct.revenue), bnum(ct.spend)),
+    cpl: bdiv(bnum(ct.spend), bnum(ct.leads)),
+    ctr: bdiv(bnum(ct.clicks), bnum(ct.impressions)),
+    convRate: bdiv(bnum(ct.leads), bnum(ct.clicks)),
+  };
+  const vsBaseline = campaignVsBaselineLine(subjectKpis, baseline);
+  const baselineTbl = clientBaselineBlock(baseline);
+  // KPI afișat = totalurile ALL-TIME ale campaniei (camp.totals, rollup canonic) — ACEEAȘI bază ca subjectKpis
+  // și ca reperul propriu (B2). Altfel ar apărea două ROAS contradictorii pentru aceeași campanie (display din
+  // fereastra de metrici vs delta din totals). `metrics` rămâne DOAR pt. evoluția recentă + metricAnomalies.
+  const t = { spend: bnum(ct.spend), impressions: bnum(ct.impressions), clicks: bnum(ct.clicks), leads: bnum(ct.leads), revenue: bnum(ct.revenue) };
   const div = (a, b) => (b > 0 ? a / b : null);
   const kpi = [
     `Cheltuit total: ${r2(t.spend)} €`,
@@ -1759,6 +1825,8 @@ function buildInsightPrompt(lead, camp, metrics, prevInsight) {
     '',
     '== KPI (cumulat) ==',
     kpi,
+    ...(vsBaseline ? ['', vsBaseline] : []),
+    ...(baselineTbl ? ['', baselineTbl] : []),
     '',
     '== EVOLUȚIE ZILNICĂ (recent) ==',
     recent || '(fără zile introduse)',
@@ -1775,6 +1843,10 @@ function buildInsightPrompt(lead, camp, metrics, prevInsight) {
     'Compară fiecare KPI cu reperele de industrie din Fundație (dacă sunt furnizate) și spune dacă e peste/',
     'sub/în normă. Localizează UNDE se rupe pâlnia (impresii → click → lead → client) prin metrica potrivită',
     'și recomandă fix-ul pentru exact acel punct, nu generic.',
+    ...((vsBaseline || baselineTbl)
+      ? ['Compară campania și cu REPERUL EI PROPRIU (istoricul clientului), SEPARAT de reperele de industrie — nu',
+         'dubla aceeași observație. Deltele față de mediana proprie sunt deja calculate mai sus; folosește-le.']
+      : []),
     'IMPORTANT — calibrează verdictul DUPĂ obiectivele declarate ale firmei (vezi mai sus): pentru',
     'awareness/trafic contează reach/CPM/CTR și NU penaliza un ROAS mic (nu e campanie de vânzare directă);',
     'pentru lead-uri contează CPL și rata de lead; pentru vânzări contează ROAS și AOV. Totul în limba ROMÂNĂ.',
@@ -1854,6 +1926,54 @@ function momReportLine(mom) {
 }
 exports.momReportLine = momReportLine;
 
+// ── B2: blocurile RO pentru reperul PROPRIU al clientului (proza nu are i18n → stă lângă campKpiLine/momReportLine,
+//    ca splitul monthlyMoM↔momReportLine). Numeric core = computeClientBaseline/compareToBaseline (sus, lângă percentile). ──
+// Tabelul medianei proprii (raport + realocare); '' când reperul nu e „prezent" (cohortă < 2 sau niciun KPI cu mediană).
+function clientBaselineBlock(baseline) {
+  if (!baseline || !baseline.present) return '';
+  const note = (b) => (b.smallSample ? ' — eșantion mic, orientativ' : '');
+  const lines = [];
+  if (baseline.roas.median !== null) lines.push(`- ROAS: median ${r2(baseline.roas.median)} (n=${baseline.roas.n})${note(baseline.roas)}`);
+  if (baseline.cpl.median !== null) lines.push(`- CPL: median ${r2(baseline.cpl.median)} € (n=${baseline.cpl.n})${note(baseline.cpl)}`);
+  if (baseline.ctr.median !== null) lines.push(`- CTR: median ${r2(baseline.ctr.median * 100)}% (n=${baseline.ctr.n})${note(baseline.ctr)}`);
+  if (baseline.convRate.median !== null) lines.push(`- Rata de conversie: median ${r2(baseline.convRate.median * 100)}% (n=${baseline.convRate.n})${note(baseline.convRate)}`);
+  const mix = (Array.isArray(baseline.platformsPresent) && baseline.platformsPresent.length > 1)
+    ? ['- (Atenție: medianele amestecă platforme diferite — un CTR Meta nu e direct comparabil cu Google;',
+       '  ponderează mai mult campaniile de pe ACEEAȘI platformă cu cea analizată.)']
+    : [];
+  return [
+    '== REPERUL TĂU PROPRIU (mediana campaniilor tale — DESCRIPTIV, NU o țintă) ==',
+    `- Acesta e istoricul INTERN al clientului (mediana propriilor campanii, N=${baseline.cohortSize}). NU e reperul de`,
+    '  industrie din Fundație. Folosește-l pentru „față de propriul istoric"; reperele de industrie rămân pentru',
+    '  „față de piață". Nu confunda cele două și nu raporta aceeași observație de două ori.',
+    ...mix,
+    ...lines,
+  ].join('\n');
+}
+exports.clientBaselineBlock = clientBaselineBlock;
+
+// Insight: tabelul de mai sus + delta ACESTEI campanii vs mediană, cu polaritate precalculată (CPL mic = bine).
+// subjectKpis = { roas, cpl, ctr, convRate } ale campaniei analizate (din totals). '' dacă nu e reper sau fără delte.
+function campaignVsBaselineLine(subjectKpis, baseline) {
+  if (!baseline || !baseline.present || !subjectKpis) return '';
+  const rows = [];
+  const push = (kpi, label, val, render) => {
+    const c = compareToBaseline(kpi, val, baseline[kpi]);
+    if (!c) return;
+    const body = c.dir === 'la nivelul'
+      ? 'la nivelul medianei tale'
+      : `${c.dir.toUpperCase()} mediana ta (${render(baseline[kpi].median)}) cu ~${Math.abs(c.pct)}%`;
+    rows.push(`- ${label} ${render(val)} — ${body} = ${c.verdict}`);
+  };
+  push('ctr', 'CTR', subjectKpis.ctr, (x) => `${r2(x * 100)}%`);
+  push('cpl', 'CPL', subjectKpis.cpl, (x) => `${r2(x)} €`);
+  push('roas', 'ROAS', subjectKpis.roas, (x) => `${r2(x)}`);
+  push('convRate', 'Rata de conversie', subjectKpis.convRate, (x) => `${r2(x * 100)}%`);
+  if (!rows.length) return '';
+  return ['== ACEASTĂ CAMPANIE vs REPERUL TĂU PROPRIU ==', ...rows].join('\n');
+}
+exports.campaignVsBaselineLine = campaignVsBaselineLine;
+
 // Sumar al campaniilor LIVE ale clientului (din totals) — grounding pt. Self Marketing. Gol dacă nu există.
 function liveCampaignsBlock(campaigns) {
   const cs = (Array.isArray(campaigns) ? campaigns : []).filter((c) => c && c.totals && Number(c.totals.spend) > 0);
@@ -1906,8 +2026,9 @@ function campKpiLine(camp) {
   return `- ${camp.name || '(fără nume)'} [${camp.platform || '-'}, ${camp.status || '-'}]: cheltuit ${r2(Number(t.spend) || 0)}€, venit ${r2(Number(t.revenue) || 0)}€, ROAS ${r2(roas)}, lead-uri ${Number(t.leads) || 0}, CPL ${r2(cpl)}€`;
 }
 
-function buildClientReportPrompt(lead, camps, mom) {
+function buildClientReportPrompt(lead, camps, mom, baseline) {
   const momTxt = momReportLine(mom);
+  const baselineTbl = clientBaselineBlock(baseline); // B2: reperul propriu (portofoliu întreg, fără exclude-self)
   const o = { spend: 0, revenue: 0, leads: 0 };
   for (const c of camps) {
     const t = c.totals || {};
@@ -1927,11 +2048,13 @@ function buildClientReportPrompt(lead, camps, mom) {
     '',
     '== TOTAL ==',
     `Cheltuit: ${r2(o.spend)}€ · Venit: ${r2(o.revenue)}€ · ROAS general: ${r2(div(o.revenue, o.spend))} · Lead-uri: ${o.leads}`,
+    ...(baselineTbl ? ['', baselineTbl] : []),
     ...(momTxt ? ['', '== TREND (lună-pe-lună) ==', momTxt] : []),
     '',
     'Cerințe: limba ROMÂNĂ, ton profesionist dar prietenos, adresat clientului (nu intern). Folosește',
     'cifrele reale. Rezumatul = imaginea de ansamblu; highlights = realizările cu cifre; recomandările',
     '= ce propunem pentru luna viitoare. Fără promisiuni nerealiste.',
+    ...(baselineTbl ? ['Poți menționa cum stă fiecare campanie față de mediana proprie a clientului (descriptivă, nu țintă).'] : []),
   ].join('\n');
 }
 exports.buildClientReportPrompt = buildClientReportPrompt;
@@ -1966,8 +2089,9 @@ const ALLOCATION_SCHEMA = {
 };
 exports.ALLOCATION_SCHEMA = ALLOCATION_SCHEMA; // pt. aserțiuni de formă în e2e (TEST ALLOC)
 
-function buildAllocationPrompt(lead, camps) {
+function buildAllocationPrompt(lead, camps, baseline) {
   const cs = (Array.isArray(camps) ? camps : []).filter((c) => c && c.totals && Number(c.totals.spend) > 0);
+  const baselineTbl = clientBaselineBlock(baseline); // B2: reperul propriu (portofoliu, fără exclude-self)
   const o = { spend: 0, revenue: 0, leads: 0 };
   for (const c of cs) {
     const t = c.totals || {};
@@ -1989,6 +2113,7 @@ function buildAllocationPrompt(lead, camps) {
     '',
     '== TOTAL PORTOFOLIU ==',
     `Cheltuit: ${r2(o.spend)}€ · Venit: ${r2(o.revenue)}€ · ROAS general: ${r2(div(o.revenue, o.spend))} · Lead-uri: ${o.leads} · CPL mediu: ${r2(div(o.spend, o.leads))}€`,
+    ...(baselineTbl ? ['', baselineTbl] : []),
     '',
     'Cerințe:',
     '- Compară campaniile ÎNTRE ele (eficiență relativă), nu fiecare în izolare. Bugetul e limitat: ce dai uneia,',
@@ -2021,6 +2146,17 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     const piSnap = await db.collection('campaignInsights').doc(campaignId).get();
     if (piSnap.exists) prevInsight = piSnap.data() || null;
   } catch (e) { logger.warn('prev insight read failed', { campaignId, err: String(e) }); }
+  // B2: reperul PROPRIU al clientului = mediana CELORLALTE campanii ale lead-ului (exclude-self prin campaignId).
+  // Interogare indexată (where leadId==), PROIECTATĂ cu .select(platform,totals) → fetch slim, nu docul întreg;
+  // best-effort → un index/permisiune lipsă NU poate rupe analiza.
+  let baseline = null;
+  try {
+    if (camp.leadId) {
+      const sibSnap = await db.collection('campaigns').where('leadId', '==', camp.leadId).select('platform', 'totals').get();
+      const items = sibSnap.docs.map((d) => { const x = d.data() || {}; return { id: d.id, platform: x.platform, totals: x.totals }; });
+      baseline = computeClientBaseline(items, { excludeId: campaignId });
+    }
+  } catch (e) { logger.warn('client baseline read failed', { campaignId, err: String(e) }); }
   if (consume) await consume();
   const lead = leadSnap && leadSnap.exists ? (leadSnap.data() || {}) : {};
   const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
@@ -2030,7 +2166,7 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
     schema: INSIGHT_SCHEMA,
     maxTokens: 8000,
     system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry, calibrated }),
-    prompt: buildInsightPrompt(lead, camp, metrics, prevInsight),
+    prompt: buildInsightPrompt(lead, camp, metrics, prevInsight, baseline),
   });
   // Pachet C: încrederea finală e PLAFONATĂ de eșantion (clicuri/lead-uri totale) — un verdict pe 8 click-uri NU mai
   // are autoritate de high. 'low' → UI marchează + automatizarea NU se declanșează (vezi onCampaignAutomation).
@@ -2288,12 +2424,13 @@ async function performClientReport(db, leadId, actorUid, consume) {
 
   } catch (e) { logger.warn('report MoM failed', { leadId, err: String(e) }); }
   const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
+  const baseline = computeClientBaseline(camps); // B2: reperul propriu (portofoliu, fără citiri extra)
   // Fundația stratificată: persona „account manager" + L2 din verticala clientului (calibrat când există date reale).
   const { out, usage } = await runAiJson({
     schema: REPORT_SCHEMA,
     maxTokens: 10000,
     system: buildSystemBlocks({ persona: PERSONAS.accountManager, industry: lead.industry, calibrated }),
-    prompt: buildClientReportPrompt(lead, camps, mom),
+    prompt: buildClientReportPrompt(lead, camps, mom, baseline),
   });
   const report = {
     summary: clampText(out.summary, 6000),
@@ -2323,11 +2460,12 @@ async function performBudgetAllocation(db, leadId, actorUid, consume) {
   if (consume) await consume();
   const lead = leadSnap.data() || {};
   const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
+  const baseline = computeClientBaseline(camps); // B2: reperul propriu (portofoliu, fără citiri extra)
   const { out, usage } = await runAiJson({
     schema: ALLOCATION_SCHEMA,
     maxTokens: 8000,
     system: buildSystemBlocks({ persona: PERSONAS.strategist, industry: lead.industry, calibrated }),
-    prompt: buildAllocationPrompt(lead, camps),
+    prompt: buildAllocationPrompt(lead, camps, baseline),
   });
   // Clamp + validare. Enum-ul se derivă din schemă (sursă unică) → fără drift între enum și clamp.
   // Paritate cu coerceToAllocation din src/analytics/kpi.ts (aceleași valori).

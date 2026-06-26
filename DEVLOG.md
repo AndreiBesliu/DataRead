@@ -2630,6 +2630,31 @@ normaliser, secretele niciodată în chat/repo.
 > live, v2 callable europe-central2). Verificarea în browser a butonului = în spatele login-ului operator (necredențiabil aici);
 > logica e acoperită de teste unit/e2e. Cu C2 livrat, auditul analytics/AI e COMPLET (D+A+B+C+C2); rămân doar feliile low-urgență.
 
+**2026-06-26 - Task Completed — Audit analytics/AI · B2: REPERUL PROPRIU al clientului (mediana propriilor campanii în prompturi)**
+> Model: Claude Opus 4.8 (1M context). Design via judece-panel multi-agent (3 propuneri independente → sinteză) + review
+> adversarial (3 dimensiuni → verificare). AI-ul poate acum spune „CTR-ul TĂU e sub mediana TA proprie", DESCRIPTIV — distinct
+> de reperul de INDUSTRIE (Pachet B, cross-tenant, în blocul L2 cache-uit). Per-client → stă în promptul per-cerere, nu în L2.
+> - **Numeric core (`src/analytics/kpi.ts`, TS testat + port byte-echivalent în functions/index.js):** `median` (par/impar,
+>   ignoră negative/non-numere), `computeClientBaseline(items,{excludeId})` (cohortă spend>0; mediana per-KPI peste RATELE
+>   per-campanie egal-ponderate; ROAS/CPL/CTR/convRate; `present` = cohortă≥2 ȘI ≥1 KPI cu mediană; per-KPI `n`+`smallSample`),
+>   `compareToBaseline` (polaritate: CPL mic=bine; |pct|≤3→„la fel"; mediană≤0→null). Constante `CLIENT_BASELINE_MIN_N=3`/
+>   `THIN_N=5`/`KPI_LOWER_IS_BETTER` (paritate asertată TS↔JS).
+> - **Formatare RO (functions, lângă campKpiLine):** `clientBaselineBlock` (tabel median + caveat „eșantion mic" pe n∈[3,5) +
+>   caveat mix multi-platformă) și `campaignVsBaselineLine` (deltele acestei campanii vs mediană, polaritate precalculată).
+> - **Cablare:** `buildInsightPrompt`/`buildClientReportPrompt`/`buildAllocationPrompt` primesc param opțional `baseline`
+>   (lipsă → prompt byte-identic, compat). `performCampaignInsight` face O interogare proiectată `.select(platform,totals)`
+>   pe campaniile lead-ului, exclude-self prin campaignId, best-effort. report/allocation calculează inline din `camps[]`
+>   (zero citiri extra). Fără rules/schema/UI nou.
+> - **Fix-uri din review adversarial:** (1) MEDIU — KPI-ul afișat în insight folosea fereastra de 60 zile a metricilor, dar
+>   delta nouă folosea totals all-time → 2 ROAS contradictorii pe aceeași campanie (>60 zile). Fix: KPI afișat = camp.totals
+>   (aceeași bază ca delta + cohortă); `metrics` rămâne doar pt. evoluția recentă + anomalii. + test de regresie. (2) NIT —
+>   comentariul citirii surori corectat + `.select(platform,totals)` adăugat (fetch slim real, nu doc întreg).
+> Verificat: typecheck + 23/23 suites (median/computeClientBaseline/compareToBaseline + edge-cases) + e2e-lp (TEST B2: paritate
+> constante + port JS + formatare RO + wiring byte-compat + regresie display==delta) + build + boot. DEPLOYED: functions
+> (fără rules/hosting — B2 nu schimbă reguli/schemă; helperii TS sunt doar pt. teste, neincluși în UI). Notă latentă (out-of-scope,
+> task spawn): `metrics` în performCampaignInsight se citește `orderBy date asc limit 60` = primele 60 zile, nu ultimele — afectează
+> doar blocul „evoluție recentă", nu KPI-ul (acum din totals).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

@@ -13,7 +13,14 @@ import {
   kpisByPlatform,
   insightConfidence,
   ALLOCATION_ACTIONS,
+  median,
+  computeClientBaseline,
+  compareToBaseline,
+  CLIENT_BASELINE_MIN_N,
+  CLIENT_BASELINE_THIN_N,
+  KPI_LOWER_IS_BETTER,
   type DailyMetric,
+  type Totals,
 } from '../src/analytics/kpi';
 
 let failures = 0;
@@ -184,6 +191,91 @@ check('coerceToAllocation: null/gol → null', coerceToAllocation(null) === null
   const a = coerceToAllocation({ headline: 'Doar titlu', summary: '', moves: 'nu e array' as unknown });
   check('coerceToAllocation: moves non-array → [] dar util prin headline', a !== null && a.moves.length === 0);
 }
+
+// B2: reperul propriu al clientului (median / computeClientBaseline / compareToBaseline).
+const approx = (a: number | null, b: number, eps = 1e-9) => a !== null && Math.abs(a - b) < eps;
+const T = (spend: number, impressions: number, clicks: number, leads: number, revenue: number): Totals => ({ spend, impressions, clicks, leads, revenue });
+
+check('baseline: constante MIN_N=3 / THIN_N=5', CLIENT_BASELINE_MIN_N === 3 && CLIENT_BASELINE_THIN_N === 5);
+check('baseline: polaritate cpl=lower-is-better, restul nu', KPI_LOWER_IS_BETTER.cpl === true && KPI_LOWER_IS_BETTER.roas === false && KPI_LOWER_IS_BETTER.ctr === false && KPI_LOWER_IS_BETTER.convRate === false);
+
+check('median: impar', median([10, 20, 30]) === 20);
+check('median: par = media celor 2 din mijloc', median([10, 20, 30, 40]) === 25);
+check('median: gol → null', median([]) === null);
+check('median: ignoră negative/non-numere', median([-5, NaN as unknown as number, 'x' as unknown as number, 10, 20]) === 15);
+
+{
+  // 5 campanii, spend>0. roas [2,4,3,1,5]→med 3; cpl [10,5,6.667,20,4]→med 100/15; ctr 0.01..0.05→med 0.03; conv toate 0.5.
+  const items = [
+    { id: 'c1', platform: 'meta', totals: T(100, 1000, 20, 10, 200) },
+    { id: 'c2', platform: 'meta', totals: T(100, 1000, 40, 20, 400) },
+    { id: 'c3', platform: 'google', totals: T(100, 1000, 30, 15, 300) },
+    { id: 'c4', platform: 'google', totals: T(100, 1000, 10, 5, 100) },
+    { id: 'c5', platform: 'tiktok', totals: T(100, 1000, 50, 25, 500) },
+  ];
+  const b = computeClientBaseline(items);
+  check('baseline: 5 campanii → present', b.present === true && b.cohortSize === 5);
+  check('baseline: roas median=3 n=5', approx(b.roas.median, 3) && b.roas.n === 5);
+  check('baseline: cpl median=100/15', approx(b.cpl.median, 100 / 15));
+  check('baseline: ctr median=0.03', approx(b.ctr.median, 0.03));
+  check('baseline: convRate median=0.5', approx(b.convRate.median, 0.5));
+  check('baseline: platforme distincte (meta/google/tiktok)', b.platformsPresent.length === 3);
+
+  // exclude-self: scoatem c5 (roas outlier 5) → roas [2,4,3,1] med 2.5, cohortSize 4.
+  const bx = computeClientBaseline(items, { excludeId: 'c5' });
+  check('baseline exclude-self: cohortSize scade la 4', bx.cohortSize === 4);
+  check('baseline exclude-self: roas median se schimbă 3→2.5 (valoarea proprie e exclusă)', approx(bx.roas.median, 2.5));
+}
+
+{
+  // Suprimare per-KPI: 4 campanii cu clicks>0 (ctr n=4), dar leads>0 doar la 2 (cpl n=2 < MIN_N → null).
+  const items = [
+    { id: 'a', platform: 'meta', totals: T(100, 1000, 20, 10, 200) },
+    { id: 'b', platform: 'meta', totals: T(100, 1000, 40, 20, 400) },
+    { id: 'c', platform: 'meta', totals: T(100, 1000, 30, 0, 0) },
+    { id: 'd', platform: 'meta', totals: T(100, 1000, 10, 0, 0) },
+  ];
+  const b = computeClientBaseline(items);
+  check('baseline: cpl suprimat (n=2 < 3 → median null)', b.cpl.median === null && b.cpl.n === 2);
+  check('baseline: ctr rămâne (n=4)', b.ctr.median !== null && b.ctr.n === 4);
+  check('baseline: present pe baza ctr', b.present === true);
+}
+
+// Gate: 1 campanie → present false; exact 2 campanii (toate KPI n=2) → present false (MIN_N=3).
+check('baseline: 1 campanie → present false', computeClientBaseline([{ id: 'x', platform: 'meta', totals: T(100, 1000, 20, 10, 200) }]).present === false);
+check('baseline: 2 campanii (n=2 peste tot) → present false', computeClientBaseline([
+  { id: 'x', platform: 'meta', totals: T(100, 1000, 20, 10, 200) },
+  { id: 'y', platform: 'meta', totals: T(100, 1000, 40, 20, 400) },
+]).present === false);
+
+// smallSample: n=3 → true; n=5 → false (din cohorta de 5 de mai sus).
+{
+  const three = computeClientBaseline([
+    { id: 'a', totals: T(100, 1000, 20, 10, 200) },
+    { id: 'b', totals: T(100, 1000, 40, 20, 400) },
+    { id: 'c', totals: T(100, 1000, 30, 15, 300) },
+  ]);
+  check('baseline: n=3 → smallSample true', three.roas.smallSample === true && three.roas.n === 3);
+}
+
+// spend>0 filtru: campaniile fără cheltuială sunt excluse din cohortă.
+check('baseline: spend=0 exclus din cohortSize', computeClientBaseline([
+  { id: 'a', totals: T(100, 1000, 20, 10, 200) },
+  { id: 'b', totals: T(100, 1000, 40, 20, 400) },
+  { id: 'z', totals: T(0, 1000, 0, 0, 0) },
+]).cohortSize === 2);
+
+// compareToBaseline: polaritate.
+const baseCpl = { median: 10, n: 5, smallSample: false };
+const baseCtr = { median: 0.03, n: 5, smallSample: false };
+const baseRoas = { median: 3, n: 5, smallSample: false };
+check('compare: CPL sub mediană → mai bine', compareToBaseline('cpl', 6, baseCpl)?.verdict === 'mai bine');
+check('compare: CTR sub mediană → mai slab', compareToBaseline('ctr', 0.02, baseCtr)?.verdict === 'mai slab');
+check('compare: ROAS peste mediană → mai bine', compareToBaseline('roas', 4.5, baseRoas)?.verdict === 'mai bine');
+check('compare: în ±3% → la fel / la nivelul', (() => { const c = compareToBaseline('roas', 3.05, baseRoas); return c?.verdict === 'la fel' && c?.dir === 'la nivelul'; })());
+check('compare: valoare null → null', compareToBaseline('roas', null, baseRoas) === null);
+check('compare: bază null → null', compareToBaseline('roas', 3, null) === null);
+check('compare: mediană 0 → null (fără împărțire la 0)', compareToBaseline('roas', 3, { median: 0, n: 5, smallSample: false }) === null);
 
 if (failures) {
   console.error(`${failures} checks failed`);

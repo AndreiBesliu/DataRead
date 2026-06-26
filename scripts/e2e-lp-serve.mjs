@@ -773,6 +773,65 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
   ok(allocP.includes('TOTAL PORTOFOLIU') && allocP.includes('ROAS general'), 'buildAllocationPrompt: bloc total portofoliu cu ROAS general');
   ok(allocP.includes('aproximativ neutră ca buget total'), 'buildAllocationPrompt: constrângerea zero-sum (nu „crește tot")');
 
+  // ── B2: reperul PROPRIU al clientului (median/computeClientBaseline/compareToBaseline + formatare RO + wiring). ──
+  // Paritate constante cu TS (test-analytics importă aceleași literale).
+  ok(fns.CLIENT_BASELINE_MIN_N === 3 && fns.CLIENT_BASELINE_THIN_N === 5, 'B2: constante MIN_N=3/THIN_N=5 (paritate TS)');
+  ok(JSON.stringify(fns.KPI_LOWER_IS_BETTER) === JSON.stringify({ cpl: true, roas: false, ctr: false, convRate: false }), 'B2: KPI_LOWER_IS_BETTER (paritate TS)');
+  // median (port JS).
+  ok(fns.median([10, 20, 30]) === 20 && fns.median([10, 20, 30, 40]) === 25 && fns.median([]) === null, 'B2: median impar/par/gol');
+  ok(fns.median([-5, NaN, 'x', 10, 20]) === 15, 'B2: median ignoră negative/non-numere (paritate TS)');
+  // computeClientBaseline (port JS) — aceeași cohortă ca în TS.
+  const bItems = [
+    { id: 'c1', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 20, leads: 10, revenue: 200 } },
+    { id: 'c2', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 40, leads: 20, revenue: 400 } },
+    { id: 'c3', platform: 'google', totals: { spend: 100, impressions: 1000, clicks: 30, leads: 15, revenue: 300 } },
+    { id: 'c4', platform: 'google', totals: { spend: 100, impressions: 1000, clicks: 10, leads: 5, revenue: 100 } },
+    { id: 'c5', platform: 'tiktok', totals: { spend: 100, impressions: 1000, clicks: 50, leads: 25, revenue: 500 } },
+  ];
+  const bl = fns.computeClientBaseline(bItems);
+  ok(bl.present && bl.cohortSize === 5 && bl.roas.median === 3 && Math.abs(bl.ctr.median - 0.03) < 1e-9, 'B2: computeClientBaseline medii corecte (paritate TS)');
+  ok(fns.computeClientBaseline(bItems, { excludeId: 'c5' }).roas.median === 2.5, 'B2: exclude-self schimbă mediana (3→2.5)');
+  ok(fns.computeClientBaseline([bItems[0]]).present === false, 'B2: 1 campanie → present false');
+  // clientBaselineBlock — tabelul.
+  const blk = fns.clientBaselineBlock(bl);
+  ok(blk.includes('REPERUL TĂU PROPRIU') && blk.includes('DESCRIPTIV, NU o țintă'), 'B2: clientBaselineBlock titlu distinct de industrie');
+  ok(blk.includes('ROAS: median') && blk.includes('n=5') && blk.includes('Atenție: medianele amestecă platforme'), 'B2: clientBaselineBlock tabel + caveat multi-platformă');
+  ok(fns.clientBaselineBlock({ present: false }) === '' && fns.clientBaselineBlock(null) === '', 'B2: clientBaselineBlock present:false/null → gol');
+  // caveat eșantion mic: o cohortă cu cpl n=4 (4 din 5 au leads>0) → linia CPL se termină cu „eșantion mic".
+  const thin = fns.computeClientBaseline([
+    { id: 'a', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 20, leads: 10, revenue: 200 } },
+    { id: 'b', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 40, leads: 20, revenue: 400 } },
+    { id: 'c', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 30, leads: 15, revenue: 300 } },
+    { id: 'd', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 25, leads: 12, revenue: 250 } },
+    { id: 'e', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 10, leads: 0, revenue: 0 } },
+  ]);
+  ok(thin.cpl.n === 4 && thin.cpl.smallSample === true, 'B2: cpl n=4 → smallSample');
+  ok(/CPL: median[^\n]*eșantion mic/.test(fns.clientBaselineBlock(thin)), 'B2: linia CPL cu n în [3,5) primește caveat „eșantion mic"');
+  ok(!fns.clientBaselineBlock(thin).includes('amestecă platforme'), 'B2: cohortă single-platform → fără caveat de mix');
+  // campaignVsBaselineLine — polaritate precalculată.
+  const vs = fns.campaignVsBaselineLine({ roas: 4.5, cpl: 6, ctr: 0.02, convRate: null }, bl);
+  ok(vs.includes('ACEASTĂ CAMPANIE vs REPERUL TĂU PROPRIU'), 'B2: campaignVsBaselineLine titlu');
+  ok(/CPL[^\n]*mai bine/.test(vs), 'B2: CPL sub mediană → mai bine (polaritate)');
+  ok(/CTR[^\n]*mai slab/.test(vs), 'B2: CTR sub mediană → mai slab (polaritate)');
+  ok(!vs.includes('[object Object]'), 'B2: campaignVsBaselineLine fără [object Object]');
+  ok(!/Rata de conversie/.test(vs), 'B2: KPI cu valoare null pe campanie → linia omisă');
+  ok(fns.campaignVsBaselineLine({ roas: 4.5 }, { present: false }) === '', 'B2: fără reper → campaignVsBaselineLine gol');
+  // Wiring + backward-compat: blocul apare DOAR cu baseline; arity veche = prompt fără bloc.
+  const insLead = { companyName: 'Y', industry: 'retail' };
+  const insCamp = { name: 'C', platform: 'meta', status: 'active', totals: { spend: 100, impressions: 1000, clicks: 20, leads: 10, revenue: 200 } };
+  ok(fns.buildInsightPrompt(insLead, insCamp, [], null, bl).includes('REPERUL TĂU PROPRIU'), 'B2: buildInsightPrompt cu baseline include blocul');
+  ok(!fns.buildInsightPrompt(insLead, insCamp, [], null).includes('REPERUL TĂU PROPRIU'), 'B2: buildInsightPrompt arity veche → fără bloc (byte-compat)');
+  ok(fns.buildClientReportPrompt(insLead, [insCamp], null, bl).includes('REPERUL TĂU PROPRIU'), 'B2: buildClientReportPrompt cu baseline include blocul');
+  ok(!fns.buildClientReportPrompt(insLead, [insCamp], null).includes('REPERUL TĂU PROPRIU'), 'B2: buildClientReportPrompt fără baseline → fără bloc');
+  ok(fns.buildAllocationPrompt(insLead, [insCamp], bl).includes('REPERUL TĂU PROPRIU'), 'B2: buildAllocationPrompt cu baseline include blocul');
+  ok(!fns.buildAllocationPrompt(insLead, [insCamp]).includes('REPERUL TĂU PROPRIU'), 'B2: buildAllocationPrompt fără baseline → fără bloc');
+  // Regresie (review B2): KPI afișat = totalurile ALL-TIME (camp.totals), NU fereastra de metrici — fără 2 ROAS
+  // contradictorii pentru aceeași campanie. Totals ROAS=5 (500/100), fereastra de metrici ROAS=1 (100/100).
+  const divCamp = { name: 'C', platform: 'meta', totals: { spend: 100, impressions: 1000, clicks: 50, leads: 10, revenue: 500 } };
+  const divMetrics = [{ date: '2026-06-01', spend: 100, impressions: 1000, clicks: 50, leads: 10, revenue: 100 }];
+  const divP = fns.buildInsightPrompt({ companyName: 'Y' }, divCamp, divMetrics, null, null);
+  ok(divP.includes('ROAS: 5') && !divP.includes('ROAS: 1'), 'B2: KPI afișat din camp.totals all-time (ROAS 5), nu din fereastra de metrici (ROAS 1)');
+
   const prof = { companyName: 'Z', industry: 'retail', productsServices: 'X', audience: 'Y', goals: 'G' };
   const liveC = [{ name: 'C1', platform: 'meta', status: 'active', totals: { spend: 100, revenue: 300, leads: 5 } }];
   ok(fns.buildStrategyPrompt(prof, liveC).includes('DATE REALE DIN CAMPANIILE TALE'), 'buildStrategyPrompt: date live incluse');
