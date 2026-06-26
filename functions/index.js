@@ -489,12 +489,42 @@ const AI_OPERATOR_GLOBAL_DAILY_CAP = 400; // backstop GLOBAL/zi pe TOȚI operato
 // Fundația stratificată (prompt-caching pe straturi) — vezi functions/prompts/personas.js.
 // buildSystemBlocks(...) → array de blocuri `system` cu cache_control pe granițele stabile
 // (L1 universal + L2 per-verticală), folosit de TOATE callable-urile AI prin runAiJson.
-const { buildSystemBlocks, PERSONAS, buildL1Text, buildL2Text } = require('./prompts/personas');
+const { buildSystemBlocks, PERSONAS, buildL1Text, buildL2Text, normIndustry } = require('./prompts/personas');
 // Re-export pt. testele e2e (functions e JS netipizat → validăm structura blocurilor + cache_control).
 exports.buildSystemBlocks = buildSystemBlocks;
 exports.buildL1Text = buildL1Text;
 exports.buildL2Text = buildL2Text;
 exports.PERSONAS = PERSONAS;
+
+// ── Pachet B (calibrare benchmark): percentile PURE pentru agregarea benchmarkStats din metrici reale. ──
+// p ∈ 0..1, interpolare liniară pe valori sortate crescător. null pe listă goală. Exportate → testate e2e.
+function abPercentile(sortedAsc, p) {
+  if (!Array.isArray(sortedAsc) || !sortedAsc.length) return null;
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  const idx = p * (sortedAsc.length - 1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo === hi) return sortedAsc[lo];
+  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
+}
+/** {p25,p50,p75} (rotunjite la 2 zecimale) peste valori finite ≥0; null dacă nu există valori. */
+function tripletPercentiles(values) {
+  const v = (Array.isArray(values) ? values : []).filter((x) => typeof x === 'number' && isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const r = (x) => (x == null ? null : Math.round(x * 100) / 100);
+  return { p25: r(abPercentile(v, 0.25)), p50: r(abPercentile(v, 0.5)), p75: r(abPercentile(v, 0.75)) };
+}
+exports.abPercentile = abPercentile;
+exports.tripletPercentiles = tripletPercentiles;
+
+// Reperul CALIBRAT pentru o industrie (benchmarkStats/{industrie}) — best-effort, pentru promptul de insight/raport.
+async function readBenchmark(db, industry) {
+  try {
+    const key = normIndustry(industry);
+    if (!key) return null;
+    const s = await db.collection('benchmarkStats').doc(key).get();
+    return s.exists ? s.data() : null;
+  } catch (e) { return null; }
+}
 
 // Schema livrabilelor — output_config.format garantează JSON valid pe această formă.
 const CAMPAIGN_SCHEMA = {
@@ -1897,12 +1927,13 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   } catch (e) { logger.warn('prev insight read failed', { campaignId, err: String(e) }); }
   if (consume) await consume();
   const lead = leadSnap && leadSnap.exists ? (leadSnap.data() || {}) : {};
-  // Fundația stratificată: persona „analist" + L2 din verticala lead-ului. Lead-ul/metricile rămân
-  // în prompt (L3+L4, necache-uite) — vezi buildInsightPrompt.
+  const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
+  // Fundația stratificată: persona „analist" + L2 din verticala lead-ului (calibrat când există date reale).
+  // Lead-ul/metricile rămân în prompt (L3+L4, necache-uite) — vezi buildInsightPrompt.
   const { out, usage } = await runAiJson({
     schema: INSIGHT_SCHEMA,
     maxTokens: 8000,
-    system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry }),
+    system: buildSystemBlocks({ persona: PERSONAS.analyst, industry: lead.industry, calibrated }),
     prompt: buildInsightPrompt(lead, camp, metrics, prevInsight),
   });
   const insight = {
@@ -2152,11 +2183,12 @@ async function performClientReport(db, leadId, actorUid, consume) {
     mom = monthlyMoM(allMetrics, new Date().toISOString().slice(0, 7)); // luna curentă → detectează lună parțială
 
   } catch (e) { logger.warn('report MoM failed', { leadId, err: String(e) }); }
-  // Fundația stratificată: persona „account manager" + L2 din verticala clientului.
+  const calibrated = await readBenchmark(db, lead.industry); // Pachet B: repere REALE calibrate (best-effort)
+  // Fundația stratificată: persona „account manager" + L2 din verticala clientului (calibrat când există date reale).
   const { out, usage } = await runAiJson({
     schema: REPORT_SCHEMA,
     maxTokens: 10000,
-    system: buildSystemBlocks({ persona: PERSONAS.accountManager, industry: lead.industry }),
+    system: buildSystemBlocks({ persona: PERSONAS.accountManager, industry: lead.industry, calibrated }),
     prompt: buildClientReportPrompt(lead, camps, mom),
   });
   const report = {
@@ -5052,6 +5084,62 @@ if (AUTOMATION_ENABLED) {
       }
       logger.info('reconcilePredictions done', { scanned: snap.size, reconciled: done });
     } catch (e) { console.error('reconcilePredictions failed:', e); }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// CALIBRARE BENCHMARK (Pachet B, audit analytics/AI): job SĂPTĂMÂNAL care înlocuiește reperele statice
+// „NEVALIDATE" cu mediane REALE din metricile acumulate. Agregă CROSS-TENANT pe industrie × platformă (din
+// campaniile cu cheltuială reală), calculează p25/p50/p75 (CTR/CPL/ROAS/CVR) și scrie DOAR AGREGATE (nr. eșantion +
+// percentile, ZERO rânduri per-tenant → privacy-safe) în benchmarkStats/{industrie}. buildL2Text le preferă (când
+// eșantion ≥ prag), altfel cade pe BENCHMARKS_RO. Ungated (nu e AI); dacă nu sunt date, nu scrie nimic.
+{
+  const { onSchedule } = require('firebase-functions/v2/scheduler');
+  exports.calibrateBenchmarks = onSchedule({ schedule: '0 4 * * 1', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    try {
+      const db = admin.firestore();
+      const ts = admin.firestore.FieldValue.serverTimestamp();
+      const PLATS = ['meta', 'google', 'tiktok'];
+      // 1) map leadId → industrie canonică
+      const leadsSnap = await db.collection('leads').limit(5000).get();
+      const indByLead = {};
+      leadsSnap.forEach((d) => { const k = normIndustry((d.data() || {}).industry); if (k) indByLead[d.id] = k; });
+      // 2) bucket KPI per industrie × platformă din campaniile cu cheltuială reală
+      const buckets = {};
+      const campsSnap = await db.collection('campaigns').limit(5000).get();
+      campsSnap.forEach((d) => {
+        const c = d.data() || {};
+        const ind = indByLead[String(c.leadId || '')];
+        if (!ind) return;
+        const plat = PLATS.includes(c.platform) ? c.platform : null;
+        if (!plat) return;
+        const t = c.totals || {};
+        const spend = Number(t.spend) || 0, imp = Number(t.impressions) || 0, clk = Number(t.clicks) || 0, lds = Number(t.leads) || 0, rev = Number(t.revenue) || 0;
+        if (spend <= 0) return; // doar campanii reale
+        const b = (buckets[ind] = buckets[ind] || {});
+        const pb = (b[plat] = b[plat] || { ctr: [], cpl: [], roas: [], cvr: [] });
+        if (imp > 0) pb.ctr.push((clk / imp) * 100);
+        if (lds > 0) pb.cpl.push(spend / lds);
+        if (rev > 0) pb.roas.push(rev / spend);
+        if (clk > 0) pb.cvr.push((lds / clk) * 100);
+      });
+      // 3) scrie agregate (percentile + nr. eșantion) → benchmarkStats/{industrie}; min 5 campanii/industrie
+      let written = 0;
+      for (const ind of Object.keys(buckets)) {
+        const out = { schema: 1, industry: ind, updatedAt: ts };
+        let total = 0;
+        for (const plat of PLATS) {
+          const pb = buckets[ind][plat];
+          if (!pb) continue;
+          const n = Math.max(pb.ctr.length, pb.cpl.length, pb.roas.length, pb.cvr.length);
+          out[plat] = { samples: n, ctr: tripletPercentiles(pb.ctr), cpl: tripletPercentiles(pb.cpl), roas: tripletPercentiles(pb.roas), cvr: tripletPercentiles(pb.cvr) };
+          total += n;
+        }
+        out.samples = total;
+        if (total >= 5) { await db.collection('benchmarkStats').doc(ind).set(out, { merge: true }); written++; }
+      }
+      logger.info('calibrateBenchmarks done', { industries: written });
+    } catch (e) { console.error('calibrateBenchmarks failed:', e); }
   });
 }
 

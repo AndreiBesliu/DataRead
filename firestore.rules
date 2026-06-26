@@ -430,6 +430,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Benchmark calibrat (Pachet B): mediane REALE per industrie (p25/p50/p75) agregate cross-tenant — DOAR agregate,
+    // zero rânduri per-tenant (privacy-safe). Scris EXCLUSIV de jobul calibrateBenchmarks (Admin SDK). Read admin.
+    match /benchmarkStats/{industry} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Coada de email (extensia Trigger Email / firestore-send-email) — scrisă EXCLUSIV de functions (Admin SDK) +
     // procesată de extensie (Admin SDK). Clientul NU atinge niciodată (conține adrese + conținut). Vezi sendLeadEmail.
     match /mail/{id} {

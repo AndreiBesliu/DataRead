@@ -2574,6 +2574,22 @@ normaliser, secretele niciodată în chat/repo.
 > de modulul pur testat. Datele de acuratețe apar după ce predicțiile au ≥14 zile și lead-urile se decid. Insight-accuracy (delta
 > ROAS din campaignInsightLog) = sub-felie viitoare; snapshot-ul se acumulează de pe acum. Următor: B (calibrare benchmark), C (profunzime AI).
 
+**2026-06-26 - Task Completed — Audit analytics/AI · Pachet B: CALIBRARE benchmark din date proprii**
+> Model: Claude Opus 4.8 (1M context). Remediază finding-ul #2 (confirmat): reperele `BENCHMARKS_RO` „NEVALIDATE" ancorau
+> verdictele AI, dar metricile reale acumulate nu erau folosite. Acum benchmark-urile se CALIBREAZĂ din datele platformei.
+> - **Job săptămânal `calibrateBenchmarks`** (onSchedule luni 04:00, ungated): agregă CROSS-TENANT pe industrie × platformă
+>   (din campaniile cu cheltuială reală), calculează p25/p50/p75 pentru CTR/CPL/ROAS/CVR și scrie DOAR AGREGATE (percentile +
+>   nr. eșantion, ZERO rânduri per-tenant → privacy-safe) în `benchmarkStats/{industrie}` (min 5 campanii/industrie).
+> - **Injectare în prompt:** `buildL2Text(industry, calibrated)` + `buildSystemBlocks({...calibrated})` — când o platformă are
+>   ≥5 campanii reale, linia de reper devine `[REAL · N campanii]` cu mediană + interval p25–p75; altfel cade pe static. Insight +
+>   raport citesc `benchmarkStats/{industrie}` (best-effort) și pasează `calibrated`. Modelul e instruit să trateze [REAL] ca date, nu ghiciri.
+> - Helperi puri `abPercentile`/`tripletPercentiles` (interpolare liniară, ignoră negativ/non-număr) — exportați + testați e2e.
+> - Reguli: `benchmarkStats/{industrie}` read admin / write false (Admin SDK only).
+> Verificat: typecheck + 23/23 suites + build + boot + e2e-lp (percentile + L2 calibrat vs static + prag eșantion). DEPLOYED:
+> hosting + rules + functions (incl. `calibrateBenchmarks`). Date reale apar după ce o industrie strânge ≥5 campanii cu cheltuială.
+> **AMÂNAT (B2):** bază per-client (mediana proprie a clientului injectată în prompt „CTR-ul tău vs mediana ta") — sub-felie viitoare.
+> Următor: C (profunzime AI — confidence/dataGaps + prag eșantion + aiBudgetAllocation + anomalii).
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

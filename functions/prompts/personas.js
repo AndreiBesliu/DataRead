@@ -404,7 +404,13 @@ function normIndustry(industry) {
 
 /** Textul L2 per-verticală: benchmark-uri + ghidaj pe industrie. null dacă industria
  *  nu e mapabilă (caz în care nu emitem bloc L2 și nici breakpoint orfan). */
-function buildL2Text(industry) {
+// Prag minim de campanii pentru a folosi un reper CALIBRAT (real) în locul celui static (anti-zgomot pe eșantion mic).
+const BENCHMARK_MIN_SAMPLES = 5;
+
+/** Textul L2 per-verticală: benchmark-uri + ghidaj. `calibrated` (opțional) = doc benchmarkStats/{industrie}
+ *  cu mediane reale per platformă (din metricile acumulate DataRead) → înlocuiesc reperele statice „NEVALIDATE"
+ *  acolo unde au eșantion suficient. Fără calibrated → exact ca înainte (backward-compatible). */
+function buildL2Text(industry, calibrated) {
   const key = normIndustry(industry);
   if (!key) return null;
   const b = BENCHMARKS_RO[key];
@@ -412,15 +418,28 @@ function buildL2Text(industry) {
   const fmtCpl = (n) => (n == null ? '—' : `~${n} €`);
   const fmtPct = (n) => (n == null ? '—' : `~${n}%`);
   const fmtRoas = (n) => (n == null ? '— (fără tranzacție online directă)' : `~${n}x`);
-  const line = (label, p) =>
-    `- ${label}: CTR ${fmtPct(p.ctr)}, CPL ${fmtCpl(p.cpl)}, CVR ${fmtPct(p.cvr)}, ROAS ${fmtRoas(p.roas)}`;
+  const cal = calibrated && typeof calibrated === 'object' ? calibrated : null;
+  let usedCal = false;
+  const line = (label, platKey, p) => {
+    const c = cal && cal[platKey];
+    if (c && Number(c.samples) >= BENCHMARK_MIN_SAMPLES && c.ctr && c.cpl && c.cvr) {
+      usedCal = true;
+      const roasTxt = c.roas && c.roas.p50 != null ? `~${c.roas.p50}x` : fmtRoas(p.roas);
+      return `- ${label} [REAL · ${c.samples} campanii]: CTR ~${c.ctr.p50}%, CPL ~${c.cpl.p50} €, CVR ~${c.cvr.p50}%, ROAS ${roasTxt} (mediană; interval CPL p25–p75 ${c.cpl.p25}–${c.cpl.p75} €)`;
+    }
+    return `- ${label}: CTR ${fmtPct(p.ctr)}, CPL ${fmtCpl(p.cpl)}, CVR ${fmtPct(p.cvr)}, ROAS ${fmtRoas(p.roas)}`;
+  };
+  const metaL = line('Meta', 'meta', b.meta);
+  const googleL = line('Google', 'google', b.google);
+  const tiktokL = line('TikTok', 'tiktok', b.tiktok);
   return [
-    `# REPERE DE INDUSTRIE (orientative) — verticala „${key}"`,
-    'Valori tipice IMM RO — ORIENTATIVE, nevalidate; folosește-le ca ancoră, nu ca adevăr absolut.',
-    'Spune mereu dacă o cifră reală e peste / sub / în normă față de aceste repere.',
-    line('Meta', b.meta),
-    line('Google', b.google),
-    line('TikTok', b.tiktok),
+    `# REPERE DE INDUSTRIE — verticala „${key}"`,
+    usedCal
+      ? 'Reperele marcate [REAL] sunt CALIBRATE din conturile reale DataRead (mediană pe campaniile verticalei) — tratează-le ca date, nu ghiciri. Restul sunt orientative nevalidate. Spune mereu dacă o cifră reală e peste / sub / în normă.'
+      : 'Valori tipice IMM RO — ORIENTATIVE, nevalidate; folosește-le ca ancoră, nu ca adevăr absolut. Spune mereu dacă o cifră reală e peste / sub / în normă față de aceste repere.',
+    metaL,
+    googleL,
+    tiktokL,
     `Ghidaj verticală: ${VERTICAL_NOTES_RO[key] || ''}`,
   ].join('\n');
 }
@@ -438,10 +457,10 @@ function buildL2Text(industry) {
  *   industry = lead.industry / profile.industry (pentru L2). Opțional.
  * @returns {Array<{type:'text', text:string, cache_control?:{type:'ephemeral'}}>}
  */
-function buildSystemBlocks({ persona, industry } = {}) {
+function buildSystemBlocks({ persona, industry, calibrated } = {}) {
   const role = typeof persona === 'string' && persona.trim() ? persona : PERSONAS.strategist;
   const blocks = [{ type: 'text', text: buildL1Text(), cache_control: { type: 'ephemeral' } }];
-  const l2 = buildL2Text(industry);
+  const l2 = buildL2Text(industry, calibrated);
   if (l2) blocks.push({ type: 'text', text: l2, cache_control: { type: 'ephemeral' } });
   blocks.push({
     type: 'text',

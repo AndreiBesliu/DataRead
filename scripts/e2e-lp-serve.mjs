@@ -710,6 +710,23 @@ console.log('\nGND4) Big bet grounding — MoM · insight anterior · campanii l
   ok(lcb.includes('DATE REALE DIN CAMPANIILE TALE') && lcb.includes('C1'), 'liveCampaignsBlock: sumar campanii cu spend');
   ok(fns.liveCampaignsBlock([]) === '' && fns.liveCampaignsBlock([{ name: 'X', totals: { spend: 0 } }]) === '', 'liveCampaignsBlock: fără spend → gol');
 
+  // Pachet B: percentile pure pentru calibrarea benchmark-urilor
+  ok(fns.tripletPercentiles([10, 20, 30, 40, 50]) && fns.tripletPercentiles([10, 20, 30, 40, 50]).p50 === 30, 'tripletPercentiles: median corect');
+  ok(fns.tripletPercentiles([]) === null, 'tripletPercentiles: gol → null');
+  { const tp = fns.tripletPercentiles([1, 2, 3, 4]); ok(tp.p25 === 1.75 && tp.p75 === 3.25, 'tripletPercentiles: interpolare p25/p75'); }
+  ok(fns.tripletPercentiles([-5, 'x', NaN, 10, 20]).p50 === 15, 'tripletPercentiles: ignoră negativ/non-număr');
+  ok(fns.abPercentile([], 0.5) === null, 'abPercentile: listă goală → null');
+  // L2 calibrat: cu benchmarkStats real (≥5 campanii) → marcaj [REAL]; fără → static (NEVALIDATE)
+  {
+    const cal = { meta: { samples: 12, ctr: { p25: 0.8, p50: 1.0, p75: 1.3 }, cpl: { p25: 5, p50: 7, p75: 9 }, cvr: { p25: 1, p50: 2, p75: 3 }, roas: { p25: 2, p50: 3, p75: 4 } } };
+    const l2cal = fns.buildL2Text('retail', cal);
+    ok(l2cal.includes('[REAL') && l2cal.includes('12 campanii'), 'buildL2Text: calibrat (≥prag) → marcaj REAL + nr. campanii');
+    const l2static = fns.buildL2Text('retail');
+    ok(!l2static.includes('[REAL') && l2static.includes('ORIENTATIVE'), 'buildL2Text: fără calibrare → static NEVALIDATE');
+    const l2low = fns.buildL2Text('retail', { meta: { samples: 2, ctr: { p50: 1 }, cpl: { p50: 7 }, cvr: { p50: 2 } } });
+    ok(!l2low.includes('[REAL'), 'buildL2Text: eșantion sub prag → NU folosește calibrarea');
+  }
+
   // Felia 5b: prevInsight.actions e ARRAY tipat (forma reală persistată în campaignInsights). NU trebuie să apară „[object Object]".
   const prevBlk = fns.prevInsightBlock({ verdict: 'scale', headline: 'merge bine', actions: [{ changeType: 'scale', target: 'budget', magnitude: 'large' }] });
   ok(prevBlk.includes('ANALIZA TA ANTERIOARĂ'), 'prevInsightBlock: insight anterior formatat');
