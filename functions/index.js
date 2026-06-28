@@ -2136,9 +2136,13 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   if (!campSnap.exists) throw new HttpsError('not-found', 'Campania nu există.');
   const camp = campSnap.data() || {};
   const totals = camp.totals || {};
-  if (!(Number(totals.spend) > 0)) throw new HttpsError('failed-precondition', 'Adaugă întâi date de cheltuială ca să poată fi analizată campania.');
   const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
   const metrics = metricsSnap.docs.map((d) => d.data());
+  // Gardă pe cheltuială REALĂ: `totals` e denormalizat (scris ASINCRON de triggerul onMetricWrite — D#5), deci poate fi
+  // 0 imediat după prima metrică. Acceptăm și suma metricilor încărcate, ca latența triggerului să nu blocheze fals analiza.
+  if (!(Number(totals.spend) > 0) && !(sumMetricsRaw(metrics).spend > 0)) {
+    throw new HttpsError('failed-precondition', 'Adaugă întâi date de cheltuială ca să poată fi analizată campania.');
+  }
   const leadSnap = camp.leadId ? await db.collection('leads').doc(camp.leadId).get() : null;
   // Felia 4: memorie de insight — citește analiza ANTERIOARĂ (best-effort) pentru continuitate.
   let prevInsight = null;
@@ -4764,6 +4768,28 @@ function sumMetricsRaw(rows) {
 }
 exports.sumMetricsRaw = sumMetricsRaw;
 
+// D#5: `totals` = proprietate a SERVERULUI, recalculată TRANZACȚIONAL din TOATE metricile campaniei. Idempotentă
+// (recompute din ZERO, nu increment) → corectă sub livrare at-least-once + scrieri concurente, spre deosebire de
+// vechiul recompute client-side (read-all-then-write, racy). Dacă documentul campaniei nu mai există (ștearsă), NU
+// scrie (set+merge ar reînvia un doc fantomă). Apelată de onMetricWrite la ORICE create/update/delete de metrică.
+// Toate citirile (camp + metrics) ÎNAINTEA scrierii (regula tranzacției Firestore). Testată e2e (TEST TOT, stub în memorie).
+async function performRecomputeCampaignTotals(db, campaignId) {
+  const campRef = db.collection('campaigns').doc(campaignId);
+  const metricsRef = campRef.collection('metrics');
+  // maxAttempts mărit (15 vs default 5): un import CSV scrie N metrici → N triggere care contend pe ACELAȘI doc de
+  // campanie; cu paralelismul plafonat (maxInstances) și backoff cu jitter, 15 încercări absorb rafala fără pierderi.
+  // Backstop suplimentar: jobul zilnic reconcileCampaignTotals (dacă totuși o tranzacție terminală eșuează).
+  return db.runTransaction(async (tx) => {
+    const campSnap = await tx.get(campRef);
+    if (!campSnap.exists) return null; // campanie ștearsă → nu reînvia un doc fantomă
+    const metricsSnap = await tx.get(metricsRef);
+    const totals = sumMetricsRaw(metricsSnap.docs.map((d) => d.data()));
+    tx.set(campRef, { totals, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return totals;
+  }, { maxAttempts: 15 });
+}
+exports.performRecomputeCampaignTotals = performRecomputeCampaignTotals;
+
 /** Motorul GENERIC de ingestie (testabil; db + fetchRows + cheie INJECTATE), folosit de toate platformele.
  *  Pentru fiecare campanie `platform==X` cu externalId + clientUid, decriptează credențiala clientului și cheamă
  *  `fetchRows(externalId, since, until, { token, cred })` → `{ ok, status, metrics: DailyMetric[] }`. UPSERT pe
@@ -4814,8 +4840,9 @@ async function runConnectorPull(db, opts) {
           }, { merge: true });
         }
         await batch.commit();
-        const all = await docSnap.ref.collection('metrics').get();
-        await docSnap.ref.update({ totals: sumMetricsRaw(all.docs.map((d) => d.data())), updatedAt: ts });
+        // D#5: recalcul totals pe ACEEAȘI cale tranzacțională ca onMetricWrite (NU read-all-then-write racy) —
+        // închide fereastra de lost-update dacă un operator editează/șterge o metrică în timpul pull-ului.
+        await performRecomputeCampaignTotals(db, docSnap.id);
       }
       out.processed++;
       out.written += metrics.length;
@@ -5255,14 +5282,42 @@ async function dispatchAutomationEvent(db, event, opts) {
 exports.executeAutomationAction = executeAutomationAction;
 exports.dispatchAutomationEvent = dispatchAutomationEvent;
 
+// D#5: recompute `totals` = backstop de INTEGRITATE A DATELOR → trigger DEDICAT, UNGATED (independent de
+// AUTOMATION_ENABLED — un kill-switch pe automatizare NU trebuie să oprească recalculul totalurilor). Recalcul
+// tranzacțional + idempotent la ORICE create/update/delete de metrică (separat de evenimentul de automatizare).
+exports.onMetricTotals = onDocumentWritten({ document: 'campaigns/{campaignId}/metrics/{date}', region: REGION }, async (ev) => {
+  const campaignId = ev.params.campaignId;
+  try {
+    await performRecomputeCampaignTotals(admin.firestore(), campaignId);
+  } catch (e) { logger.error('onMetricTotals recompute failed', { campaignId, err: String(e) }); }
+});
+
+// D#5: backstop ZILNIC — dacă o tranzacție de recompute eșuează sub contenție extremă (rafală CSV) și niciun trigger
+// ulterior nu o repară, jobul reconciliază totalurile TUTUROR campaniilor. Ungated, fără AI, idempotent (aceeași cale pură).
+{
+  const { onSchedule } = require('firebase-functions/v2/scheduler');
+  exports.reconcileCampaignTotals = onSchedule({ schedule: '15 5 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    try {
+      const db = admin.firestore();
+      const snap = await db.collection('campaigns').limit(5000).get();
+      let fixed = 0;
+      for (const d of snap.docs) {
+        try { await performRecomputeCampaignTotals(db, d.id); fixed++; } catch (e) { logger.warn('reconcileCampaignTotals one failed', { id: d.id, err: String(e) }); }
+      }
+      logger.info('reconcileCampaignTotals done', { campaigns: snap.size, fixed });
+    } catch (e) { console.error('reconcileCampaignTotals failed:', e); }
+  });
+}
+
 // Triggere LIVE (gate-uite de AUTOMATION_ENABLED — cu flag false NU se exportă, deploy-safe). Fail-closed (nu aruncă).
 if (AUTOMATION_ENABLED) {
-  // Metrică de campanie scrisă (manual / conector) → eveniment „prag metrică campanie".
+  // Metrică de campanie scrisă (manual / conector) → eveniment „prag metrică campanie". (Recalculul `totals` NU mai
+  // stă aici, ci în triggerul UNGATED onMetricTotals — vezi mai jos; integritatea datelor nu depinde de acest flag.)
   exports.onMetricWrite = onDocumentWritten({ document: 'campaigns/{campaignId}/metrics/{date}', region: REGION, secrets: AI_ENABLED ? [ANTHROPIC_API_KEY] : [] }, async (ev) => {
+    const campaignId = ev.params.campaignId;
     try {
       const after = ev.data && ev.data.after && ev.data.after.exists ? ev.data.after.data() : null;
-      if (!after) return; // ștergere → ignoră
-      const campaignId = ev.params.campaignId;
+      if (!after) return; // ștergere → fără eveniment de automatizare (totals recalculat de onMetricTotals)
       const campSnap = await admin.firestore().collection('campaigns').doc(campaignId).get();
       if (!campSnap.exists) return;
       const camp = campSnap.data() || {};

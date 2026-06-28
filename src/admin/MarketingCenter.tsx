@@ -249,12 +249,9 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
 
-  const recomputeTotals = async () => {
-    const snap = await getDocs(collection(db, 'campaigns', campaignId, 'metrics'));
-    const all = snap.docs.map((d) => coerceToDailyMetric(d.data())).filter((x): x is DailyMetric => x !== null);
-    await updateDoc(doc(db, 'campaigns', campaignId), { totals: sumMetrics(all), updatedAt: serverTimestamp() });
-  };
-
+  // D#5: `totals` se recalculează acum SERVER-side (trigger onMetricWrite, tranzacțional + idempotent) — nu mai
+  // scriem totals din client (era racy: read-all-then-write). KPI-urile per-campanie de mai jos se derivă LOCAL din
+  // metricile încărcate (`metrics`), deci rămân instant; vederile agregate se actualizează când triggerul scrie totals.
   const numOf = (s: string) => {
     const n = parseFloat(s.replace(',', '.'));
     return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -275,7 +272,6 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
         source: 'manual',
         updatedAt: serverTimestamp(),
       });
-      await recomputeTotals();
       await load();
       setForm((f) => ({ ...f, spend: '', impressions: '', clicks: '', leads: '', revenue: '' }));
       setSaveState('saved');
@@ -288,7 +284,6 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
   const deleteDay = async (date: string) => {
     try {
       await deleteDoc(doc(db, 'campaigns', campaignId, 'metrics', date));
-      await recomputeTotals();
       await load();
     } catch (e) {
       console.warn('metric delete failed:', e);
@@ -319,7 +314,6 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
         }
         await batch.commit();
       }
-      await recomputeTotals();
       await load();
       setImportState({ busy: false, msg: t('admin.csvImported', { count: rows.length }), err: errors.length ? t('admin.csvSkipped', { count: errors.length }) : null });
     } catch (e) {

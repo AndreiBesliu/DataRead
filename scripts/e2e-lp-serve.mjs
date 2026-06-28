@@ -566,6 +566,82 @@ console.log('\nM) performManageAdmin (tranzacție reală: approve/setRole/revoke
   ok(/invalid/i.test((await run(owner('o1'), { uid: 'o1', admin: true }, { action: 'approve', targetUid: 'bad id!' })).err?.message || ''), 'targetUid invalid → invalid-argument');
 }
 
+// ── TEST TOT: D#5 — performRecomputeCampaignTotals (recompute server-side tranzacțional al totals).
+// Stub Firestore în memorie cu SUBCOLECȚIE metrics + tranzacție (reads-before-writes). Verifică: sumă corectă,
+// delete ultima metrică → zerouri, campanie ștearsă → NU reînvie (set+merge ar crea doc fantomă), idempotență. ──
+console.log('\nTOT) performRecomputeCampaignTotals (recompute totals server-side, tranzacțional + idempotent)');
+{
+  // Cheie 'campaigns/{id}' pentru campanie + 'campaigns/{id}/metrics/{date}' pentru metrici.
+  function makeStore(seed) {
+    const store = new Map(Object.entries(seed || {}));
+    const metricsRef = (campId) => ({ _kind: 'metricsColl', _campId: campId });
+    const campRef = (campId) => ({ _kind: 'campDoc', _campId: campId, collection(name) { return name === 'metrics' ? metricsRef(campId) : { _kind: 'other' }; } });
+    const tx = {
+      async get(r) {
+        if (r._kind === 'metricsColl') {
+          const prefix = `campaigns/${r._campId}/metrics/`;
+          const docs = [];
+          for (const [k, v] of store) if (k.startsWith(prefix)) docs.push({ id: k.slice(prefix.length), data: () => v });
+          return { docs };
+        }
+        const k = `campaigns/${r._campId}`; const has = store.has(k);
+        return { exists: has, data: () => store.get(k) };
+      },
+      set(r, data, opts) { const k = `campaigns/${r._campId}`; store.set(k, opts && opts.merge ? Object.assign({}, store.get(k) || {}, data) : Object.assign({}, data)); },
+    };
+    const db = {
+      collection(coll) { return { doc(id) { return coll === 'campaigns' ? campRef(id) : { _kind: 'other' }; } }; },
+      async runTransaction(fn) { return fn(tx); },
+    };
+    return { db, store };
+  }
+  const M = (date, spend, impressions, clicks, leads, revenue) => [`campaigns/c1/metrics/${date}`, { date, spend, impressions, clicks, leads, revenue }];
+
+  // 1) Sumă corectă din 3 metrici.
+  {
+    const { db, store } = makeStore(Object.fromEntries([
+      ['campaigns/c1', { name: 'C', totals: { spend: 999, impressions: 0, clicks: 0, leads: 0, revenue: 0 } }],
+      M('2026-06-01', 100, 1000, 50, 10, 300),
+      M('2026-06-02', 50, 500, 25, 5, 150),
+      M('2026-06-03', 25, 250, 10, 2, 75),
+    ]));
+    const totals = await fns.performRecomputeCampaignTotals(db, 'c1');
+    ok(totals.spend === 175 && totals.revenue === 525 && totals.leads === 17 && totals.clicks === 85 && totals.impressions === 1750, 'TOT: sumă corectă din metrici');
+    ok(store.get('campaigns/c1').totals.spend === 175, 'TOT: totals scris pe doc (suprascrie valoarea veche stale 999)');
+  }
+  // 2) Idempotență: a doua rulare dă același rezultat.
+  {
+    const { db } = makeStore(Object.fromEntries([['campaigns/c1', { totals: {} }], M('2026-06-01', 100, 1000, 50, 10, 300)]));
+    const a = await fns.performRecomputeCampaignTotals(db, 'c1');
+    const b = await fns.performRecomputeCampaignTotals(db, 'c1');
+    ok(JSON.stringify(a) === JSON.stringify(b) && a.spend === 100, 'TOT: idempotent (re-rulare = același rezultat)');
+  }
+  // 3) Delete ultima metrică → totals zerouri (NU rămâne stale).
+  {
+    const { db, store } = makeStore(Object.fromEntries([['campaigns/c1', { totals: { spend: 100, impressions: 1000, clicks: 50, leads: 10, revenue: 300 } }]]));
+    const totals = await fns.performRecomputeCampaignTotals(db, 'c1');
+    ok(totals.spend === 0 && totals.revenue === 0 && totals.leads === 0, 'TOT: fără metrici (toate șterse) → totals zerouri');
+    ok(store.get('campaigns/c1').totals.spend === 0, 'TOT: doc actualizat la zero');
+  }
+  // 4) Campanie ștearsă → NU reînvie (return null, store neatins).
+  {
+    const { db, store } = makeStore(Object.fromEntries([M('2026-06-01', 100, 1000, 50, 10, 300)])); // metrici orfane, fără doc campanie
+    const res = await fns.performRecomputeCampaignTotals(db, 'c1');
+    ok(res === null, 'TOT: campanie inexistentă → return null');
+    ok(!store.has('campaigns/c1'), 'TOT: campanie ștearsă NU e reînviată ca doc fantomă');
+  }
+  // 5) Valori corupte/negative în metrici → ignorate (sumMetricsRaw coerce, fără NaN).
+  {
+    const { db } = makeStore(Object.fromEntries([
+      ['campaigns/c1', { totals: {} }],
+      M('2026-06-01', 100, 1000, 50, 10, 300),
+      ['campaigns/c1/metrics/2026-06-02', { date: '2026-06-02', spend: -5, impressions: 'x', clicks: NaN, leads: null, revenue: 50 }],
+    ]));
+    const totals = await fns.performRecomputeCampaignTotals(db, 'c1');
+    ok(totals.spend === 100 && totals.revenue === 350 && !Number.isNaN(totals.clicks), 'TOT: valori corupte/negative ignorate (fără NaN)');
+  }
+}
+
 // ── TEST N: pasul „Oportunități" — buildChannelsPrompt + CHANNELS_SCHEMA (functions e JS netipizat,
 // deci require-ul + apelul prind syntax/ReferenceError pe care build-ul nu le vede). ──
 console.log('\nN) aiRecommendChannels — prompt + schema (pasul Oportunități)');
@@ -1084,6 +1160,9 @@ console.log('\nU) conector Meta — mapare + crypto + fereastră + runMetaPull (
     const db = {
       collection(c) { return colRef(c); },
       batch() { const ops = []; return { set(ref, data, opts) { ops.push([ref, data, opts]); }, async commit() { for (const [ref, data, opts] of ops) await ref.set(data, opts); } }; },
+      // D#5: performRecomputeCampaignTotals (apelat de runConnectorPull) rulează într-o tranzacție; stub minimal
+      // (fără retry/concurență) — tx.get pe docRef SAU colRef (metrics), tx.set pe docRef. Al doilea arg (maxAttempts) ignorat.
+      async runTransaction(fn) { return fn({ get: (r) => r.get(), set: (r, data, opts) => r.set(data, opts) }); },
     };
     return { db, store };
   }

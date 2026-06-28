@@ -2655,6 +2655,29 @@ normaliser, secretele niciodată în chat/repo.
 > task spawn): `metrics` în performCampaignInsight se citește `orderBy date asc limit 60` = primele 60 zile, nu ultimele — afectează
 > doar blocul „evoluție recentă", nu KPI-ul (acum din totals).
 
+**2026-06-28 - Task Completed — Audit analytics/AI · D#5: `totals` recalculat SERVER-side tranzacțional (anti-race)**
+> Model: Claude Opus 4.8 (1M context). Design + review adversarial multi-agent (4 finding-uri confirmate, toate reparate).
+> `totals` (rollup-ul campaniei) era recalculat CLIENT-side în MarketingCenter (read-all-metrics → write) = race
+> (doi scriitori concurenți / operator+conector → totals stricat). Acum `totals` = proprietate a SERVERULUI.
+> - **Nucleu:** `performRecomputeCampaignTotals(db, campaignId)` — tranzacție Firestore (citește camp + toate metricile
+>   ÎNAINTE de scriere), `sumMetricsRaw` → `totals`, idempotent (recompute din zero → sigur la livrare at-least-once +
+>   concurență). Gardă: campanie ștearsă → NU scrie (set+merge ar reînvia un doc fantomă). `maxAttempts:15` (absoarbe
+>   contenția rafalelor CSV peste default-ul de 5).
+> - **Trigger UNGATED `onMetricTotals`** (nou) pe `campaigns/{id}/metrics/{date}` → recompute la ORICE create/update/delete.
+>   DEDICAT + independent de `AUTOMATION_ENABLED` (un kill-switch pe automatizare NU mai oprește integritatea datelor —
+>   finding #3). `onMetricWrite` (gated) păstrează DOAR dispatch-ul de automatizare (nu mai recalculează totals).
+> - **Backstop zilnic `reconcileCampaignTotals`** (onSchedule 05:15, ungated) — reconciliază totalurile tuturor campaniilor
+>   dacă o tranzacție terminală eșuează sub contenție extremă (finding #2). Idempotent, fără AI.
+> - **Conector:** `runConnectorPull` folosește acum ACEEAȘI cale tranzacțională (nu mai face read-all-then-write racy —
+>   finding #1).
+> - **Client:** scos `recomputeTotals()` + cele 3 apeluri (saveDay/deleteDay/importCsv) din MarketingCenter. KPI-urile
+>   per-campanie se derivă LOCAL din metrici (instant); vederile agregate se actualizează când triggerul scrie totals.
+> - **aiAnalyzeCampaign (finding #4):** gardă „adaugă cheltuială" verifică acum cheltuiala REALĂ (suma metricilor încărcate),
+>   nu doar `totals.spend` denormalizat (care e 0 ~1s după prima metrică până rulează triggerul) → fără eroare falsă.
+> Verificat: typecheck + 23/23 suites + e2e (TEST TOT nou: sumă/idempotență/delete→zero/campanie-ștearsă→null/corupte +
+> stub conector cu runTransaction) + build + boot. DEPLOYED: hosting + functions (onMetricTotals + reconcileCampaignTotals
+> confirmate live, europe-central2). Fără rules/schema nou.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
