@@ -1542,6 +1542,13 @@ const en: typeof ro = {
       startNumber: 'Starting number',
       startNumberHint: 'The first number assigned when a series is used for the first time (e.g. 248 if continuing from a legacy system). Default 1. Applies only before the series\' first invoice.',
       err: 'Something went wrong. Try again.',
+      econTitle: 'Client economics (for the agency)',
+      econInvoiced: 'Invoiced revenue',
+      econPaid: 'Collected',
+      econCount: 'Invoices',
+      econCac: 'Acquisition cost',
+      econCacHint: 'What it cost us to win this client (manual). Used for the LTV:CAC ratio.',
+      econMixed: 'Note: invoices mix different currencies — the total is indicative.',
     },
     automation: {
       title: 'Automations',

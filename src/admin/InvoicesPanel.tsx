@@ -14,8 +14,9 @@ import {
   type Invoice, type InvoiceKind, type InvoiceStatus, type InvoiceParty, type InvoiceConfig,
 } from '../types/invoice';
 import { printInvoice, type InvoiceLabels } from '../utils/invoiceDoc';
+import { clientEconomics } from '../analytics/agencyEconomics';
 
-interface ClientOpt { uid: string; label: string }
+interface ClientOpt { uid: string; label: string; leadId: string; acquisitionCost: number }
 type Row = Invoice & { id: string };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -40,14 +41,17 @@ export default function InvoicesPanel() {
 
   useEffect(() => {
     return onSnapshot(query(collection(db, 'leads'), limit(500)), (snap) => {
-      const m = new Map<string, string>();
+      const m = new Map<string, ClientOpt>();
       snap.docs.forEach((d) => {
         const v = d.data() as Record<string, unknown>;
         const cu = typeof v.clientUid === 'string' ? v.clientUid : '';
         if (!cu || m.has(cu)) return;
-        m.set(cu, (typeof v.companyName === 'string' && v.companyName) || (typeof v.contactName === 'string' && v.contactName) || (typeof v.email === 'string' && v.email) || cu);
+        const label = (typeof v.companyName === 'string' && v.companyName) || (typeof v.contactName === 'string' && v.contactName) || (typeof v.email === 'string' && v.email) || cu;
+        // F2: leadId + acquisitionCost (costul nostru de achiziție, manual pe lead) pt. raportul LTV:CAC.
+        const acq = typeof v.acquisitionCost === 'number' && isFinite(v.acquisitionCost) && v.acquisitionCost >= 0 ? v.acquisitionCost : 0;
+        m.set(cu, { uid: cu, label, leadId: d.id, acquisitionCost: acq });
       });
-      setClientOpts([...m.entries()].map(([u, label]) => ({ uid: u, label })));
+      setClientOpts([...m.values()]);
     }, () => setClientOpts([]));
   }, []);
 
@@ -59,7 +63,17 @@ export default function InvoicesPanel() {
   }, [uid]);
 
   const totals = useMemo(() => (draft ? invoiceTotals(draft) : { subtotal: 0, vat: 0, total: 0 }), [draft]);
-  const clientLabel = clientOpts.find((c) => c.uid === uid)?.label || '';
+  const selectedClient = clientOpts.find((c) => c.uid === uid) || null;
+  const clientLabel = selectedClient?.label || '';
+  // F2: economia agenției pentru clientul selectat — venit facturat (din `list`, deja încărcat) + cost de achiziție.
+  const econ = useMemo(() => clientEconomics(list, selectedClient?.acquisitionCost ?? 0), [list, selectedClient?.acquisitionCost]);
+
+  // Costul de achiziție e o adnotare manuală pe LEAD (admin-write, fără whitelist de chei) → setDoc merge.
+  const saveAcquisitionCost = async (raw: string) => {
+    if (!selectedClient?.leadId) return;
+    const v = Math.max(0, parseFloat(raw.replace(',', '.')) || 0);
+    try { await setDoc(doc(db, 'leads', selectedClient.leadId), { acquisitionCost: v }, { merge: true }); } catch { /* ignore */ }
+  };
 
   const startNew = (kind: InvoiceKind) => {
     setErr('');
@@ -225,6 +239,27 @@ export default function InvoicesPanel() {
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => startNew('proforma')}>+ {t('admin.invoices.proforma')}</button>
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => startNew('factura')}>+ {t('admin.invoices.factura')}</button>
           </div>
+          {/* F2: economia agenției pentru acest client — LTV (venit facturat) vs CAC (cost de achiziție manual). */}
+          {(econ.count > 0 || (selectedClient?.acquisitionCost ?? 0) > 0) && (
+            <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', marginBottom: 6 }}>{t('admin.invoices.econTitle')}</div>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'baseline', fontSize: 13 }}>
+                <span>{t('admin.invoices.econInvoiced')}: <strong>{econ.invoiced.toFixed(2)} {econ.currency}</strong></span>
+                <span style={{ color: 'var(--fg-1)' }}>{t('admin.invoices.econPaid')}: {econ.paid.toFixed(2)} {econ.currency}</span>
+                <span style={{ color: 'var(--fg-1)' }}>{t('admin.invoices.econCount')}: {econ.count}</span>
+                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                  {t('admin.invoices.econCac')}:
+                  <input type="number" min={0} step="any" inputMode="decimal" defaultValue={selectedClient?.acquisitionCost || ''} key={`acq-${uid}-${selectedClient?.acquisitionCost}`} placeholder="0"
+                    onBlur={(e) => void saveAcquisitionCost(e.target.value)} title={t('admin.invoices.econCacHint')}
+                    style={{ width: 90, padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-0)', color: 'var(--fg-0)', fontSize: 12 }} />
+                </span>
+                {econ.ltvCacRatio !== null && (
+                  <span style={{ fontWeight: 700, color: econ.ltvCacRatio >= 1 ? 'var(--success)' : 'var(--danger)' }}>LTV:CAC {econ.ltvCacRatio.toFixed(2)}×</span>
+                )}
+              </div>
+              {econ.mixedCurrency && <div style={{ fontSize: 11, color: 'var(--warn)', marginTop: 6 }}>{t('admin.invoices.econMixed')}</div>}
+            </div>
+          )}
           {list.length === 0 ? <p style={{ fontSize: 13, color: 'var(--fg-1)' }}>{t('admin.invoices.empty')}</p> : (
             <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 10, overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

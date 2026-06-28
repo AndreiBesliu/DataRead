@@ -2704,6 +2704,22 @@ normaliser, secretele niciodată în chat/repo.
 > performRecomputeContactValue pe stub + merge) + build + boot. DEPLOYED: hosting + rules + functions (reconcileContactValues
 > creat, europe-central2). Forward-only, fără backfill. Următor: **F2 — economia agenției (facturi↔lead/client).**
 
+**2026-06-28 - Task Completed — Axă monetară F2: economia AGENȚIEI (venit facturat per client + LTV:CAC)**
+> Model: Claude Opus 4.8 (1M context). A doua felie din decizia „ambele, în ordine". LTV-ul AFACERII NOASTRE per client.
+> READ-ONLY: agregare la citire pe facturile care există deja (`clients/{uid}/invoices`) — fără colecții/triggere/funcții noi.
+> - **Pur `src/analytics/agencyEconomics.ts`:** `agencyRevenue(invoices)` = suma facturilor EMISE (kind 'factura', number!='',
+>   necancelate; storno cu total NEGATIV se scade natural; VAT inclus; flag monedă mixtă) → {invoiced, paid, count, currency,
+>   mixedCurrency}; `coerceAcquisitionCost` (manual, ≥0, plafon 1e9); `clientEconomics` → LTV:CAC = invoiced/cost (null dacă
+>   nu e introdus costul). Testat (test-agency.ts).
+> - **FK lead↔client:** factura e deja sub clients/{uid}; lead.clientUid leagă lead-ul. CAC = `lead.acquisitionCost` (manual,
+>   admin-write pe leads — fără whitelist pe UPDATE, deci fără schimbare de reguli).
+> - **UI:** card „Economia clientului (pentru agenție)" în tab-ul Facturi (InvoicesPanel — folosește `list` deja încărcat, zero
+>   citiri extra): Venit facturat / Încasat / #facturi + input Cost achiziție (scrie pe lead, live prin onSnapshot) + raport
+>   LTV:CAC (verde ≥1, roșu <1) + caveat monedă mixtă. i18n ro+en.
+> Review adversarial (1 agent): 0 defecte high/medium; corect + admin-only + actualizare live confirmate. typecheck + 25/25
+> suites + build + boot. DEPLOYED: hosting (fără functions/rules — read-only). **Axa monetară COMPLETĂ (F1 clienții clientului
+> + F2 agenția).** Rămas (din audit, low-urgență): AI 1b (LTV în promptul de predicție), contact↔campanie FK dur, insight-accuracy.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

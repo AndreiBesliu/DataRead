@@ -1559,6 +1559,13 @@ const ro = {
       startNumber: 'Număr de pornire',
       startNumberHint: 'Primul număr atribuit când o serie e folosită prima oară (ex. 248 dacă continui dintr-un sistem vechi). Implicit 1. Se aplică doar înainte de prima factură a seriei.',
       err: 'A apărut o eroare. Reîncearcă.',
+      econTitle: 'Economia clientului (pentru agenție)',
+      econInvoiced: 'Venit facturat',
+      econPaid: 'Încasat',
+      econCount: 'Facturi',
+      econCac: 'Cost achiziție',
+      econCacHint: 'Cât ne-a costat să câștigăm acest client (manual). Folosit pentru raportul LTV:CAC.',
+      econMixed: 'Atenție: facturile amestecă monede diferite — totalul e orientativ.',
     },
     automation: {
       title: 'Automatizări',
