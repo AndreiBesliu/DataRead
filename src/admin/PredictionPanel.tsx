@@ -184,6 +184,13 @@ export function ClientContacts({ uid }: { uid: string }) {
                   {t(`appHome.ls_${data.lifecycle}`)}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>{data.rollup.submissions} {t('admin.contactSubmissions')} · {t('admin.contactLast')} {fmtMs(data.rollup.lastSeen, i18n.language)}</span>
+                {/* F1: LTV (valoarea realizată din lead-urile câștigate) + campania de achiziție. */}
+                {data.rollup.value > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '1px 9px', background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid var(--success)' }}>
+                    {t('admin.contactLtv')}: {Math.round(data.rollup.value * 100) / 100} €
+                  </span>
+                )}
+                {data.acquisition.campaign && <span style={{ fontSize: 11, color: 'var(--fg-1)' }}>· {t('admin.contactAcq')}: {data.acquisition.campaign}</span>}
                 {dupId && <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, borderRadius: 4, padding: '1px 7px', background: '#fff4e5', color: '#b25e09' }}>{t('admin.contactDup')}</span>}
                 {pr && <button style={{ ...genBtn, marginLeft: 'auto', padding: '2px 8px' }} onClick={() => setOpen(isOpen ? null : id)}>{isOpen ? '▾' : '▸'} {t('admin.predTitle')}</button>}
                 {dupId && <button style={{ ...genBtn, marginLeft: pr ? 0 : 'auto', padding: '4px 10px' }} disabled={busy === id} onClick={() => void merge(id, dupId)}>{t('admin.contactMerge')}</button>}

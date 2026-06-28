@@ -3,6 +3,7 @@
  * SEPARAT de `submissions.status` (pipeline-ul intern al agenției). Deținut + scris de client (owner-only
  * via reguli). PUR (fără Firebase/React), un singur normaliser pe toate căile de încărcare.
  */
+import { coerceMoney } from '../analytics/monetary';
 
 export const LP_LEAD_STATE_SCHEMA = 1;
 
@@ -27,6 +28,8 @@ export interface LpLeadState {
   status: LpLeadStatus;
   note: string;
   slug: string;
+  /** Axa monetară F1: valoarea tranzacției (EUR ≥0), relevantă pe status 'castigat'. Scrisă de client. */
+  value: number;
 }
 
 export function coerceToLpLeadState(raw: unknown): LpLeadState {
@@ -37,5 +40,6 @@ export function coerceToLpLeadState(raw: unknown): LpLeadState {
     status,
     note: typeof d.note === 'string' ? d.note.slice(0, LP_LEAD_NOTE_MAX) : '',
     slug: typeof d.slug === 'string' ? d.slug.slice(0, 60) : '',
+    value: coerceMoney(d.value),
   };
 }

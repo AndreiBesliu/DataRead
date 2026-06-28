@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -17,6 +18,8 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
+import { coerceToContact } from '../types/contact';
+import { campaignEconomicsAll } from '../analytics/monetary';
 import { composePrintHtml, printHtmlDoc, printTitle } from '../utils/printDoc';
 import { parseMetricsCsv } from '../utils/metricsCsv';
 import { toCsv } from '../utils/csv';
@@ -459,6 +462,78 @@ function CampaignDetail({ campaignId, insight, insightAt }: { campaignId: string
   );
 }
 
+/** Axa monetară F1: CAC/ROI per campanie = cheltuiala campaniei vs. contactele (consumatorii) aduse de ea
+ *  (atribuire prin contact.acquisition.campaign) și LTV-ul lor realizat. Citește contactele clientului conectat. */
+function CampaignEconomicsCard({ clientUid, campaigns }: { clientUid: string; campaigns: CampaignRow[] }) {
+  const { t } = useTranslation();
+  const [contacts, setContacts] = useState<Array<{ acquisitionCampaign: string; ltv: number }> | null>(null);
+  useEffect(() => {
+    if (!clientUid) { setContacts([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'clients', clientUid, 'contacts'), limit(1000)));
+        const list = snap.docs
+          .map((d) => coerceToContact(d.data()))
+          .filter((c) => !c.mergedInto)
+          .map((c) => ({ acquisitionCampaign: c.acquisition.campaign, ltv: c.rollup.value }));
+        if (alive) setContacts(list);
+      } catch { if (alive) setContacts([]); }
+    })();
+    return () => { alive = false; };
+  }, [clientUid]);
+  if (!clientUid || !contacts) return null;
+  const econ = campaignEconomicsAll(campaigns.map((c) => ({ name: c.data.name, spend: c.data.totals.spend })), contacts);
+  // Arătăm și campaniile cu cheltuială dar 0 contacte atribuite (cheltuială irosită vizibilă — fix review #5).
+  const rows = econ.perCampaign.filter((e) => e.acquired > 0 || e.spend > 0);
+  if (rows.length === 0 && econ.unattributed.contacts === 0) return null;
+  const m2 = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100) / 100}`);
+  const th: CSSProperties = { padding: '4px 8px', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, color: 'var(--fg-1)', borderBottom: '1px solid var(--border)' };
+  const thR: CSSProperties = { ...th, textAlign: 'right' };
+  const cell: CSSProperties = { padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border)' };
+  const cellR: CSSProperties = { ...cell, textAlign: 'right' };
+  return (
+    <div style={{ background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)' }}>{t('admin.econTitle')}</div>
+      <div style={{ fontSize: 11, color: 'var(--fg-1)', margin: '4px 0 8px' }}>{t('admin.econHint')}</div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr>
+            <th style={th}>{t('admin.econCampaign')}</th>
+            <th style={thR}>{t('admin.econSpend')}</th>
+            <th style={thR}>{t('admin.econAcquired')}</th>
+            <th style={thR}>CAC</th>
+            <th style={thR}>{t('admin.econValue')}</th>
+            <th style={thR}>ROI</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr key={e.campaign}>
+                <td style={cell}>{e.campaign || '—'}{e.smallSample ? <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--warn)' }}>{t('admin.econThin')}</span> : null}</td>
+                <td style={cellR}>{m2(e.spend)} €</td>
+                <td style={cellR}>{e.acquired}</td>
+                <td style={cellR}>{e.cac === null ? '—' : `${m2(e.cac)} €`}</td>
+                <td style={cellR}>{m2(e.cohortValue)} €</td>
+                <td style={cellR}>{e.roi === null ? '—' : `${m2(e.roi)}×`}</td>
+              </tr>
+            ))}
+            {econ.unattributed.contacts > 0 ? (
+              <tr>
+                <td style={{ ...cell, color: 'var(--fg-1)' }}>{t('admin.econUnattributed')}</td>
+                <td style={cellR}>—</td>
+                <td style={cellR}>{econ.unattributed.contacts}</td>
+                <td style={cellR}>—</td>
+                <td style={cellR}>{m2(econ.unattributed.cohortValue)} €</td>
+                <td style={cellR}>—</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /** Raportul lunar de performanță al unui client — agregat pe campaniile lui + generator AI. */
 function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: CampaignRow[] }) {
   const { t } = useTranslation();
@@ -584,6 +659,7 @@ function ClientReportPanel({ leadId, campaigns }: { leadId: string; campaigns: C
         </div>
       ) : null}
       <PlatformBreakdown items={campaigns.map((c) => c.data)} title={campaigns[0]?.clientName || ''} />
+      {clientUid ? <CampaignEconomicsCard clientUid={clientUid} campaigns={campaigns} /> : null}
       <div style={{ fontSize: 12, color: 'var(--fg-1)' }}>
         {campaigns.map((c) => {
           const k = kpisFromTotals(c.data.totals);

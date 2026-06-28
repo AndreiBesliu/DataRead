@@ -7,6 +7,7 @@ import { coerceToDeliverables, deliverablesToSections, type RequestDeliverables,
 import { coerceToLpStatsDay, lpKpis, sumLpStats, topEntries, type LpStatsDay } from '../analytics/lpStats';
 import { coerceToLpVariant, variantConvRate, type LpVariant } from '../types/lpAttribution';
 import { coerceToLpLeadState, LP_LEAD_STATUSES, LP_LEAD_STATUS_COLORS, LP_LEAD_STATUS_DEFAULT, type LpLeadStatus } from '../types/lpLeadState';
+import { wonRevenue } from '../analytics/monetary';
 import { toCsv } from '../utils/csv';
 import { coerceToInvoice, invoiceTotals, type Invoice } from '../types/invoice';
 import { printInvoice, type InvoiceLabels } from '../utils/invoiceDoc';
@@ -270,7 +271,7 @@ function LandingPagesPortal({ uid }: { uid: string }) {
   const { t } = useTranslation();
   const [lps, setLps] = useState<LpIdx[] | null>(null);
   const [data, setData] = useState<Record<string, LpData>>({});
-  const [leadState, setLeadState] = useState<Record<string, { status: LpLeadStatus; note: string }>>({});
+  const [leadState, setLeadState] = useState<Record<string, { status: LpLeadStatus; note: string; value: number }>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | LpLeadStatus>('all');
   // Ref cu starea CRM cea mai recentă (snapshot + scrieri optimiste) — evită clobber-ul la editări rapide
   // status↔notă înainte ca onSnapshot să revină (citim mereu valoarea curentă, nu closure-ul de la render).
@@ -281,8 +282,8 @@ function LandingPagesPortal({ uid }: { uid: string }) {
     const off = onSnapshot(
       collection(db, 'clients', uid, 'lpLeadState'),
       (snap) => {
-        const m: Record<string, { status: LpLeadStatus; note: string }> = {};
-        snap.docs.forEach((d) => { const s = coerceToLpLeadState(d.data()); m[d.id] = { status: s.status, note: s.note }; });
+        const m: Record<string, { status: LpLeadStatus; note: string; value: number }> = {};
+        snap.docs.forEach((d) => { const s = coerceToLpLeadState(d.data()); m[d.id] = { status: s.status, note: s.note, value: s.value }; });
         leadStateRef.current = m;
         setLeadState(m);
       },
@@ -291,13 +292,14 @@ function LandingPagesPortal({ uid }: { uid: string }) {
     return off;
   }, [uid]);
 
-  async function saveLeadState(subId: string, slug: string, patch: { status?: LpLeadStatus; note?: string }) {
-    const cur = leadStateRef.current[subId] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
-    const next = { status: patch.status ?? cur.status, note: patch.note ?? cur.note };
-    leadStateRef.current = { ...leadStateRef.current, [subId]: next }; // optimist: păstrează celălalt câmp corect
+  async function saveLeadState(subId: string, slug: string, patch: { status?: LpLeadStatus; note?: string; value?: number }) {
+    const cur = leadStateRef.current[subId] || { status: LP_LEAD_STATUS_DEFAULT, note: '', value: 0 };
+    // `value` se duce mereu în scriere (setDoc = overwrite); altfel ar fi șters la o editare de status/notă.
+    const next = { status: patch.status ?? cur.status, note: patch.note ?? cur.note, value: patch.value ?? cur.value ?? 0 };
+    leadStateRef.current = { ...leadStateRef.current, [subId]: next }; // optimist: păstrează celelalte câmpuri corecte
     setLeadState(leadStateRef.current);
     try {
-      await setDoc(doc(db, 'clients', uid, 'lpLeadState', subId), { schema: 1, status: next.status, note: next.note, slug, updatedAt: serverTimestamp() });
+      await setDoc(doc(db, 'clients', uid, 'lpLeadState', subId), { schema: 1, status: next.status, note: next.note, slug, value: next.value, updatedAt: serverTimestamp() });
     } catch { /* ignore */ }
   }
 
@@ -383,10 +385,10 @@ function LandingPagesPortal({ uid }: { uid: string }) {
   }
 
   function exportLeads(lp: LpIdx, subs: LpSub[], subKeys: string[]) {
-    const header = [t('appHome.lpLeadDate'), ...subKeys, t('appHome.lpBySource'), t('appHome.lsCol'), t('appHome.lsNote')];
+    const header = [t('appHome.lpLeadDate'), ...subKeys, t('appHome.lpBySource'), t('appHome.lsCol'), t('appHome.lsNote'), t('appHome.lsValue')];
     const rows = subs.map((s) => {
-      const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
-      return [s.createdAtMs ? fmtDate(s.createdAtMs) : '', ...subKeys.map((k) => s.values[k] || ''), s.source || '', statusLabel(st.status), st.note || ''];
+      const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '', value: 0 };
+      return [s.createdAtMs ? fmtDate(s.createdAtMs) : '', ...subKeys.map((k) => s.values[k] || ''), s.source || '', statusLabel(st.status), st.note || '', st.status === 'castigat' && st.value ? String(st.value) : ''];
     });
     const url = URL.createObjectURL(new Blob([toCsv([header, ...rows])], { type: 'text/csv;charset=utf-8' })); // toCsv = escaping + anti formula-injection
     const a = document.createElement('a');
@@ -409,6 +411,12 @@ function LandingPagesPortal({ uid }: { uid: string }) {
           })}
         </div>
       ) : null}
+      {/* F1: venitul total din lead-urile câștigate (din valorile introduse pe „Câștigat"). */}
+      {(() => { const wr = wonRevenue(Object.values(leadState)); return wr > 0 ? (
+        <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--fg-1)' }}>
+          {t('appHome.wonRevenue')}: <strong style={{ color: 'var(--fg-0)' }}>{Math.round(wr * 100) / 100} €</strong>
+        </div>
+      ) : null; })()}
       {lps.map((lp) => {
         const d = data[lp.slug];
         const subKeys = d ? [...new Set(d.subs.flatMap((s) => Object.keys(s.values)))].slice(0, 6) : [];
@@ -478,10 +486,11 @@ function LandingPagesPortal({ uid }: { uid: string }) {
                           <th style={lpTd}>{t('appHome.lpBySource')}</th>
                           <th style={lpTd}>{t('appHome.lsCol')}</th>
                           <th style={lpTd}>{t('appHome.lsNote')}</th>
+                          <th style={lpTd}>{t('appHome.lsValue')}</th>
                         </tr></thead>
                         <tbody>
                           {visible.slice(0, 50).map((s) => {
-                            const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '' };
+                            const st = leadState[s.id] || { status: LP_LEAD_STATUS_DEFAULT, note: '', value: 0 };
                             return (
                             <tr key={s.id}>
                               <td style={{ ...lpTd, whiteSpace: 'nowrap', color: 'var(--fg-1)' }}>{s.createdAtMs ? fmtDate(s.createdAtMs) : '—'}</td>
@@ -494,6 +503,20 @@ function LandingPagesPortal({ uid }: { uid: string }) {
                               </td>
                               <td style={lpTd}>
                                 <input defaultValue={st.note} placeholder={t('appHome.lsNotePh')} onBlur={(e) => { const v = e.target.value.slice(0, 1000); if (v !== st.note) saveLeadState(s.id, lp.slug, { note: v }); }} style={{ width: 140, boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-0)', color: 'var(--fg-0)', fontSize: 12 }} />
+                              </td>
+                              <td style={lpTd}>
+                                {/* F1: valoarea tranzacției — relevantă pe „Câștigat". Salvată la blur; alimentează LTV-ul contactului. */}
+                                {st.status === 'castigat' ? (
+                                  <input
+                                    type="number" min={0} step="any" inputMode="decimal"
+                                    defaultValue={st.value || ''}
+                                    key={`${s.id}-${st.value}`}
+                                    placeholder="€"
+                                    title={t('appHome.lsValueHint')}
+                                    onBlur={(e) => { const v = Math.max(0, parseFloat(e.target.value.replace(',', '.')) || 0); if (v !== (st.value || 0)) saveLeadState(s.id, lp.slug, { value: v }); }}
+                                    style={{ width: 90, boxSizing: 'border-box', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-0)', color: 'var(--fg-0)', fontSize: 12 }}
+                                  />
+                                ) : <span style={{ color: 'var(--fg-1)' }}>—</span>}
                               </td>
                             </tr>
                             );

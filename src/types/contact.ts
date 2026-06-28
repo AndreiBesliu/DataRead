@@ -26,6 +26,15 @@ export interface ContactRollup {
   firstSeen: number; // ms epoch
   lastSeen: number; // ms epoch
   lastSlug: string;
+  /** Axa monetară F1: LTV = suma valorilor tranzacțiilor câștigate (recalculat din deals/{subId}). */
+  value: number;
+}
+
+/** Axa monetară F1: campania/sursa care a ADUS contactul (din primul form_submit), pentru CAC/ROI per campanie. */
+export interface ContactAcquisition {
+  campaign: string;
+  source: string;
+  medium: string;
 }
 
 export interface Contact {
@@ -41,6 +50,8 @@ export interface Contact {
   mergeWith: string[];
   /** F3: dacă contactul a fost COMBINAT într-altul, id-ul țintă (tombstone — ascuns în UI, redirect la ingestie). */
   mergedInto: string;
+  /** Axa monetară F1: atribuirea de achiziție (set-once la primul form_submit cu campanie). */
+  acquisition: ContactAcquisition;
 }
 
 // ── Helperi puri de identitate (normalizare + mascare). Port JS în functions (paritate e2e). ──
@@ -86,6 +97,7 @@ function coerceRollup(raw: unknown): ContactRollup {
     firstSeen: n(r.firstSeen),
     lastSeen: n(r.lastSeen),
     lastSlug: typeof r.lastSlug === 'string' ? r.lastSlug.slice(0, CONTACT_LIMITS.lastSlug) : '',
+    value: Math.min(n(r.value), 1e12), // LTV plafonat (paritate cu MAX_MONEY)
   };
 }
 
@@ -103,6 +115,10 @@ export function coerceToContact(raw: unknown): Contact {
     mergeCandidate: d.mergeCandidate === true,
     mergeWith: (Array.isArray(d.mergeWith) ? d.mergeWith : []).filter((x): x is string => typeof x === 'string' && !!x).slice(0, 10),
     mergedInto: typeof d.mergedInto === 'string' ? d.mergedInto.slice(0, 60) : '',
+    acquisition: ((): ContactAcquisition => {
+      const a = (d.acquisition && typeof d.acquisition === 'object' ? d.acquisition : {}) as Record<string, unknown>;
+      return { campaign: s(a.campaign, 80), source: s(a.source, 80), medium: s(a.medium, 80) };
+    })(),
   };
 }
 

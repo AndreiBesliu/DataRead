@@ -197,6 +197,22 @@ check('contact: mergeWith/mergedInto coerce (F3)', (() => {
   return c.mergeWith.length === 2 && c.mergeWith[0] === 'x' && c.mergeWith[1] === 'y' && c.mergedInto === 'Z' && coerceToContact({}).mergeWith.length === 0 && coerceToContact({}).mergedInto === '';
 })());
 check('contact: normalizare email/telefon', () => normalizeEmail('  X@Y.RO ') === 'x@y.ro' && normalizePhone('+40-712.345.789').length === 9 && normalizeEmail('nope') === '');
+// Axa monetară F1: rollup.value (LTV) + acquisition pe contact.
+check('contact F1: rollup.value default 0 + acquisition default gol', (() => {
+  const c = coerceToContact({});
+  return c.rollup.value === 0 && c.acquisition.campaign === '' && c.acquisition.source === '' && c.acquisition.medium === '';
+})());
+check('contact F1: rollup.value valid + plafon; acquisition tăiat la 80', (() => {
+  const c = coerceToContact({ rollup: { value: 1234.5 }, acquisition: { campaign: 'x'.repeat(200), source: 'meta', medium: 'cpc' } });
+  const big = coerceToContact({ rollup: { value: 1e15 } });
+  return c.rollup.value === 1234.5 && c.acquisition.campaign.length === 80 && c.acquisition.source === 'meta' && big.rollup.value === 1e12;
+})());
+check('contact F1: rollup.value corupt → 0', () => coerceToContact({ rollup: { value: -3 } }).rollup.value === 0 && coerceToContact({ rollup: { value: 'mult' } }).rollup.value === 0);
+check('contact F1: acquisition non-obiect → gol (fără throw)', () => coerceToContact({ acquisition: 'x' }).acquisition.campaign === '');
+
+import { coerceToLpLeadState } from '../src/types/lpLeadState';
+check('lpLeadState F1: value default 0', () => coerceToLpLeadState({ status: 'nou' }).value === 0);
+check('lpLeadState F1: value valid + plafon + corupt→0', () => coerceToLpLeadState({ value: 500 }).value === 500 && coerceToLpLeadState({ value: 1e15 }).value === 1e12 && coerceToLpLeadState({ value: -1 }).value === 0 && coerceToLpLeadState({ value: 'mult' }).value === 0);
 
 check('contactEvent: non-obiect → default form_submit at 0', (() => {
   const e = coerceToContactEvent(null);

@@ -185,11 +185,15 @@ service cloud.firestore {
       match /lpLeadState/{id} {
         allow read: if signedInAs(uid) || isAdmin();
         allow create, update: if signedInAs(uid)
-          && request.resource.data.keys().hasOnly(['schema', 'status', 'note', 'slug', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['schema', 'status', 'note', 'slug', 'updatedAt', 'value'])
           && request.resource.data.schema == 1
           && request.resource.data.status in ['nou', 'contactat', 'calificat', 'castigat', 'pierdut']
           && request.resource.data.note is string && request.resource.data.note.size() <= 1000
           && request.resource.data.slug is string && request.resource.data.slug.size() <= 60
+          // Axa monetară F1: valoarea tranzacției (EUR). UI scrie mereu `value` (default 0) → validare necondiționată.
+          && request.resource.data.value is number
+          && request.resource.data.value >= 0
+          && request.resource.data.value <= 1000000000000
           && request.resource.data.updatedAt == request.time;
         allow delete: if signedInAs(uid);
       }
@@ -203,6 +207,11 @@ service cloud.firestore {
         match /events/{eventId} {
           allow read: if signedInAs(uid) || isAdmin();
           allow write: if false; // append-only de functions (Admin SDK)
+        }
+        // Axa monetară F1: oglinda per-tranzacție (deals/{submissionId}) = sursa recalculului LTV. Server-only.
+        match /deals/{subId} {
+          allow read: if signedInAs(uid) || isAdmin();
+          allow write: if false; // doar functions (Admin SDK)
         }
       }
       // Index server-only submissionId→contactId (corelează schimbările de status din lpLeadState). NICIODATĂ citibil de client.

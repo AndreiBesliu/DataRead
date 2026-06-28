@@ -2678,6 +2678,32 @@ normaliser, secretele niciodată în chat/repo.
 > stub conector cu runTransaction) + build + boot. DEPLOYED: hosting + functions (onMetricTotals + reconcileCampaignTotals
 > confirmate live, europe-central2). Fără rules/schema nou.
 
+**2026-06-28 - Task Completed — Axă monetară F1: economia clienților clientului (LTV contact + CAC/ROI campanie)**
+> Model: Claude Opus 4.8 (1M context). Decizie Andrei: „ambele, în ordine" (F1 = clienții clientului, F2 = agenția).
+> Design judece-panel (3 propuneri → sinteză) + review adversarial (3 dimensiuni → 5 finding-uri confirmate, toate reparate).
+> Închide bucla de VENIT pe sistemul de contacte: clientul notează valoarea tranzacției pe lead-ul „Câștigat" → LTV per
+> contact + CAC/ROI per campanie (consumatorii FINALI ai clientului). Extinde predicția/contactele cu bani reali.
+> - **Date:** `lpLeadState.value` (deal EUR, scris de client) → oglindă server `clients/{uid}/contacts/{cid}/deals/{subId}`
+>   {value,won} → `contact.rollup.value` (LTV) + `contact.acquisition{campaign,source,medium}` (set-once din primul form_submit).
+> - **Pur (`src/analytics/monetary.ts`, TS + port JS):** coerceMoney/sumWonValue/coerceToContactDeal (paritate e2e) +
+>   wonRevenue/campaignKey/campaignEconomics/campaignEconomicsAll (CAC=spend/contacte, ROI=LTV cohortă/spend, găleată
+>   „neatribuit" pt. reconciliere, caveat eșantion mic, dedupe pe nume de campanie).
+> - **Triggere:** `performRecomputeContactValue` (tranzacție idempotentă din deals, tiparul D#5, maxAttempts:15, gardă
+>   contact-șters) apelat de `onLpLeadStateWrite` (oglindește deal-ul din starea LIVE re-citită — imun la redelivery stale —
+>   pe orice create/update/delete) + `reconcileContactValues` (backstop zilnic 05:45, re-oglindește TOATE lead-state-urile cu
+>   won derivat + recalculează) + `performMergeContacts` (mută deals + recalculează). `onSubmissionCreate` setează acquisition.
+> - **Reguli:** `lpLeadState.value` validat (number ≥0 ≤1e12, hasOnly) + `deals/{subId}` read owner+admin / write false.
+> - **UI:** input valoare în mini-CRM /app (pe „Câștigat") + „Venit din lead-uri câștigate" + valoare în CSV; chip „LTV" +
+>   campania de achiziție pe cardul de contact (/admin); card „CAC / ROI per campanie" în Marketing Center (încarcă contactele
+>   clientului). i18n ro+en.
+> - **Fix-uri review:** (#2) oglindă deal din LIVE re-read (nu din payload-ul stale al evenimentului); (#1/#4) reconcile
+>   re-oglindește TOATE stările (nu doar castigat) → un deal blocat won:true după castigat→pierdut se corectează; (#3) dedupe
+>   campanii pe cheie (nume duplicat nu mai dublează cohortValue + cheie React stabilă); (#5) campaniile cu spend dar 0 contacte
+>   apar (cheltuială irosită vizibilă).
+> Verificat: typecheck + 24/24 suites (test-monetary + test-normalisers F1) + e2e (paritate coerceMoney/sumWonValue/clampDeal +
+> performRecomputeContactValue pe stub + merge) + build + boot. DEPLOYED: hosting + rules + functions (reconcileContactValues
+> creat, europe-central2). Forward-only, fără backfill. Următor: **F2 — economia agenției (facturi↔lead/client).**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

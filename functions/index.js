@@ -347,7 +347,12 @@ exports.onSubmissionCreate = onDocumentCreated({ document: 'landingPages/{slug}/
           firstSeen: Number(prevRollup.firstSeen) || nowMs,
           lastSeen: nowMs,
           lastSlug: slug,
+          value: Number(prevRollup.value) || 0, // LTV — menținut de onLpLeadStateWrite; aici doar păstrat (default 0)
         },
+        // F1: atribuirea de achiziție = SET-ONCE (primul submit cu campanie câștigă) → idempotent + stabil pe revizite.
+        acquisition: (prev && prev.acquisition && prev.acquisition.campaign)
+          ? prev.acquisition
+          : { campaign: String(utm.campaign || '').slice(0, 80), source: String(utm.source || '').slice(0, 80), medium: String(utm.medium || '').slice(0, 80) },
         createdAt: (prev && prev.createdAt) || admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
@@ -381,23 +386,39 @@ exports.onLpLeadStateWrite = onDocumentWritten({ document: 'clients/{uid}/lpLead
   const { uid, subId } = event.params;
   try {
     const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
-    if (!after) return; // ștergere → nimic
-    const status = ['nou', 'contactat', 'calificat', 'castigat', 'pierdut'].includes(after.status) ? after.status : '';
-    if (!status) return;
     const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
-    if (before && before.status === after.status) return; // doar la schimbare reală de status
     const db = admin.firestore();
-    const refSnap = await db.collection('clients').doc(uid).collection('contactRefs').doc(subId).get();
+    const clientRef = db.collection('clients').doc(uid);
+    const refSnap = await clientRef.collection('contactRefs').doc(subId).get();
     const refContactId = refSnap.exists ? (refSnap.data() || {}).contactId : '';
     if (!refContactId || typeof refContactId !== 'string') return; // submission neîngerat → nimic de actualizat
-    const contactsCol = db.collection('clients').doc(uid).collection('contacts');
+    const contactsCol = clientRef.collection('contacts');
     // F3: urmează lanțul de tombstone (mergedInto) → scrie pe contactul VIU, nu pe unul combinat.
     const contactId = await liveContactId(contactsCol, refContactId);
     const cRef = contactsCol.doc(contactId);
-    await cRef.set({ lifecycle: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    await cRef.collection('events').doc().set(clampContactEvent({
-      type: 'status_change', at: Date.now(), submissionId: subId, slug: typeof after.slug === 'string' ? after.slug : '', detail: status, utm: {},
-    }));
+
+    // (A) Axa monetară F1 — oglinda deal-ului (deals/{subId}) + recalcul LTV. Rulează la ORICE scriere, INCLUSIV delete.
+    //     Fix review #2: oglindim din starea LIVE a lpLeadState (RE-CITITĂ), NU din `after` (payload-ul evenimentului poate
+    //     fi STALE/reordonat la redelivery at-least-once → ar suprascrie o valoare mai nouă). Mirror din sursa de adevăr ⇒
+    //     imun la reordonare (orice trigger re-citește ULTIMA valoare). Idempotent (upsert pe subId + recompute-din-zero).
+    const liveSnap = await clientRef.collection('lpLeadState').doc(subId).get();
+    const live = liveSnap.exists ? (liveSnap.data() || {}) : null;
+    const dealRef = cRef.collection('deals').doc(subId);
+    await dealRef.set(live
+      ? clampDeal({ value: live.value, won: live.status === 'castigat', slug: live.slug, at: Date.now() })
+      : clampDeal({ value: 0, won: false, slug: '', at: Date.now() })); // lpLeadState șters → deal iese din LTV
+    await performRecomputeContactValue(db, uid, contactId);
+
+    // (B) Lifecycle + eveniment de timeline — DOAR la SCHIMBARE reală de status (garda existentă, mutată aici).
+    if (after) {
+      const status = ['nou', 'contactat', 'calificat', 'castigat', 'pierdut'].includes(after.status) ? after.status : '';
+      if (status && !(before && before.status === after.status)) {
+        await cRef.set({ lifecycle: status, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        await cRef.collection('events').doc().set(clampContactEvent({
+          type: 'status_change', at: Date.now(), submissionId: subId, slug: typeof after.slug === 'string' ? after.slug : '', detail: status, utm: {},
+        }));
+      }
+    }
   } catch (err) {
     logger.error('onLpLeadStateWrite ingest failed', { uid, subId, err: String(err) });
   }
@@ -837,6 +858,34 @@ function extractContactIdentity(values, fields) {
 }
 exports.extractContactIdentity = extractContactIdentity;
 
+// ── Axa monetară F1 — port byte-echivalent al src/analytics/monetary.ts (coerceMoney/sumWonValue/coerceToContactDeal).
+//    Paritate asertată e2e (TEST CONTACT). ──
+const MAX_MONEY = 1e12;
+function coerceMoney(v) {
+  const n = typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0;
+  return Math.min(n, MAX_MONEY);
+}
+function sumWonValue(rows) {
+  let total = 0;
+  for (const r of Array.isArray(rows) ? rows : []) if (r && r.won === true) total += coerceMoney(r.value);
+  return Math.min(total, MAX_MONEY);
+}
+// clampDeal = coerceToContactDeal (oglinda per-tranzacție deals/{submissionId}).
+function clampDeal(raw) {
+  const d = raw && typeof raw === 'object' ? raw : {};
+  const n = (vv) => (typeof vv === 'number' && isFinite(vv) && vv >= 0 ? vv : 0);
+  return {
+    schema: 1,
+    value: coerceMoney(d.value),
+    won: d.won === true,
+    slug: typeof d.slug === 'string' ? d.slug.slice(0, 80) : '',
+    at: n(d.at),
+  };
+}
+exports.coerceMoney = coerceMoney;
+exports.sumWonValue = sumWonValue;
+exports.clampDeal = clampDeal;
+
 // clampContact / clampContactEvent — port 1:1 al coerceToContact / coerceToContactEvent (read-shape; paritate e2e).
 // clampContact NU include createdAt/updatedAt (timestamp-uri adăugate separat la scriere).
 function clampContact(raw) {
@@ -846,16 +895,18 @@ function clampContact(raw) {
   const s = (vv, max) => (typeof vv === 'string' ? vv.slice(0, max) : '');
   const r = d.rollup && typeof d.rollup === 'object' ? d.rollup : {};
   const n = (vv) => (typeof vv === 'number' && isFinite(vv) && vv >= 0 ? vv : 0);
+  const a = d.acquisition && typeof d.acquisition === 'object' ? d.acquisition : {};
   return {
     schema: 1,
     identityKind: KINDS.includes(d.identityKind) ? d.identityKind : 'anon',
     emailMasked: s(d.emailMasked, 160),
     phoneMasked: s(d.phoneMasked, 40),
     lifecycle: LIFE.includes(d.lifecycle) ? d.lifecycle : 'nou',
-    rollup: { submissions: Math.floor(n(r.submissions)), firstSeen: n(r.firstSeen), lastSeen: n(r.lastSeen), lastSlug: s(r.lastSlug, 80) },
+    rollup: { submissions: Math.floor(n(r.submissions)), firstSeen: n(r.firstSeen), lastSeen: n(r.lastSeen), lastSlug: s(r.lastSlug, 80), value: Math.min(n(r.value), MAX_MONEY) },
     mergeCandidate: d.mergeCandidate === true,
     mergeWith: (Array.isArray(d.mergeWith) ? d.mergeWith : []).filter((x) => typeof x === 'string' && x).slice(0, 10),
     mergedInto: typeof d.mergedInto === 'string' ? d.mergedInto.slice(0, 60) : '',
+    acquisition: { campaign: s(a.campaign, 80), source: s(a.source, 80), medium: s(a.medium, 80) },
   };
 }
 // Merge a doi contacți (F3) — PUR. Combină rollup (sumă submissions, min firstSeen, max lastSeen), păstrează
@@ -867,10 +918,17 @@ function mergeContactDocs(target, source) {
   const tr = t.rollup && typeof t.rollup === 'object' ? t.rollup : {};
   const sr = sc.rollup && typeof sc.rollup === 'object' ? sc.rollup : {};
   const num = (v) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : 0);
-  const firsts = [num(tr.firstSeen), num(sr.firstSeen)].filter((x) => x > 0);
+  const tFirst = num(tr.firstSeen), sFirst = num(sr.firstSeen);
+  const firsts = [tFirst, sFirst].filter((x) => x > 0);
   const tLast = num(tr.lastSeen), sLast = num(sr.lastSeen);
   const lifeRank = (l) => (LIFECYCLE_RANK[l] !== undefined ? LIFECYCLE_RANK[l] : 0);
   const lifecycle = lifeRank(sc.lifecycle) > lifeRank(t.lifecycle) ? sc.lifecycle : t.lifecycle;
+  // F1: LTV combinat = suma; achiziția = primul-touch (firstSeen mai mic), preferând o latură CU campanie.
+  const ta = t.acquisition && t.acquisition.campaign ? t.acquisition : null;
+  const sa = sc.acquisition && sc.acquisition.campaign ? sc.acquisition : null;
+  let acquisition;
+  if (ta && sa) acquisition = (sFirst > 0 && (tFirst === 0 || sFirst < tFirst)) ? sc.acquisition : t.acquisition;
+  else acquisition = ta || sa || t.acquisition || sc.acquisition || {};
   return clampContact({
     identityKind: t.identityKind || sc.identityKind,
     emailMasked: t.emailMasked || sc.emailMasked,
@@ -881,9 +939,11 @@ function mergeContactDocs(target, source) {
       firstSeen: firsts.length ? Math.min(...firsts) : 0,
       lastSeen: Math.max(tLast, sLast),
       lastSlug: sLast > tLast ? sr.lastSlug : tr.lastSlug,
+      value: num(tr.value) + num(sr.value),
     },
     mergeCandidate: false,
     mergeWith: [],
+    acquisition,
   });
 }
 exports.mergeContactDocs = mergeContactDocs;
@@ -911,10 +971,15 @@ async function performMergeContacts(db, opts) {
   // Mută evenimentele sursei la țintă.
   const evSnap = await col.doc(fromId).collection('events').get();
   for (const e of evSnap.docs) await col.doc(toId).collection('events').add(clampContactEvent(e.data()));
+  // F1: mută oglinda deal-urilor (id = submissionId → upsert idempotent, fără dublare la re-rulare).
+  const dealSnap = await col.doc(fromId).collection('deals').get();
+  for (const dd of dealSnap.docs) await col.doc(toId).collection('deals').doc(dd.id).set(clampDeal(dd.data()));
   // Țintă = merged (păstrează createdAt; updatedAt nou). Sursă = tombstone redirect.
   await col.doc(toId).set(Object.assign({}, merged, { updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
   await col.doc(fromId).set({ merged: true, mergedInto: toId, mergeCandidate: false, mergeWith: [], updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-  logger.info('contacts merged', { clientUid, fromId, toId, movedEvents: evSnap.size });
+  // F1: LTV-ul țintei = recalcul AUTORITAR din toate deal-urile (ale ambelor contacte, acum mutate) — nu ne bazăm pe suma din merge.
+  await performRecomputeContactValue(db, clientUid, toId);
+  logger.info('contacts merged', { clientUid, fromId, toId, movedEvents: evSnap.size, movedDeals: dealSnap.size });
   return { ok: true, movedEvents: evSnap.size };
 }
 exports.performMergeContacts = performMergeContacts;
@@ -4790,6 +4855,27 @@ async function performRecomputeCampaignTotals(db, campaignId) {
 }
 exports.performRecomputeCampaignTotals = performRecomputeCampaignTotals;
 
+// Axa monetară F1: LTV-ul unui contact = suma valorilor deal-urilor CÂȘTIGATE, recalculată TRANZACȚIONAL din oglinda
+// `deals/{submissionId}` (același tipar idempotent ca performRecomputeCampaignTotals — recompute din zero, NU increment;
+// gardă pe contact șters/tombstone ca să nu reînvie un doc fantomă; reads-before-writes; maxAttempts:15). Apelată de
+// onLpLeadStateWrite la orice scriere de lead-state + de jobul reconcileContactValues + după merge.
+async function performRecomputeContactValue(db, clientUid, contactId) {
+  const cRef = db.collection('clients').doc(clientUid).collection('contacts').doc(contactId);
+  const dealsRef = cRef.collection('deals');
+  return db.runTransaction(async (tx) => {
+    const cSnap = await tx.get(cRef);
+    if (!cSnap.exists) return null; // contact șters/tombstone → nu reînvia
+    const dealsSnap = await tx.get(dealsRef);
+    const ltv = sumWonValue(dealsSnap.docs.map((d) => d.data()));
+    // Păstrează EXPLICIT celelalte câmpuri de rollup (submissions/firstSeen/...) — nu ne bazăm pe merge recursiv.
+    const cur = (cSnap.data() || {}).rollup;
+    const curRollup = cur && typeof cur === 'object' ? cur : {};
+    tx.set(cRef, { rollup: Object.assign({}, curRollup, { value: ltv }), updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return ltv;
+  }, { maxAttempts: 15 });
+}
+exports.performRecomputeContactValue = performRecomputeContactValue;
+
 /** Motorul GENERIC de ingestie (testabil; db + fetchRows + cheie INJECTATE), folosit de toate platformele.
  *  Pentru fiecare campanie `platform==X` cu externalId + clientUid, decriptează credențiala clientului și cheamă
  *  `fetchRows(externalId, since, until, { token, cred })` → `{ ok, status, metrics: DailyMetric[] }`. UPSERT pe
@@ -5306,6 +5392,45 @@ exports.onMetricTotals = onDocumentWritten({ document: 'campaigns/{campaignId}/m
       }
       logger.info('reconcileCampaignTotals done', { campaigns: snap.size, fixed });
     } catch (e) { console.error('reconcileCampaignTotals failed:', e); }
+  });
+
+  // Axa monetară F1: backstop ZILNIC pentru LTV. Re-oglindește deal-ul fiecărui lpLeadState din starea LIVE (won DERIVAT
+  // din status, value păstrat) → corectează un deal blocat pe won:true după castigat→pierdut DACĂ scrierea live a eșuat
+  // (fix review #1/#4), un dealRef.set eșuat, sau drift de valoare — apoi recalculează rollup.value (self-heal dacă o
+  // tranzacție de recompute a eșuat sub contenție). Iterăm TOATE lead-state-urile (nu doar 'castigat'), ca o pierdere să
+  // poată scoate deal-ul din LTV. Ungated, fără AI, idempotent, plafonat (volum mic de consumatori per client).
+  exports.reconcileContactValues = onSchedule({ schedule: '45 5 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    if (!CONTACT_INGEST_ENABLED) return;
+    try {
+      const db = admin.firestore();
+      const clientsSnap = await db.collection('clients').limit(2000).get();
+      let recomputed = 0;
+      for (const cDoc of clientsSnap.docs) {
+        const clientRef = db.collection('clients').doc(cDoc.id);
+        let lsSnap;
+        try { lsSnap = await clientRef.collection('lpLeadState').limit(5000).get(); }
+        catch (e) { continue; }
+        if (lsSnap.empty) continue;
+        const contactIds = new Set();
+        for (const ls of lsSnap.docs) {
+          try {
+            const subId = ls.id;
+            const refSnap = await clientRef.collection('contactRefs').doc(subId).get();
+            const rcid = refSnap.exists ? (refSnap.data() || {}).contactId : '';
+            if (!rcid || typeof rcid !== 'string') continue;
+            const contactId = await liveContactId(clientRef.collection('contacts'), rcid);
+            const lsData = ls.data() || {};
+            await clientRef.collection('contacts').doc(contactId).collection('deals').doc(subId)
+              .set(clampDeal({ value: lsData.value, won: lsData.status === 'castigat', slug: lsData.slug, at: Date.now() }));
+            contactIds.add(contactId);
+          } catch (e) { logger.warn('reconcileContactValues one lead failed', { client: cDoc.id, sub: ls.id, err: String(e) }); }
+        }
+        for (const contactId of contactIds) {
+          try { await performRecomputeContactValue(db, cDoc.id, contactId); recomputed++; } catch (e) { logger.warn('reconcileContactValues recompute failed', { client: cDoc.id, contactId, err: String(e) }); }
+        }
+      }
+      logger.info('reconcileContactValues done', { clients: clientsSnap.size, recomputed });
+    } catch (e) { console.error('reconcileContactValues failed:', e); }
   });
 }
 

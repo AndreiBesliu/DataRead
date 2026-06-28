@@ -19,5 +19,7 @@ export { coerceToContact, maskEmail, maskPhone } from '../src/types/contact';
 export { coerceToContactEvent } from '../src/types/contactEvent';
 // Paritate TS↔JS pt. predicție (Faza 1): coerceToPrediction TS vs clampPrediction JS.
 export { coerceToPrediction } from '../src/types/prediction';
+// Paritate TS↔JS pt. axa monetară F1: coerceMoney/sumWonValue/coerceToContactDeal TS vs coerceMoney/sumWonValue/clampDeal JS.
+export { coerceMoney, sumWonValue, coerceToContactDeal } from '../src/analytics/monetary';
 // Pentru paritatea TS↔JS a chrome-ului default (PUBLIC_CHROME_DEFAULT == DEFAULT_SITE_CHROME din functions).
 export { PUBLIC_CHROME_DEFAULT } from '../src/config/publicChrome';

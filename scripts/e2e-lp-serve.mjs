@@ -1319,13 +1319,52 @@ console.log('\nCONTACT) fundație contacte — identitate + mascare + paritate J
   ok(fns.extractContactIdentity({ email_address: 'a@b.ro' }, [{ name: 'email_address', type: 'text' }]).kind === 'email', 'extractIdentity: fallback euristic pe nume');
   // paritate clampContact / clampContactEvent JS ↔ coerce TS (key-order identic → JSON.stringify egal)
   const cCases = [
-    { identityKind: 'email', emailMasked: 'a***@x.ro', phoneMasked: '', lifecycle: 'calificat', rollup: { submissions: 2, firstSeen: 1, lastSeen: 9, lastSlug: 'p' }, mergeCandidate: true },
-    { identityKind: 'galaxy', lifecycle: 'vip', rollup: { submissions: 'x', lastSlug: 5 } },
+    { identityKind: 'email', emailMasked: 'a***@x.ro', phoneMasked: '', lifecycle: 'calificat', rollup: { submissions: 2, firstSeen: 1, lastSeen: 9, lastSlug: 'p', value: 350 }, mergeCandidate: true, acquisition: { campaign: 'BF', source: 'meta', medium: 'cpc' } },
+    { identityKind: 'galaxy', lifecycle: 'vip', rollup: { submissions: 'x', lastSlug: 5, value: -7 }, acquisition: 'gunoi' },
     'gunoi',
   ];
   let cMatch = true;
   for (const x of cCases) if (JSON.stringify(fns.clampContact(x)) !== JSON.stringify(C.coerceToContact(x))) { cMatch = false; console.error('  contact divergență', JSON.stringify(fns.clampContact(x)), '!=', JSON.stringify(C.coerceToContact(x))); }
-  ok(cMatch, 'clampContact JS == coerceToContact TS pe cazuri adversariale');
+  ok(cMatch, 'clampContact JS == coerceToContact TS pe cazuri adversariale (incl. rollup.value + acquisition, key-order)');
+
+  // Axa monetară F1: paritate JS↔TS pe coerceMoney / sumWonValue / clampDeal(=coerceToContactDeal).
+  const moneyCases = [120.5, -5, NaN, 'x', null, 1e15, 0];
+  ok(moneyCases.every((m) => fns.coerceMoney(m) === C.coerceMoney(m)), 'F1: coerceMoney JS == TS');
+  const dealRows = [{ value: 100, won: true }, { value: 50, won: false }, { value: NaN, won: true }, { value: 1e15, won: true }];
+  ok(fns.sumWonValue(dealRows) === C.sumWonValue(dealRows), 'F1: sumWonValue JS == TS');
+  const dealCases = [{ value: 300, won: true, slug: 'lp', at: 9 }, { value: -1, won: 'yes', slug: 5, at: -2 }, 'gunoi', null];
+  let dMatch = true;
+  for (const x of dealCases) if (JSON.stringify(fns.clampDeal(x)) !== JSON.stringify(C.coerceToContactDeal(x))) { dMatch = false; console.error('  deal divergență', JSON.stringify(fns.clampDeal(x)), '!=', JSON.stringify(C.coerceToContactDeal(x))); }
+  ok(dMatch, 'F1: clampDeal JS == coerceToContactDeal TS pe cazuri adversariale');
+
+  // F1: performRecomputeContactValue — recompute LTV din deals/{subId} (stub în memorie cu tranzacție + subcolecție).
+  {
+    function makeStore(seed) {
+      const store = new Map(Object.entries(seed || {}));
+      const dealsRef = (uid, cid) => ({ _kind: 'dealsColl', _p: `clients/${uid}/contacts/${cid}/deals/` });
+      const cRef = (uid, cid) => ({ _kind: 'cDoc', _k: `clients/${uid}/contacts/${cid}`, collection(n) { return n === 'deals' ? dealsRef(uid, cid) : { _kind: 'other' }; } });
+      const tx = {
+        async get(r) {
+          if (r._kind === 'dealsColl') { const docs = []; for (const [k, v] of store) if (k.startsWith(r._p)) docs.push({ id: k.slice(r._p.length), data: () => v }); return { docs }; }
+          const has = store.has(r._k); return { exists: has, data: () => store.get(r._k) };
+        },
+        set(r, data, opts) { const k = r._k; store.set(k, opts && opts.merge ? Object.assign({}, store.get(k) || {}, data) : Object.assign({}, data)); },
+      };
+      const db = { collection(c) { return { doc(id) { return c === 'clients' ? { collection(n) { return { doc(cid) { return cRef(id, cid); } }; } } : { _kind: 'other' }; } }; }, async runTransaction(fn) { return fn(tx); } };
+      return { db, store };
+    }
+    const { db, store } = makeStore({
+      'clients/u1/contacts/c1': { rollup: { submissions: 3, value: 0 } },
+      'clients/u1/contacts/c1/deals/s1': { value: 100, won: true },
+      'clients/u1/contacts/c1/deals/s2': { value: 50, won: false },
+      'clients/u1/contacts/c1/deals/s3': { value: 200, won: true },
+    });
+    const ltv = await fns.performRecomputeContactValue(db, 'u1', 'c1');
+    ok(ltv === 300, 'F1: performRecomputeContactValue → LTV = suma deal-urilor câștigate (300)');
+    ok(store.get('clients/u1/contacts/c1').rollup.value === 300 && store.get('clients/u1/contacts/c1').rollup.submissions === 3, 'F1: rollup.value scris, celelalte câmpuri de rollup păstrate');
+    const none = await fns.performRecomputeContactValue(db, 'u1', 'ghost');
+    ok(none === null, 'F1: contact inexistent → null (nu reînvie)');
+  }
   const eCases = [
     { type: 'status_change', at: 123, submissionId: 's1', slug: 'promo', detail: 'contactat', utm: { source: 'fb', medium: 'cpc', campaign: 'x' } },
     { type: 'boom', at: -1, detail: 'y'.repeat(500) },
@@ -1833,7 +1872,9 @@ function makeMigStore(seed) {
       },
     };
   }
-  return { db: { collection: (c) => colRef(c) }, store };
+  // runTransaction: stub minimal (fără retry/concurență) — tx.get pe docRef SAU colRef, tx.set pe docRef. (F1: performRecomputeContactValue)
+  const runTransaction = async (fn) => fn({ get: (r) => r.get(), set: (r, data, opts) => r.set(data, opts) });
+  return { db: { collection: (c) => colRef(c), runTransaction }, store };
 }
 
 console.log('\nMIG) performMigrateCampaignInsights — relocare + scrub leak aiInsight');
