@@ -56,9 +56,15 @@ check('wonRevenue: suma valorilor pe castigat', wonRevenue([
 ]) === 350);
 check('wonRevenue: gol → 0', wonRevenue([]) === 0);
 
-// campaignKey
-check('campaignKey: trim + lowercase', campaignKey('  Black Friday ') === 'black friday');
+// campaignKey — normalizare identică cu sanitizeVariantPart (FK dur soft, fix #115).
+check('campaignKey: normalizare (diacritice + spații → hyphen, lowercase)', campaignKey('  Black Friday ') === 'black-friday');
 check('campaignKey: gol/non-string → ""', campaignKey('') === '' && campaignKey(null) === '' && campaignKey(42) === '');
+// Scenariul din Link Builder: numele brut al campaniei == UTM sanitizat pus de picker → se potrivesc.
+check('campaignKey: nume brut potrivește UTM-ul sanitizat din picker', campaignKey('Lansare Iarnă') === 'lansare-iarna' && campaignKey('Lansare Iarnă') === campaignKey('lansare-iarna'));
+check('campaignEconomics: potrivire pe nume cu diacritice ↔ acquisition sanitizat', (() => {
+  const e = campaignEconomics('Lansare Iarnă', 100, [{ acquisitionCampaign: 'lansare-iarna', ltv: 250 }]);
+  return e.acquired === 1 && e.cohortValue === 250;
+})());
 
 // campaignEconomics
 {

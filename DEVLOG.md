@@ -2720,6 +2720,23 @@ normaliser, secretele niciodată în chat/repo.
 > suites + build + boot. DEPLOYED: hosting (fără functions/rules — read-only). **Axa monetară COMPLETĂ (F1 clienții clientului
 > + F2 agenția).** Rămas (din audit, low-urgență): AI 1b (LTV în promptul de predicție), contact↔campanie FK dur, insight-accuracy.
 
+**2026-06-28 - Task Completed — Felii finale audit AI (recent-metrics + LTV-în-predicție + insight-accuracy + FK campanie)**
+> Model: Claude Opus 4.8 (1M context). „Continua cu toate" — cele 4 felii low-urgență rămase din audit. Review adversarial → 0 defecte.
+> - **Recent-60 metrici (fix bug):** `performCampaignInsight` citea `orderBy date asc limit 60` = PRIMELE 60 zile → blocul
+>   „evoluție recentă" + `metricAnomalies` rulau pe date VECHI la campanii >60 zile. Fix: `orderBy desc limit 60` + `.reverse()`
+>   (cronologic asc). KPI-ul era deja OK (din totals).
+> - **AI 1b — LTV în promptul de predicție:** `buildContactProfile` adaugă „Valoare realizată (LTV): X €" când rollup.value>0
+>   (din axa monetară F1) = semnal puternic de valoare/loialitate pentru predicția AI. Prompt-only, testat e2e.
+> - **Insight-accuracy (bucla de învățare pt. verdicte):** job `reconcileInsights` (zilnic 05:35, ungated) reconciliază
+>   `campaignInsightLog` (snapshot cu totalsAt) la ≥14 zile → stampează roasAt/roasNow/deltaRoas. Modul pur
+>   `src/analytics/insightAccuracy.ts` (verdictAligned: scale→ROAS≥; pause→justificat dacă ROAS<1; maintain→stabil; test→neutru) +
+>   card „Alinierea verdictelor" în HealthPanel. Semnal ORIENTATIV (totals cumulative), etichetat onest. Testat.
+> - **Contact↔campanie FK „soft" (fix atribuire F1):** Link Builder stochează UTM = `sanitizeVariantPart(nume campanie)`, dar
+>   `campaignKey` din F1 folosea trim+lowercase → campaniile alese din picker NU se potriveau (CAC pierdea contactele). Fix:
+>   `campaignKey` normalizează IDENTIC cu `sanitizeVariantPart` (diacritice + non-[a-z0-9-]→'-'), guard non-string→''. Testat.
+> Verificat: typecheck + 26/26 suites (test-insight-accuracy + test-monetary campaignKey) + e2e (LTV profil) + build + boot.
+> DEPLOYED: functions (reconcileInsights creat) + hosting. **Auditul analytics/AI + axa monetară COMPLETE integral.**
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

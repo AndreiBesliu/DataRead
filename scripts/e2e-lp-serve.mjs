@@ -1401,6 +1401,9 @@ console.log('\nPRED) predicție — paritate clamp JS ↔ coerce TS + profil mas
   const cp = fns.buildContactProfile(contact, events);
   ok(cp.includes('a***@x.ro') && !cp.includes('@gmail') && cp.includes('CONTACT'), 'buildContactProfile: mascat, fără PII brut');
   ok(cp.includes('a trimis formularul') && cp.includes('status → contactat'), 'buildContactProfile: timeline de evenimente');
+  // AI 1b: LTV realizat (rollup.value > 0) apare ca semnal puternic; lipsă/0 → fără linia de valoare.
+  ok(fns.buildContactProfile({ rollup: { submissions: 1, value: 350 } }, []).includes('Valoare realizată (LTV): 350'), 'buildContactProfile: LTV realizat inclus (semnal AI 1b)');
+  ok(!cp.includes('Valoare realizată (LTV)'), 'buildContactProfile: fără LTV când rollup.value 0 (compat)');
   const lp2 = fns.buildLeadProfile({ companyName: 'ACME', industry: 'retail', status: 'contacted', objectives: ['leads'], adBudget: '500' }, [{ type: 'call', at: 1, body: 'a sunat' }]);
   ok(lp2.includes('ACME') && lp2.includes('LEAD'), 'buildLeadProfile: conține firma + tipul subiectului');
   const prompt = fns.buildPredictionPrompt(cp, 'contact');

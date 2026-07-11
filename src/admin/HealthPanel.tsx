@@ -19,6 +19,7 @@ import {
   type SelfMarketingConfig,
 } from '../types/selfMarketingConfig';
 import { accuracyByTemperature, directionalAccuracy, isCalibrated, type ScoredPrediction, type RealizedOutcome } from '../analytics/predictionAccuracy';
+import { insightAccuracy, type InsightLogRow } from '../analytics/insightAccuracy';
 import { CONVERSION_LIKELIHOODS, TEMPERATURES, type ConversionLikelihood, type Temperature } from '../types/prediction';
 
 interface ErrRow { id: string; name?: string; message?: string; kind?: string; version?: string; at?: { toMillis?: () => number } }
@@ -33,6 +34,7 @@ export default function HealthPanel() {
   const [entitled, setEntitled] = useState<Counter | null>(null);
   const [autoGlobal, setAutoGlobal] = useState<Counter | null>(null);
   const [scored, setScored] = useState<ScoredPrediction[]>([]); // predicții reconciliate (bucla de învățare)
+  const [insightRows, setInsightRows] = useState<InsightLogRow[]>([]); // insight-uri reconciliate (roasAt/roasNow)
   const [cfg, setCfg] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [form, setForm] = useState<SelfMarketingConfig>(SELF_MKT_CONFIG_DEFAULT);
   const [saveState, setSaveState] = useState<'idle' | 'busy' | 'saved' | 'err'>('idle');
@@ -64,7 +66,11 @@ export default function HealthPanel() {
         outcome: (x.outcome === 'won' || x.outcome === 'lost' ? x.outcome : 'open') as RealizedOutcome,
       }; }));
     }, () => setScored([]));
-    return () => { o1(); o2(); o3(); o4(); o5(); o6(); };
+    // Insight-accuracy: verdictele reconciliate (reconcileInsights a stampat roasAt/roasNow) → aliniere măsurată live.
+    const o7 = onSnapshot(query(collection(db, 'campaignInsightLog'), where('reconciled', '==', true), limit(500)), (s) => {
+      setInsightRows(s.docs.map((dd) => { const x = dd.data() as Record<string, unknown>; return { verdict: x.verdict, roasAt: x.roasAt, roasNow: x.roasNow }; }));
+    }, () => setInsightRows([]));
+    return () => { o1(); o2(); o3(); o4(); o5(); o6(); o7(); };
   }, []);
 
   // Editare formular: marchează „murdar" (snapshot-urile nu mai suprascriu) + resetează un mesaj de salvare vechi.
@@ -223,6 +229,41 @@ export default function HealthPanel() {
                 </table>
               </>
             )}
+          </div>
+        );
+      })()}
+
+      {/* ── Bucla de învățare: alinierea verdictelor de campanie cu mișcarea ROAS (reconciliat zilnic) ── */}
+      {(() => {
+        const ia = insightAccuracy(insightRows);
+        if (ia.total === 0) return null;
+        const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
+        return (
+          <div style={{ ...card, marginBottom: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{t('admin.health.insAccTitle')}</div>
+            <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 12px', maxWidth: 680 }}>{t('admin.health.insAccHint')}</p>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div><div style={{ fontSize: 11, color: 'var(--fg-1)', fontWeight: 700 }}>{t('admin.health.insAccAligned')}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{pct(ia.alignedRate)}</div></div>
+              <div><div style={{ fontSize: 11, color: 'var(--fg-1)', fontWeight: 700 }}>{t('admin.health.accSample')}</div><div style={{ fontSize: 24, fontWeight: 700 }}>{ia.scored}</div></div>
+            </div>
+            <table style={{ width: '100%', maxWidth: 520, borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'var(--bg-0)' }}>
+                <th style={td}>{t('admin.health.insAccColVerdict')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.insAccColN')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.insAccColAligned')}</th>
+                <th style={{ ...td, textAlign: 'right' }}>{t('admin.health.insAccColDelta')}</th>
+              </tr></thead>
+              <tbody>
+                {ia.byVerdict.filter((v) => v.n > 0).map((v) => (
+                  <tr key={v.verdict}>
+                    <td style={td}>{t('admin.verdict' + v.verdict.charAt(0).toUpperCase() + v.verdict.slice(1))}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{v.n}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--fg-1)' }}>{v.scored > 0 ? `${v.aligned}/${v.scored}` : '—'}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: v.avgDeltaRoas === null ? 'var(--fg-1)' : v.avgDeltaRoas >= 0 ? 'var(--success)' : 'var(--danger)' }}>{v.avgDeltaRoas === null ? '—' : (v.avgDeltaRoas >= 0 ? '+' : '') + v.avgDeltaRoas}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       })()}

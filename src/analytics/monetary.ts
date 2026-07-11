@@ -8,6 +8,7 @@
  * = cheltuiala campaniei vs. contactele aduse de ea (atribuire prin contact.acquisition.campaign).
  */
 import { MAX_METRIC_VALUE } from './kpi';
+import { sanitizeVariantPart } from '../types/lpAttribution';
 
 export const MAX_MONEY = MAX_METRIC_VALUE; // 1e12 — plafon defensiv pe sume (typo/corupt)
 export const CONTACT_CAC_THIN_N = 5; // sub 5 contacte aduse → CAC „eșantion mic" (convenția CLIENT_BASELINE_THIN_N)
@@ -65,9 +66,13 @@ export function wonRevenue(states: Array<{ status?: string; value?: unknown }>):
 }
 
 // ── CAC/ROI per campanie (calculat la citire, nestocat). ──
-/** Cheia de potrivire campanie↔contact: trim + lowercase. '' dacă gol (necomparabil). */
+/** Cheia de potrivire campanie↔contact (F1/F2 „FK dur soft"): normalizează IDENTIC cu `sanitizeVariantPart` din Link
+ *  Builder (diacritice tăiate + lowercase + non-[a-z0-9-]→'-') — altfel o campanie aleasă din picker (UTM = numele
+ *  SANITIZAT, ex. „Lansare Iarnă"→„lansare-iarna") nu s-ar potrivi cu numele brut. '-'/gol → '' (necomparabil). */
 export function campaignKey(s: unknown): string {
-  return typeof s === 'string' ? s.trim().toLowerCase() : '';
+  if (typeof s !== 'string') return ''; // non-string → necomparabil (nu coerce 42→'42')
+  const k = sanitizeVariantPart(s);
+  return k === '-' ? '' : k;
 }
 
 export interface AcqContact {

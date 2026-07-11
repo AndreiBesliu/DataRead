@@ -1013,6 +1013,13 @@ const ro = {
       accColDecided: 'Decise',
       accColWon: 'Câștigate',
       accColRate: 'Rată reală',
+      insAccTitle: 'Alinierea verdictelor de campanie (bucla de învățare)',
+      insAccHint: 'Verdictele AI (scalează/menține/oprește/testează) sunt reconciliate zilnic cu mișcarea ROAS după ≥14 zile. Măsură ORIENTATIVĂ (totalurile sunt cumulative), nu dovadă de cauzalitate — arată dacă recomandările s-au aliniat cu evoluția.',
+      insAccAligned: 'Verdicte aliniate',
+      insAccColVerdict: 'Verdict',
+      insAccColN: 'Nr.',
+      insAccColAligned: 'Aliniate',
+      insAccColDelta: 'Δ ROAS mediu',
     },
     site: {
       title: 'Site public',

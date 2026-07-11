@@ -996,6 +996,13 @@ const en: typeof ro = {
       accColDecided: 'Decided',
       accColWon: 'Won',
       accColRate: 'Actual rate',
+      insAccTitle: 'Campaign verdict alignment (learning loop)',
+      insAccHint: 'AI verdicts (scale/maintain/pause/test) are reconciled daily against ROAS movement after ≥14 days. An INDICATIVE measure (totals are cumulative), not proof of causality — shows whether recommendations aligned with the trend.',
+      insAccAligned: 'Aligned verdicts',
+      insAccColVerdict: 'Verdict',
+      insAccColN: 'Count',
+      insAccColAligned: 'Aligned',
+      insAccColDelta: 'Avg Δ ROAS',
     },
     site: {
       title: 'Public site',

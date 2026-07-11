@@ -2201,8 +2201,10 @@ async function performCampaignInsight(db, campaignId, actorUid, consume) {
   if (!campSnap.exists) throw new HttpsError('not-found', 'Campania nu există.');
   const camp = campSnap.data() || {};
   const totals = camp.totals || {};
-  const metricsSnap = await campRef.collection('metrics').orderBy('date', 'asc').limit(60).get();
-  const metrics = metricsSnap.docs.map((d) => d.data());
+  // Cele mai RECENTE 60 de zile (desc + limit), apoi întoarse cronologic (asc) — blocul „evoluție recentă" +
+  // metricAnomalies presupun ordine ASCENDENTĂ. (Înainte: orderBy asc → primele 60 zile = date VECHI la campanii lungi.)
+  const metricsSnap = await campRef.collection('metrics').orderBy('date', 'desc').limit(60).get();
+  const metrics = metricsSnap.docs.map((d) => d.data()).reverse();
   // Gardă pe cheltuială REALĂ: `totals` e denormalizat (scris ASINCRON de triggerul onMetricWrite — D#5), deci poate fi
   // 0 imediat după prima metrică. Acceptăm și suma metricilor încărcate, ca latența triggerului să nu blocheze fals analiza.
   if (!(Number(totals.spend) > 0) && !(sumMetricsRaw(metrics).spend > 0)) {
@@ -2352,6 +2354,9 @@ function buildContactProfile(contact, events) {
   if (r.firstSeen) lines.push(`Prima interacțiune: acum ${predDaysAgo(r.firstSeen)} zile`);
   if (r.lastSeen) lines.push(`Ultima interacțiune: acum ${predDaysAgo(r.lastSeen)} zile`);
   if (r.lastSlug) lines.push(`Ultima pagină: ${r.lastSlug}`);
+  // AI 1b: valoarea realizată (LTV, din axa monetară F1) = semnal PUTERNIC — un contact care a generat deja venit e
+  // client valoros/loial (probabilitate mare de re-cumpărare). Doar când există (rollup.value > 0).
+  if (Number(r.value) > 0) lines.push(`Valoare realizată (LTV): ${Math.round(Number(r.value) * 100) / 100} € — a generat deja venit (semnal puternic de valoare/loialitate).`);
   if (evs.length) {
     lines.push('', 'Istoric evenimente (recent → vechi):');
     for (const e of evs.slice(0, 20)) {
@@ -5576,6 +5581,44 @@ if (AUTOMATION_ENABLED) {
       }
       logger.info('reconcilePredictions done', { scanned: snap.size, reconciled: done });
     } catch (e) { console.error('reconcilePredictions failed:', e); }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// INSIGHT-ACCURACY (audit analytics/AI): bucla de învățare pentru VERDICTELE de campanie. `campaignInsightLog`
+// snapshot-uiește {verdict, totalsAt} la momentul analizei. Aici, pentru snapshot-urile ≥14 zile, citim totalurile
+// CURENTE ale campaniei și stampăm roasAt (din totalsAt) + roasNow → src/analytics/insightAccuracy.ts măsoară alinierea
+// verdictelor cu mișcarea ROAS (dashboard HealthPanel). Totals sunt CUMULATIVE ⇒ semnal ORIENTATIV. Ungated, zero AI.
+{
+  const { onSchedule } = require('firebase-functions/v2/scheduler');
+  exports.reconcileInsights = onSchedule({ schedule: '35 5 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    try {
+      const db = admin.firestore();
+      const now = Date.now();
+      const HORIZON = 14 * 86400000, MAXH = 90 * 86400000;
+      const roasOf = (t) => { const s = Number(t && t.spend) || 0; return s > 0 ? (Number(t && t.revenue) || 0) / s : null; };
+      const snap = await db.collection('campaignInsightLog').where('reconciled', '==', false).limit(500).get();
+      let done = 0;
+      for (const d of snap.docs) {
+        const row = d.data() || {};
+        const age = now - (Number(row.predictedAtMs) || 0);
+        if (age < HORIZON) continue; // prea proaspăt pentru a judeca mișcarea ROAS
+        const roasAt = roasOf(row.totalsAt);
+        let roasNow = null;
+        try {
+          const cs = await db.collection('campaigns').doc(String(row.campaignId)).get();
+          roasNow = cs.exists ? roasOf((cs.data() || {}).totals) : null; // campanie ștearsă → nemăsurabil
+        } catch (e) { logger.warn('reconcileInsights read failed', { id: d.id, err: String(e) }); continue; }
+        // Reconciliem când avem ambele ROAS de comparat SAU după MAXH (ca să nu rescanăm la infinit).
+        if ((roasAt !== null && roasNow !== null) || age >= MAXH) {
+          const patch = { reconciled: true, roasAt, roasNow, reconciledAtMs: now };
+          if (roasAt !== null && roasNow !== null) patch.deltaRoas = Math.round((roasNow - roasAt) * 100) / 100;
+          await d.ref.set(patch, { merge: true });
+          done++;
+        }
+      }
+      logger.info('reconcileInsights done', { scanned: snap.size, reconciled: done });
+    } catch (e) { console.error('reconcileInsights failed:', e); }
   });
 }
 
