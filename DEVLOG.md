@@ -2737,6 +2737,25 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 26/26 suites (test-insight-accuracy + test-monetary campaignKey) + e2e (LTV profil) + build + boot.
 > DEPLOYED: functions (reconcileInsights creat) + hosting. **Auditul analytics/AI + axa monetară COMPLETE integral.**
 
+**2026-06-28 - Task Completed — Audit autonom de securitate/corectitudine (bug-hunt multi-agent 6 lentile → 5 confirmate)**
+> Model: Claude Opus 4.8 (1M context). „Fa ce poti singur" → audit adversarial pe backend/rules/analytics/coerce/facturi
+> (6 finderi × verificare refute-first). 5 finding-uri confirmate; 4 reparate acum, 1 (fiscal) flag-uit pt. Andrei.
+> - **#2 (medium, rules):** `leads` create anonim NU valida ELEMENTELE listei `objectives` (doar `size()<=5`) → vector de
+>   umflare doc (5 string-uri mari). Fix: `objectives.hasOnly(['leads','sales','awareness','traffic','other'])` (mărginește
+>   tranzitiv tip+mărime) la `leads` create + `clients/{uid}/onboarding` create.
+> - **#3 (low, privacy):** automatizarea `campaign.recommend` cu scope:'client' scria verdictul+headline-ul INTERN al AI în
+>   feed-ul citit de client. Fix: pe scope:'client' → mesaj NEUTRAL („Recomandare AI disponibilă"), ca report.generate;
+>   zidul admin-only campaignInsights rămâne intact. (Cale de misconfig operator, nu cross-tenant client.)
+> - **#4 (low, cost):** `aiGenerateCampaign` consuma quota AI ÎNAINTE de a valida existența lead+cerere. Fix: mutat
+>   read-urile de existență + guard-urile not-found ÎNAINTE de `consumeAiQuota` (ca aiRecommendChannels).
+> - **#5 (low, robustețe):** `runConnectorPull` scria metricile din API FĂRĂ plafonul `MAX_METRIC_VALUE` (spre deosebire de
+>   calea manual/CSV via coerceToDailyMetric). Fix: `metricNumCap` (1e12) aplicat la scrierea metricilor conector + backstop
+>   în `sumMetricsRaw` (rollup mărginit indiferent de sursă).
+> - **#1 (medium, FLAG Andrei — NU reparat):** `createdBy` (UID operator) de pe factura emisă e citibil de client (regulile
+>   Firestore nu proiectează câmpuri). Fix = mutare provenieță în sibling admin-only + migrare → atinge cod FISCAL legal
+>   (numerotare/imutabilitate) → necesită decizia lui Andrei (task spawn). Impact practic mic (UID opac, fără PII/acces).
+> Verificat: node -c + 26/26 suites + e2e + rules compile la deploy. DEPLOYED: firestore:rules + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

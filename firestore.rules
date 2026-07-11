@@ -96,7 +96,10 @@ service cloud.firestore {
         && request.resource.data.contactEmail is string && request.resource.data.contactEmail.size() <= 120
         && request.resource.data.contactPhone is string && request.resource.data.contactPhone.size() <= 30
         && request.resource.data.description is string && request.resource.data.description.size() <= 2000
+        // hasOnly mărginește TRANZITIV tipul + mărimea elementelor (5 token-uri scurte din enum) → închide vectorul de
+        // umflare a doc-ului (formular PUBLIC anonim: elementele listei erau nevalidate). Paritate cu OBJECTIVES.
         && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5
+        && request.resource.data.objectives.hasOnly(['leads', 'sales', 'awareness', 'traffic', 'other'])
         // Plafoane de mărime pe TOATE celelalte câmpuri de string (formular PUBLIC anonim → anti umflare doc / abuz).
         // Guard `in` fiindcă unele câmpuri pot lipsi din payload; când există, trebuie string sub plafon.
         && (!('cui' in request.resource.data) || (request.resource.data.cui is string && request.resource.data.cui.size() <= 40))
@@ -326,7 +329,8 @@ service cloud.firestore {
           && request.resource.data.schema == 1
           && request.resource.data.companyName is string && request.resource.data.companyName.size() <= 120
           && request.resource.data.description is string && request.resource.data.description.size() <= 2000
-          && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5;
+          && request.resource.data.objectives is list && request.resource.data.objectives.size() <= 5
+          && request.resource.data.objectives.hasOnly(['leads', 'sales', 'awareness', 'traffic', 'other']);
         allow delete: if false;
       }
 

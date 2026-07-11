@@ -3093,14 +3093,16 @@ if (AI_ENABLED) {
         throw new HttpsError('invalid-argument', 'leadId și requestId sunt obligatorii.');
       }
 
-      await consumeAiQuota(request.auth.uid);
-
       // Datele vin din Firestore, nu din client — clientul trimite doar ID-uri.
       const db = admin.firestore();
       const reqRef = db.collection('leads').doc(leadId).collection('requests').doc(requestId);
+      // Validăm existența lead+cerere ÎNAINTE de a consuma quota (ca aiRecommendChannels) — altfel ID-uri invalide ar
+      // epuiza quota lunară fără a livra nimic.
       const [leadSnap, reqSnap] = await Promise.all([db.collection('leads').doc(leadId).get(), reqRef.get()]);
       if (!leadSnap.exists) throw new HttpsError('not-found', 'Lead-ul nu există.');
       if (!reqSnap.exists) throw new HttpsError('not-found', 'Cererea nu există.');
+
+      await consumeAiQuota(request.auth.uid);
 
       // Tipul cererii decide schema + promptul ('content' = plan 30 zile, altfel campanie ads).
       const reqData = reqSnap.data() || {};
@@ -4830,10 +4832,14 @@ function insightsWindow(today, daysBack) {
 }
 exports.insightsWindow = insightsWindow;
 
+// Plafon defensiv pe o valoare metrică (paritate cu MAX_METRIC_VALUE + numCap din src/analytics/kpi.ts): o valoare
+// absurdă (typo manual SAU glitch de conector API) NU trebuie să otrăvească rollup-ul. Negativ/NaN → 0, peste plafon → plafon.
+const MAX_METRIC_VALUE = 1e12;
+function metricNumCap(v) { const n = typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0; return Math.min(n, MAX_METRIC_VALUE); }
+exports.metricNumCap = metricNumCap;
 function sumMetricsRaw(rows) {
   const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, revenue: 0 };
-  const n = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
-  for (const r of rows || []) { if (!r) continue; t.spend += n(r.spend); t.impressions += n(r.impressions); t.clicks += n(r.clicks); t.leads += n(r.leads); t.revenue += n(r.revenue); }
+  for (const r of rows || []) { if (!r) continue; t.spend += metricNumCap(r.spend); t.impressions += metricNumCap(r.impressions); t.clicks += metricNumCap(r.clicks); t.leads += metricNumCap(r.leads); t.revenue += metricNumCap(r.revenue); }
   return t;
 }
 exports.sumMetricsRaw = sumMetricsRaw;
@@ -4925,9 +4931,11 @@ async function runConnectorPull(db, opts) {
       if (metrics.length) {
         const batch = db.batch();
         for (const m of metrics) {
+          // Plafon defensiv pe valorile ingerate din API (aceeași limită ca pe calea manual/CSV via coerceToDailyMetric) —
+          // un glitch de conector nu poate scrie o valoare absurdă care să otrăvească KPI-ul/rollup-ul.
           batch.set(docSnap.ref.collection('metrics').doc(m.date), {
-            schema: 1, date: m.date, spend: m.spend, impressions: m.impressions,
-            clicks: m.clicks, leads: m.leads, revenue: m.revenue, source: platform, updatedAt: ts,
+            schema: 1, date: m.date, spend: metricNumCap(m.spend), impressions: metricNumCap(m.impressions),
+            clicks: metricNumCap(m.clicks), leads: metricNumCap(m.leads), revenue: metricNumCap(m.revenue), source: platform, updatedAt: ts,
           }, { merge: true });
         }
         await batch.commit();
@@ -5282,7 +5290,11 @@ async function executeAutomationAction(db, action, match, event, nowMs, idx, con
     try {
       if (action.type === 'campaign.recommend') {
         const { insight } = await performCampaignInsight(db, event.targetId, 'automation', consume);
-        await writeAutomationNotification(db, match, event, nowMs, idx, `Recomandare AI (${insight.verdict}): ${insight.headline}`, 'info');
+        // Regulă cu scope:'client' → notificarea ajunge în feed-ul CITIT DE CLIENT (clients/{uid}/notifications).
+        // NU expune verdictul/headline-ul intern (zidul admin-only campaignInsights) — mesaj neutru, ca la report.generate.
+        const clientScope = !!(match && match.automation && match.automation.scope === 'client');
+        const msg = clientScope ? 'Recomandare AI disponibilă pentru o campanie.' : `Recomandare AI (${insight.verdict}): ${insight.headline}`;
+        await writeAutomationNotification(db, match, event, nowMs, idx, msg, 'info');
       } else {
         const campSnap = await db.collection('campaigns').doc(event.targetId).get();
         const leadId = campSnap.exists ? ((campSnap.data() || {}).leadId || '') : '';
