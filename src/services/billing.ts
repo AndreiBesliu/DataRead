@@ -22,6 +22,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import { resolvePackageByPriceId, type PackageId } from '../config/packages';
+import type { SubMultiInput } from '../store/entitlementLogic';
 
 const env = (import.meta.env ?? {}) as Record<string, string | undefined>;
 
@@ -95,7 +96,7 @@ export interface ActiveSubscription {
  */
 export function watchSubscription(
   uid: string,
-  cb: (sub: ActiveSubscription | null) => void,
+  cb: (sub: ActiveSubscription | null, all: SubMultiInput[]) => void,
   onError?: () => void
 ): () => void {
   try {
@@ -104,16 +105,24 @@ export function watchSubscription(
       q,
       (snap) => {
         if (snap.empty) {
-          cb(null);
+          cb(null, []);
           return;
         }
-        // Dacă există mai multe, alegem pachetul cel mai mare.
+        // `best` = abonamentul afișat (data de reînnoire din /app). Entitlement-ul REAL se calculează
+        // însă din `all` — TOATE abonamentele × TOATE liniile (un add-on Stripe e o linie separată).
         const rank: Record<string, number> = { start: 1, growth: 2, premium: 3 };
         let best: ActiveSubscription | null = null;
+        const all: SubMultiInput[] = [];
         snap.forEach((d) => {
           const data = d.data();
-          const priceId: string | null = data.price?.id ?? data.items?.[0]?.price?.id ?? null;
-          const pkg = resolvePackageByPriceId(priceId);
+          // TOATE liniile: `items[]` + `price` (formă veche a extensiei), dedupe.
+          const priceIds: string[] = [];
+          for (const it of Array.isArray(data.items) ? data.items : []) {
+            const pid = it?.price?.id;
+            if (typeof pid === 'string' && pid && !priceIds.includes(pid)) priceIds.push(pid);
+          }
+          const topPrice = data.price?.id;
+          if (typeof topPrice === 'string' && topPrice && !priceIds.includes(topPrice)) priceIds.push(topPrice);
           // `current_period_end` poate fi Timestamp sau unix-seconds, în funcție de versiunea
           // extensiei — tratăm ambele (un .toMillis() pe număr ar arunca și am pierde subscripția).
           const pe = data.current_period_end as { toMillis?: () => number } | number | undefined;
@@ -123,10 +132,18 @@ export function watchSubscription(
               : typeof pe === 'number'
                 ? pe * 1000
                 : null;
+          const status = data.status ?? 'active';
+          all.push({ status, currentPeriodEnd, cancelAtPeriodEnd: !!data.cancel_at_period_end, items: priceIds.map((p) => ({ priceId: p })) });
+          // Pachetul afișat = cel mai mare de pe abonamentul ăsta (nu doar prima linie).
+          let docTop: PackageId | null = null;
+          for (const p of priceIds) {
+            const pkg = resolvePackageByPriceId(p);
+            if (pkg && (!docTop || (rank[pkg.id] ?? 0) > (rank[docTop] ?? 0))) docTop = pkg.id;
+          }
           const candidate: ActiveSubscription = {
-            packageId: pkg?.id ?? null,
-            status: data.status ?? 'active',
-            priceId,
+            packageId: docTop,
+            status,
+            priceId: priceIds[0] ?? null,
             currentPeriodEnd,
             cancelAtPeriodEnd: !!data.cancel_at_period_end,
           };
@@ -134,17 +151,17 @@ export function watchSubscription(
             best = candidate;
           }
         });
-        cb(best);
+        cb(best, all);
       },
       (err) => {
         console.warn('Subscription listener error (păstrăm cache-ul):', err.message);
         if (onError) onError();
-        else cb(null);
+        else cb(null, []);
       }
     );
   } catch (e) {
     console.warn('Nu am putut atașa listenerul de subscripție:', e);
-    cb(null);
+    cb(null, []);
     return () => {};
   }
 }

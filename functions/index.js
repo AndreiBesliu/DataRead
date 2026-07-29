@@ -129,32 +129,46 @@ function periodEndMs(v) {
   return 0;
 }
 
+/** F0: TOATE liniile unui abonament Stripe (un add-on e o linie SEPARATĂ), dedupe. Pur — testat e2e. */
+function subPriceIds(s) {
+  const out = [];
+  const push = (p) => { if (typeof p === 'string' && p && !out.includes(p)) out.push(p); };
+  for (const it of Array.isArray(s && s.items) ? s.items : []) push(it && it.price && it.price.id);
+  push(s && s.price && s.price.id); // forma veche a extensiei
+  return out;
+}
+exports.subPriceIds = subPriceIds;
+
 async function recomputeEntitlement(uid) {
   const db = admin.firestore();
   const subs = await db.collection('customers').doc(uid).collection('subscriptions').get();
 
-  // Subscripția activă cu perioada cea mai lungă (în caz de duplicate).
-  let best = null;
+  // F0: agregăm TOATE abonamentele active × TOATE liniile lor. Înainte se lua UN SINGUR abonament („best"
+  // după perioadă) și DOAR `items[0]` ⇒ orice add-on vândut ca linie separată și orice al doilea abonament
+  // al aceluiași client erau invizibile. Acum: reuniunea prețurilor + perioada cea mai lungă.
+  const now = Date.now();
+  const priceIds = [];
+  let periodEnd = 0;
+  let status = '';
+  let cancelAtPeriodEnd = false;
   subs.forEach((d) => {
     const s = d.data() || {};
     if (!ACTIVE_STATUSES.has(s.status)) return;
-    const cand = {
-      status: s.status,
-      periodEnd: periodEndMs(s.current_period_end),
-      priceId: (s.price && s.price.id) || (s.items && s.items[0] && s.items[0].price && s.items[0].price.id) || null,
-      cancelAtPeriodEnd: !!s.cancel_at_period_end,
-    };
-    if (!best || cand.periodEnd > best.periodEnd) best = cand;
+    const pe = periodEndMs(s.current_period_end);
+    for (const p of subPriceIds(s)) if (!priceIds.includes(p)) priceIds.push(p);
+    if (!status || pe > periodEnd) { status = s.status; cancelAtPeriodEnd = !!s.cancel_at_period_end; }
+    if (pe > periodEnd) periodEnd = pe;
   });
 
-  const now = Date.now();
-  const ent = best
-    ? { active: best.periodEnd > now, status: best.status, periodEnd: best.periodEnd, priceId: best.priceId }
-    : { active: false, status: 'none', periodEnd: 0, priceId: null };
+  const ent = status
+    ? { active: periodEnd > now, status, periodEnd, priceId: priceIds[0] || null, priceIds, cancelAtPeriodEnd }
+    : { active: false, status: 'none', periodEnd: 0, priceId: null, priceIds: [], cancelAtPeriodEnd: false };
 
-  // 1) Custom claim (merge — nu suprascrie alte claims, ex. `admin`). Claims max ~1000 bytes.
+  // 1) Custom claim (merge — nu suprascrie alte claims, ex. `admin`). Claims max ~1000 bytes, iar claim-ul
+  //    se propagă doar la refresh de token ⇒ ținem aici DOAR rezumatul; lista de prețuri stă în mirror.
+  const entClaim = { active: ent.active, status: ent.status, periodEnd: ent.periodEnd, priceId: ent.priceId };
   const user = await admin.auth().getUser(uid);
-  await admin.auth().setCustomUserClaims(uid, Object.assign({}, user.customClaims || {}, { ent }));
+  await admin.auth().setCustomUserClaims(uid, Object.assign({}, user.customClaims || {}, { ent: entClaim }));
 
   // 2) Mirror în timp real pe documentul de client (dashboard + /admin + audit).
   await db.collection('clients').doc(uid).set(

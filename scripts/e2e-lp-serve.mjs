@@ -983,6 +983,17 @@ console.log('\nQ2) paritate constante Self Marketing TS↔JS');
     ok(eq(C.selfPoolFor(true, cfg), fns.selfPoolFor(true, cfg)) && eq(C.selfPoolFor(false, cfg), fns.selfPoolFor(false, cfg)), 'selfPoolFor identic TS↔JS (entitled + trial)');
   }
   ok(C.SELF_POOL_ENTITLED_DOC === fns.SELF_POOL_ENTITLED_DOC && C.SELF_POOL_TRIAL_DOC === fns.SELF_POOL_TRIAL_DOC, 'docId-uri coșuri identice TS↔JS');
+
+  // F0: `subPriceIds` (server) trebuie să vadă TOATE liniile unui abonament — un add-on Stripe e o linie
+  // SEPARATĂ, iar înainte se citea doar `items[0]` ⇒ add-on-urile erau invizibile la calculul modulelor.
+  ok(eq(fns.subPriceIds({ items: [{ price: { id: 'p_start' } }, { price: { id: 'p_addon' } }] }), ['p_start', 'p_addon']),
+    'F0 subPriceIds: TOATE liniile, în ordine (nu doar items[0])');
+  ok(eq(fns.subPriceIds({ price: { id: 'p_vechi' } }), ['p_vechi']), 'F0 subPriceIds: forma VECHE a extensiei (price direct)');
+  ok(eq(fns.subPriceIds({ items: [{ price: { id: 'p_x' } }], price: { id: 'p_x' } }), ['p_x']), 'F0 subPriceIds: dedupe items↔price');
+  ok(eq(fns.subPriceIds({}), []) && eq(fns.subPriceIds(null), []) && eq(fns.subPriceIds({ items: 'gunoi' }), []),
+    'F0 subPriceIds: gol/corupt → [] (nu aruncă)');
+  ok(eq(fns.subPriceIds({ items: [{ price: {} }, {}, { price: { id: 'p_ok' } }] }), ['p_ok']),
+    'F0 subPriceIds: linii fără preț sărite');
 }
 
 // ── selfGlobalPoolFor: CITEȘTE clients/{uid}.entitlement și clasifică pe `active` (recalculat), NU pe `status` brut.

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { billingConfigured, type ModuleId, type PackageId } from '../config/packages';
-import { resolveEntitlement, type EntitlementStatus } from './entitlementLogic';
+import { resolveEntitlement, resolveEntitlementFromSubs, type EntitlementStatus, type SubMultiInput } from './entitlementLogic';
 import { watchSubscription, type ActiveSubscription } from '../services/billing';
 import { auth } from '../firebase';
 
@@ -58,7 +58,10 @@ interface EntitlementState {
   status: EntitlementStatus; // none | active | expired
   packageId: PackageId | null;
   modules: ModuleId[];
+  /** Abonamentul AFIȘAT (data de reînnoire). Entitlement-ul se calculează din `subscriptions`. */
   subscription: ActiveSubscription | null;
+  /** TOATE abonamentele × TOATE liniile — sursa de adevăr pentru module (add-on = linie separată). */
+  subscriptions: SubMultiInput[];
   billingReady: boolean;
   needsResync: boolean;
   offline: boolean;
@@ -80,6 +83,7 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
   packageId: null,
   modules: [],
   subscription: null,
+  subscriptions: [],
   billingReady: billingConfigured(),
   needsResync: false,
   offline: false,
@@ -93,7 +97,9 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
 
     // 1) Hidratare din cache — răspuns corect imediat, chiar fără rețea.
     const cached = loadEntCache(uid);
-    set({ _uid: uid, ready: false, offline: false, subscription: cached?.subscription ?? null });
+    // `subscriptions: []` la hidratare — cache-ul ține doar abonamentul primar; lista vine de la listener.
+    // (Fără golire, lista contului ANTERIOR ar rămâne și ar acorda module greșite până la primul snapshot.)
+    set({ _uid: uid, ready: false, offline: false, subscription: cached?.subscription ?? null, subscriptions: [] });
     get().recompute();
     if (cached) set({ ready: true });
 
@@ -101,9 +107,9 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
     //    cache-ul (un plătitor nu cade la none), doar marcăm offline.
     const unsub = watchSubscription(
       uid,
-      (sub) => {
+      (sub, all) => {
         if (get()._uid !== uid) return;
-        set({ subscription: sub, offline: false });
+        set({ subscription: sub, subscriptions: all, offline: false });
         get().recompute();
         saveEntCache(uid, sub);
         if (sub && (sub.status === 'active' || sub.status === 'trialing')) void ensureClaimToken(uid);
@@ -128,6 +134,7 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
       subscription: null,
       needsResync: false,
       offline: false,
+      subscriptions: [],
       _uid: null,
       _unsubSub: null,
     });
@@ -135,18 +142,22 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
   },
 
   recompute: () => {
-    const { subscription, _uid } = get();
-    const r = resolveEntitlement({
-      uid: _uid,
-      subscription: subscription
-        ? {
-            status: subscription.status,
-            packageId: subscription.packageId,
-            currentPeriodEnd: subscription.currentPeriodEnd,
-            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-          }
-        : null,
-    });
+    const { subscription, subscriptions, _uid } = get();
+    // Sursa de adevăr = TOATE abonamentele × TOATE liniile (add-on-urile Stripe sunt linii separate).
+    // Fallback pe abonamentul primar DOAR când lista lipsește (cache offline) — under-grant, never lock out.
+    const r = subscriptions.length
+      ? resolveEntitlementFromSubs({ uid: _uid, subscriptions })
+      : resolveEntitlement({
+          uid: _uid,
+          subscription: subscription
+            ? {
+                status: subscription.status,
+                packageId: subscription.packageId,
+                currentPeriodEnd: subscription.currentPeriodEnd,
+                cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+              }
+            : null,
+        });
     set({ status: r.status, packageId: r.packageId, modules: r.modules, needsResync: r.needsResync });
   },
 

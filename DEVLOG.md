@@ -2756,6 +2756,58 @@ normaliser, secretele niciodată în chat/repo.
 >   (numerotare/imutabilitate) → necesită decizia lui Andrei (task spawn). Impact practic mic (UID opac, fără PII/acces).
 > Verificat: node -c + 26/26 suites + e2e + rules compile la deploy. DEPLOYED: firestore:rules + functions.
 
+**2026-07-12 - Analiză — Integrarea PrestoConstruct în DataRead („magazin online" ca serviciu provizionat)**
+> Model: Claude Opus 4.8 (1M context). Cerință owner: „prin DataRead clienții își pot crea un magazin online cu
+> features care contribuie la costul lor". Analiză multi-agent pe codul REAL din ambele proiecte (4 unghiuri
+> paralele) + reality-check adversarial care a CORECTAT 4 greșeli din prima versiune a planului.
+> **PLANUL COMPLET: `docs/PLAN-MAGAZINE-ONLINE.md`** (document viu, se editează).
+>
+> **Concluzia:** DataRead NU găzduiește magazine — le **provizionează și le guvernează**. Un magazin = **un proiect
+> Firebase propriu**; DataRead = planul de control (registru `shops/{id}` + licență + facturare + sănătate).
+> Cifra care decide: regulile Presto au **54 de colecții top-level fără discriminant de tenant**, iar mutarea
+> discriminantului în cod = ~193 call-site-uri + 57 `admin.firestore()`, exact în `functions/` care nu are typecheck
+> ⇒ „discriminant în colecții" = NICIODATĂ. Evoluția documentată (bază Firestore *numită* per magazin) rămâne
+> reversibilă dacă Presto capătă helperul `shopDb(ctx)`.
+>
+> **Feliile DataRead:** F0 entitlement multi-abonament → F1 catalog module + registru `shops` → F2 punte + poartă
+> comercială (HMAC) → F3 provisioner ca mașină de stări → F4 panou operator + flotă → F5 portal client + upsell.
+> **Model comercial:** nucleu inclus (inclusiv flag-urile cosmetice) · module recurente · one-off cu manoperă ·
+> metered amânat. Poarta se pune pe MUTAȚII, nu pe citiri; la neplată magazinul **rămâne online și vinde**.
+>
+> **Blocante descoperite (nu erau știute):** (1) nu poți crea proiecte GCP programatic fără organizație (cont gmail)
+> ⇒ **pool de proiecte pre-create**; provisionerul e 4-8 SĂPTĂMÂNI, nu 7-10 zile; (2) secretele v2 se leagă la
+> DEPLOY ⇒ „clientul își pune singur cheia Stripe" = redeploy de ~92 funcții; (3) extensia
+> `firestore-stripe-payments` pe care stă tot modelul comercial e ARHIVATĂ; (4) bugetele Cloud Billing sunt doar
+> ALERTE; (5) **DPA/Art.28 lipsea complet** — dacă deținem proiectul GCP devenim persoană împuternicită pentru
+> fiecare magazin (condiție de VÂNZARE, nu de livrare).
+>
+> **Decizii rămase la Andrei:** cine deține proiectul GCP · cine plătește Blaze · Stripe cheie-per-client vs Connect
+> (merchant of record — ÎNAINTE de a construi) · prețurile modulelor · ce facem cu Presto (intră în flotă? DPA?).
+> **Presto rămâne în dezvoltare în altă sesiune** — feliile lui (P1-P7, T1-T3) sunt notate în plan, NU se ating aici.
+
+**2026-07-12 - Task Completed — F0: entitlement multi-abonament × multi-linie (add-on-urile devin vizibile)**
+> Model: Claude Opus 4.8 (1M context). Prima felie din `docs/PLAN-MAGAZINE-ONLINE.md`. Bug REAL de bani, latent:
+> se materializa în ziua în care vindeam primul add-on. NU atinge Presto (în dezvoltare în altă sesiune).
+> - **Bugul (geamăn pe client ȘI pe server):** `watchSubscription` (`src/services/billing.ts`) și
+>   `recomputeEntitlement` (`functions/index.js`) citeau DOAR `items[0]` dintr-UN SINGUR abonament ales „best"
+>   ⇒ (a) orice add-on Stripe vândut ca **linie separată** era invizibil; (b) al **doilea abonament** al aceluiași
+>   client dispărea tăcut (exact clientul cu două servicii pe care-l vrem).
+> - **Fix (o singură implementare):** `resolveCore` în `src/store/entitlementLogic.ts` — nucleu peste o formă
+>   normalizată, folosit de AMBELE intrări (`resolveEntitlement` single-sub, păstrat pentru cache offline, și noul
+>   `resolveEntitlementFromSubs`). Agregă TOATE abonamentele plătite × TOATE liniile: tier = maximul, module =
+>   REUNIUNEA, perioadă = maximul. `resolvePackageId` injectabil (price ID-urile vin din env ⇒ suita nu depinde de
+>   configul local). Doctrina păstrată literal: grația `PERIOD_END_GRACE_MS` + „under-grant, never lock out"
+>   (preț nerecunoscut pe abonament plătit → `start`, niciodată `none`).
+> - **Client:** `watchSubscription` întoarce acum `(primar, toate)` — primarul rămâne pentru AFIȘARE (data de
+>   reînnoire în /app), lista pentru CALCUL. Store: câmp `subscriptions` + golire la hidratare/reset (altfel lista
+>   contului anterior ar acorda module greșite până la primul snapshot). Fallback pe primar doar offline.
+> - **Server:** `subPriceIds(sub)` (pur, exportat) = toate liniile + forma veche `price`, dedupe; mirror-ul
+>   `clients/{uid}.entitlement` capătă `priceIds[]` + `cancelAtPeriodEnd`. **Claim-ul `ent` rămâne SLAB**
+>   (active/status/periodEnd/priceId) — se propagă doar la refresh de token, deci nu e canal de licențiere în
+>   timp real; detaliul stă în mirror. (Verificat: `token.ent` nu e folosit în reguli — 0 apariții.)
+> Verificat: typecheck + 26/26 suites (11 aserțiuni noi, inclusiv cele 2 regresii) + e2e (5 aserțiuni paritate
+> `subPriceIds`) + build + boot. DEPLOYED: hosting + functions.
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
