@@ -20,6 +20,9 @@ import { SITE_PUBLIC_SCHEMA } from '../types/sitePublic';
 import { PUBLIC_CHROME_DEFAULT } from '../config/publicChrome';
 import { SITE_CHROME_SCHEMA, coerceToSiteChrome, type SiteChrome } from '../types/siteChrome';
 import { PAGE_THEMES_SCHEMA, coerceToPageThemes, type PageKey } from '../types/pageThemes';
+import PageContentEditor from './PageContentEditor';
+import { EDITABLE_CONTENT, editableKeysForPage } from '../config/editablePageContent';
+import { CONTENT_LANGS, EMPTY_PAGE_CONTENT, coerceToPageContent, type PageContent } from '../types/pageContent';
 
 // Paginile platformei (rute React din App.tsx). Read-only aici: conținutul e în cod, ASPECTUL vine din sistemul de design.
 const PLATFORM_PAGES = [
@@ -52,6 +55,11 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
   const [previewKey, setPreviewKey] = useState(0); // bump → reîncarcă iframe-ul (după publicare)
   const [designOpen, setDesignOpen] = useState(false);
   const designRef = useRef<HTMLDivElement>(null);
+  // Felia B — CONȚINUT editabil: pagina deschisă în editorul de texte (null = închis) + docul publicat
+  // (doar ca să marcăm în listă paginile care AU deja texte modificate).
+  const [contentPage, setContentPage] = useState<PageKey | null>(null);
+  const [publishedContent, setPublishedContent] = useState<PageContent>(EMPTY_PAGE_CONTENT);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return onSnapshot(
@@ -91,7 +99,27 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, 'siteConfig', 'pageContent'),
+      (snap) => setPublishedContent(coerceToPageContent(snap.exists() ? snap.data() : null)),
+      () => setPublishedContent(EMPTY_PAGE_CONTENT),
+    );
+  }, []);
+
   const reloadPreview = () => setPreviewKey((k) => k + 1);
+
+  /** Are pagina texte modificate publicate? (marcaj „•" în listă, ca la teme) */
+  const hasContent = (key: PageKey) =>
+    editableKeysForPage(key).some((k) => CONTENT_LANGS.some((l) => publishedContent.content[l][k]));
+
+  // Deschide editorul de conținut pe o pagină: sincronizează preview-ul + derulează la editor.
+  const editPageContent = (key: PageKey) => {
+    setContentPage(key);
+    const p = PLATFORM_PAGES.find((x) => x.key === key);
+    if (p) setPreviewPath(p.path);
+    setTimeout(() => contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
 
   // Schimbă scopul de editare (global / o pagină). Încarcă în editor tema scopului (override-ul paginii sau,
   // dacă pagina n-are, tema globală ca punct de plecare) + sincronizează preview-ul cu pagina aleasă.
@@ -231,6 +259,11 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
                   </td>
                   <td style={{ ...td, color: 'var(--fg-1)', fontFamily: 'monospace', fontSize: 12 }}>{p.path}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {EDITABLE_CONTENT[p.key] && (
+                      <button type="button" onClick={() => editPageContent(p.key)} style={{ ...linkBtn, marginRight: 6 }}>
+                        ✎ {t('admin.site.content.editBtn')}{hasContent(p.key) ? ' •' : ''}
+                      </button>
+                    )}
                     <button type="button" onClick={() => editPageDesign(p.key)} style={{ ...linkBtn, marginRight: 6 }}>🎨 {t('admin.site.designBtn')}</button>
                     <button type="button" onClick={() => setPreviewPath(p.path)} style={{ ...linkBtn, marginRight: 6 }}>{t('admin.site.preview')}</button>
                     <a href={p.path} target="_blank" rel="noreferrer" style={linkBtn}>{t('admin.site.openTab')} ↗</a>
@@ -240,6 +273,31 @@ export default function SiteAdminPanel({ adminUid }: { adminUid: string }) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* 2b) CONȚINUT editabil (Felia B) — deschis din butonul „✎ Conținut" al unei pagini. */}
+      <div ref={contentRef}>
+        {contentPage && (
+          <div style={{ marginBottom: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: 16, margin: 0 }}>
+                {t('admin.site.content.title')} — {t(`admin.site.pg_${contentPage}`)}
+              </h3>
+              <select
+                value={contentPage}
+                onChange={(e) => editPageContent(e.target.value as PageKey)}
+                style={{ ...linkBtn, padding: '4px 8px', cursor: 'pointer' }}
+              >
+                {PLATFORM_PAGES.filter((p) => EDITABLE_CONTENT[p.key]).map((p) => (
+                  <option key={p.key} value={p.key}>{t(`admin.site.pg_${p.key}`)}{hasContent(p.key) ? ' •' : ''}</option>
+                ))}
+              </select>
+              <button type="button" onClick={() => setContentPage(null)} style={{ ...linkBtn, marginLeft: 'auto' }}>✕</button>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--fg-1)', margin: '0 0 12px' }}>{t('admin.site.content.intro')}</p>
+            <PageContentEditor key={contentPage} adminUid={adminUid} page={contentPage} onPublished={reloadPreview} />
+          </div>
+        )}
       </div>
 
       {/* 3) Sistem de design — COLAPSAT implicit (temă + header/footer). */}

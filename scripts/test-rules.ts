@@ -46,6 +46,15 @@ const soWl = whitelistAfter('match /serviceOrders/');
 const SO_CLIENT_KEYS = ['schema', 'service', 'status', 'source', 'clientUid', 'leadId', 'companyName', 'contactEmail', 'contactPhone', 'note', 'deliverable', 'createdAt', 'updatedAt'];
 for (const k of SO_CLIENT_KEYS) check(`serviceOrders whitelist conține '${k}'`, soWl.includes(`'${k}'`));
 
+// siteConfig — Felia B (conținut editabil per-pagină): whitelist + plafon de chei + provenienţă.
+const siteWl = whitelistAfter('match /siteConfig/');
+check("siteConfig: whitelist conţine 'content'", siteWl.includes("'content'"));
+check("siteConfig: acceptă docId 'pageContent'", rules.includes("'pageContent'"));
+check('siteConfig: pageContent are plafon de chei în reguli (doc citit de fiecare vizitator)',
+  rules.includes('content.ro.keys().size()') && rules.includes('content.en.keys().size()'));
+check('siteConfig: content acceptă DOAR limbile cunoscute', rules.includes("content.keys().hasOnly(['ro', 'en'])"));
+check('siteConfig: updatedBy e legat de autorul real', rules.includes('updatedBy == request.auth.uid'));
+
 if (failures) {
   console.error(`${failures} checks failed`);
   process.exit(1);

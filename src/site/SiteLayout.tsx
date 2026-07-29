@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { customThemeStyle } from '../theme/themes';
 import { usePagePublicTheme, PublicThemeStyle } from './PublicTheme';
 import { usePublicChrome } from './PublicChrome';
+import { useLiveContentOverrides } from './usePublicContent';
 import { chromeLabel, chromeItemClass } from '../types/siteChrome';
 import Seo from './Seo';
 import type { PublicRoute } from './publicRoutes';
@@ -32,6 +33,9 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
   // Chrome global (header/footer + meniu) — data-driven din siteConfig/publicChrome (hibrid: snapshot copt ==
   // prerender + override runtime). Editat o singură dată în /admin → aplicat pe TOATE paginile noastre.
   const chrome = usePublicChrome();
+  // Conținut editabil (Felia B): textele publicate din /admin peste dicționarele i18n. Snapshotul copt e
+  // deja aplicat sincron la init-ul i18n; aici aducem, o dată pe sesiune, ce s-a publicat după ultimul build.
+  useLiveContentOverrides();
 
   const [consent, setConsent] = useState(cookieConsent());
   const decide = (v: 'granted' | 'denied') => {

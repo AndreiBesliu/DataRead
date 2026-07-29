@@ -64,8 +64,10 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
   `npm run build:site` — ambele
 - `npm test` — suites headless (`scripts/test-*.ts`) · `npm run test:boot` — boot-smoke Playwright
   vs profile otrăvite
-- `npm run deploy` — build:site + `firebase deploy --only hosting,firestore:rules` ·
-  `npm run deploy:functions`
+- `npm run deploy` — coace snapshotul de CONȚINUT din Firestore (pull-page-content) + build:site +
+  `firebase deploy --only hosting,firestore:rules` · `npm run deploy:functions` ·
+  `npm run pull:site` — coace MANUAL toate cele trei snapshoturi (temă + chrome + conținut); tema/chrome au rămas
+  manuale deliberat: rescriu literale scrise de mână și pot cimenta o publicare veche în fallback
 - `npm run prices:check` — verifică prețurile Stripe sincronizate în Firestore
 
 ## Arhitectură (hartă scurtă)
@@ -657,7 +659,34 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     fără hydration drift). **`/app` capătă temă** (`useAppPageTheme` în AppHome învelește în `customThemeStyle(pageThemes.app)` dacă
     există; altfel aspectul default). UI: în „Site", editorul de design e PER SCOP (selector Global/pagină + „Resetează la tema
     globală" + buton „🎨 Design" per pagină + preview live pe pagina aleasă). Reguli: allowlist `siteConfig` extins cu `pageThemes`.
-    Felia B (CONȚINUT editabil per-pagină: `pageContent/{slug}` override peste i18n + editor) = următoarea, neînceput.
+  - **CONȚINUT editabil per-pagină (ACTIV 29.07.2026, „editez fiecare pagină" Felia B):** operatorul rescrie TEXTELE
+    paginilor publice din /admin, fără deploy. `siteConfig/pageContent` (UN doc, `content[lang][cheia i18n] = text`;
+    plat pe cheie pentru că `legal.draftBanner` apare pe două pagini — grupat pe pagină ar da două valori concurente
+    pentru același `t()`). `src/types/pageContent.ts` = modul PUR (schema:1, `coerceToPageContent` unic, chei validate
+    `isSafeContentKey` — respinge `__proto__`/`:`/adâncime >5, plafoane 300 chei/limbă + 4000 car./text + 180 KB).
+    **Aplicare peste STORE-ul i18next**, nu printr-un `tx()` propriu: `addResourceBundle(lang,'translation',expandDotted(…),
+    deep,overwrite)` prinde și cheile construite în bucle (`t(\`landing.what${i}Title\`)`), și `<Seo>`, și `publicRoutes` —
+    zero pagini atinse. `react: { bindI18nStore: 'added' }` (i18n/index.ts) face componentele MONTATE să se re-randeze.
+    **`planContentApply` (pur) e nucleul:** i18next doar FUZIONEAZĂ, deci o cheie ștearsă ar rămâne aplicată din snapshot
+    până la următorul deploy — planul emite explicit textul IMPLICIT pentru cheile fără override („revino la implicit"
+    funcționează instant) și întoarce `changed:false` când publicatul == coptul (cazul normal după deploy) ⇒ zero
+    re-render, zero flash. **REGISTRUL `src/config/editablePageContent.ts` e AUTORITATEA** (~170 chei, 8 pagini): doar
+    cheile de acolo se pot suprascrie (`pickKnownKeys`), deci nici o scriere în Firestore nu poate atinge un text
+    nedeclarat editabil; cheile de pachete/servicii se DERIVĂ din `PACKAGES`/`UPSELLS`/`SERVICE_IDS` (sursa unică).
+    **Tipar hibrid ca la temă:** snapshot copt `src/config/pageContentSnapshot.ts` aplicat SINCRON la init (prerender ==
+    primul render client) + `getDoc` post-mount (`useLiveContentOverrides` în SiteLayout, singleton pe sesiune,
+    guard `navigator.webdriver`). Coacere: `scripts/pull-page-content.mjs`, rulat AUTOMAT de `npm run deploy`
+    (altfel un deploy uitat ar lăsa HTML static cu text vechi). Pull-urile de temă/chrome rămân MANUALE (`npm run
+    pull:site`) — rescriu literale scrise de mână și ar cimenta starea publicată în fallback. Editor: `src/admin/PageContentEditor.tsx` (buton „✎ Conținut" per pagină în „Site"; taburi RO|EN;
+    implicitul afișat lângă câmp — citit din locale prin `defaultText`, NU din `t()`, care e deja suprascris; reset per
+    cheie / per pagină; avertisment la pierderea unui `{{placeholder}}` și la EN identic cu RO; banner „N texte nu-s încă
+    în HTML-ul static"). ANTI-CLOBBER: editorul ține doar cheile ATINSE (`dirty`) și le aplică peste cel mai recent
+    snapshot ⇒ editările altui operator supraviețuiesc. Reguli: `siteConfig` allowlist + `pageContent` + plafon
+    `content.<lang>.keys().size() <= 300` + `updatedBy == request.auth.uid` (pe toate cele 4 docuri).
+    **Limită asumată:** SEO/crawlerele văd textul nou abia după `npm run deploy` (prerenderul nu citește Firestore, ca
+    build-ul să rămână determinist) — vizibil în editor, nu tăcut. NEACOPERIT (felii viitoare): `/servicii/:id` (7 rute,
+    ~125 chei), `/self-marketing/pachete`, istoric/undo de versiuni, paginile `kind:'site'` servite de `serveLp`
+    (functions n-are i18n).
   - **B2a — pagini de site:** `LandingPage.kind: 'campaign'|'site'` (default campaign). `LandingStudio` are prop
     `kind` (filtre/metrici/recompile pe tip; slug-unicitate GLOBALĂ pe colecție). serveLp separă strict: `/pagina`
     servește DOAR `kind:'site'` publicate, `/p` restul; kind greșit → 404. `firebase.json`: rewrite `/pagina/** →

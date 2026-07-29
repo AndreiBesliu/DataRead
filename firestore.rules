@@ -384,13 +384,24 @@ service cloud.firestore {
     match /siteConfig/{docId} {
       allow read: if true;
       allow create, update: if isAdmin()
-        && docId in ['publicTheme', 'publicChrome', 'pageThemes']
-        && request.resource.data.keys().hasOnly(['schema', 'theme', 'chrome', 'themes', 'updatedAt', 'updatedBy'])
+        && docId in ['publicTheme', 'publicChrome', 'pageThemes', 'pageContent']
+        && request.resource.data.keys().hasOnly(['schema', 'theme', 'chrome', 'themes', 'content', 'updatedAt', 'updatedBy'])
         && request.resource.data.schema == 1
         && (docId != 'publicTheme' || request.resource.data.theme is map)
         && (docId != 'publicChrome' || request.resource.data.chrome is map)
         && (docId != 'pageThemes' || request.resource.data.themes is map)
-        && request.resource.data.updatedAt == request.time;
+        // pageContent (Felia B): map de limbi (`content.ro` / `content.en`), fiecare map de chei i18n →
+        // text. Docul ăsta e citit de FIECARE vizitator, deci plafonăm numărul de chei AICI —
+        // `keys().size()` e singurul plafon exprimabil în reguli (nu se poate itera peste valori).
+        // Restul (4000 car./text, 180 KB total) = gardă la publicare + `coerceToPageContent` la citire.
+        && (docId != 'pageContent' || (
+              request.resource.data.content is map
+              && request.resource.data.content.keys().hasOnly(['ro', 'en'])
+              && (!('ro' in request.resource.data.content) || request.resource.data.content.ro.keys().size() <= 300)
+              && (!('en' in request.resource.data.content) || request.resource.data.content.en.keys().size() <= 300)
+            ))
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid;
       allow delete: if false;
     }
 

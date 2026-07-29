@@ -2808,6 +2808,66 @@ normaliser, secretele niciodată în chat/repo.
 > Verificat: typecheck + 26/26 suites (11 aserțiuni noi, inclusiv cele 2 regresii) + e2e (5 aserțiuni paritate
 > `subPriceIds`) + build + boot. DEPLOYED: hosting + functions.
 
+### 2026-07-29 — Editare per-pagină Felia B: CONȚINUT editabil din admin (Claude Opus 4.8, 1M context)
+> **Task Completed.** Operatorul poate rescrie TEXTELE paginilor publice din /admin, fără deploy. A doua jumătate a
+> workstream-ului „editez fiecare pagină" (Felia A = aspectul, livrată 23.06).
+> - **Decizia de arhitectură — override peste STORE-ul i18next, nu un `tx()` propriu pe pagină.** Planul inițial cerea
+>   înlocuirea a ~80 de apeluri `t('landing.x')` cu `tx('landing.x')`. Recunoașterea a arătat de ce ar fi ratat ținta:
+>   cheile se cer și din bucle (`t(\`landing.what${i}Title\`)`), și din `<Seo>` (titlu/descriere), și din `publicRoutes`
+>   — un hook per-pagină n-ar fi prins exact acele locuri. `addResourceBundle(lang,'translation',expandDotted(over),
+>   deep,overwrite)` le prinde pe toate, **fără să atingem nicio pagină**: suprafața de regresie = 3 fișiere de
+>   infrastructură. `react: { bindI18nStore: 'added' }` face componentele MONTATE să se re-randeze (verificat în browser).
+> - **Date:** `siteConfig/pageContent` — UN doc, `content[lang][cheia i18n] = text`. PLAT pe cheie, nu grupat pe pagină:
+>   `legal.draftBanner` apare pe DOUĂ pagini, iar grupat ar da două valori concurente pentru același `t()`. Limba e
+>   dimensiune a datelor pentru că aplicarea se face per-limbă — forma documentului = forma apelului.
+>   `src/types/pageContent.ts` = modul PUR (schema:1, `coerceToPageContent` unic, `isSafeContentKey` respinge
+>   `__proto__`/`:`/adâncime >5, plafoane 300 chei/limbă + 4000 car. + 180 KB, `expandDotted` cu gardă anti-poluare
+>   de prototip și pe coliziunea frunză↔ramură). **Absența cheii = revenire la implicit, NICIODATĂ text gol**
+>   (`coerceText` întoarce null pe whitespace) ⇒ o pagină goală e imposibilă prin construcție, nu prin disciplină.
+> - **REGISTRUL e autoritatea** (`src/config/editablePageContent.ts`, ~170 chei pe 8 pagini): doar cheile declarate se
+>   pot suprascrie (`pickKnownKeys`), deci nicio scriere în Firestore nu atinge un text nedeclarat editabil. Cheile de
+>   pachete/servicii se DERIVĂ din `PACKAGES`/`UPSELLS`/`SERVICE_IDS` — un bullet nou acolo devine automat editabil.
+> - **DEFECT REAL prins de review-ul adversarial (panel de 3 lentile + arhitect), reparat înainte de commit:**
+>   „revino la textul implicit" NU funcționa. `addResourceBundle` doar FUZIONEAZĂ — nu există `removeResource`. Flux:
+>   operatorul publică un override → deploy (snapshotul îl coace, aplicat sincron la init) → mai târziu golește câmpul
+>   și publică. Documentul e curat, dar aplicarea vedea 0 chei și sărea (`n===0 → continue`), deci **site-ul afișa în
+>   continuare textul vechi până la următorul deploy, deși /admin zicea „salvat"**. Fix: `planContentApply` (PUR,
+>   `defaultText` injectat) ține evidența a CE e aplicat și emite explicit textul din locale pentru cheile ieșite din
+>   override. Al doilea câștig din același cod: `changed:false` când publicatul == coptul — cazul NORMAL după fiecare
+>   deploy — deci `addResourceBundle` nu se cheamă deloc ⇒ zero re-render, zero flash. Flash-ul rămâne posibil doar pe
+>   cheile publicate DUPĂ ultimul build, adică exact acolo unde e inevitabil.
+> - **Anti-flash + SEO (tipar hibrid, ca la temă/chrome):** snapshot commit-uit `src/config/pageContentSnapshot.ts`
+>   aplicat SINCRON la init-ul i18n (prerender == primul render client) + `getDoc` post-mount (`useLiveContentOverrides`
+>   în SiteLayout, singleton pe sesiune, guard `navigator.webdriver` ⇒ build determinist). Coacere:
+>   `scripts/pull-page-content.mjs`, rulat AUTOMAT de `npm run deploy` (altfel un deploy uitat ar lăsa HTML static cu
+>   text vechi — s-a și întâmplat, vezi nota despre snapshotul de chrome). Am wire-uit ÎNTÂI toate cele trei pull-uri,
+>   apoi am dat înapoi: pull-ul de chrome rescrie un literal scris de mână și ar fi cimentat în fallback o publicare
+>   veche în care „Self Marketing" pierduse `emphasis:'gradient'` — decizie de design, nu de felia asta. `npm run
+>   pull:site` există ca scurtătură manuală pentru toate trei. Decalajul rămas (crawlerele văd textul nou abia
+>   după deploy) e AFIȘAT în editor („N texte nu sunt încă în HTML-ul static"), nu ascuns.
+> - **Editor** `src/admin/PageContentEditor.tsx` — buton „✎ Conținut" per pagină în panoul „Site" (lângă „🎨 Design"),
+>   taburi RO|EN, grupuri, implicitul afișat lângă câmp (citit din locale prin `defaultText`, NU din `t()` — care e deja
+>   suprascris de override-uri), reset per cheie / per pagină, avertisment la pierderea unui `{{placeholder}}` și la EN
+>   identic cu implicitul RO, contor de caractere. **ANTI-CLOBBER:** componenta ține DOAR cheile atinse în sesiune
+>   (`dirty`, '' = revenire) și le aplică peste cel mai recent snapshot la publicare ⇒ editările altui operator
+>   supraviețuiesc. Preview-ul rămâne iframe-ul existent `?preview=1` + reload după publicare (arată ce e PUBLICAT).
+> - **Reguli:** `siteConfig` allowlist extins cu `pageContent`/`content` + plafon `content.<lang>.keys().size() <= 300`
+>   (docul e citit de FIECARE vizitator; `keys().size()` e singurul plafon exprimabil în reguli) + `updatedBy ==
+>   request.auth.uid` pe toate cele 4 documente (verificat sigur: `adminUid = user.uid` peste tot).
+> - **Curățenie:** `pachete.contactUs` scoasă din registru — cheie MOARTĂ (zero referințe în cod), ar fi apărut ca
+>   editabilă fără efect.
+> - **Teste (33 aserțiuni noi, `scripts/test-page-content.ts` + 5 în `test-rules.ts`):** coerce pe gunoi fără throw,
+>   chei de atac respinse, plafoane, poluare de prototip imposibilă, coliziune frunză↔ramură, cele 2 regresii ale
+>   revenirii la implicit + „a doua aplicare identică ⇒ zero apeluri". Cel mai valoros invariant: **fiecare cheie din
+>   registru trebuie să EXISTE ca text în ro.ts ȘI en.ts** — a prins pe loc 3 chei greșite (`pachete.start` e obiect,
+>   nu string: numele real e `pachete.start.name`).
+> - Ghid operator: `opLp_10` „Conținutul paginilor platformei" (ro+en).
+> Verificat: typecheck + 27/27 suites + build:site (32 pagini) + boot-smoke + e2e-lp + probă în browser (override din
+> snapshot vizibil la primul render, EN necontaminat, override POST-MOUNT re-randează componenta montată).
+> NEACOPERIT, declarat: `/servicii/:id` (7 rute, ~125 chei), `/self-marketing/pachete`, istoric/undo de versiuni,
+> paginile `kind:'site'` servite de `serveLp` (functions n-are i18n → ar cere port JS + paritate).
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

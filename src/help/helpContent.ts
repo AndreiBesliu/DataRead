@@ -35,7 +35,7 @@ export const OPERATOR_HELP: HelpSection[] = [
   sec('opConnectors', 4),
   sec('opAutomation', 7),
   sec('opAi', 7),
-  sec('opLp', 9),
+  sec('opLp', 10),
   sec('opAdmins', 3),
   sec('opPdf', 2),
 ];
