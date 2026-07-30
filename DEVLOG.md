@@ -2898,6 +2898,51 @@ normaliser, secretele niciodată în chat/repo.
 > hosting+rules, 4 rute live 200.
 
 
+### 2026-07-30 — Analiză: ce sisteme din PrestoConstruct devin native în DataRead (Claude Opus 4.8, 1M context)
+> **Task Completed (analiză + plan, fără cod).** Întrebarea lui Andrei: ce sisteme construite pentru magazinul
+> online ar fi utile în DataRead ca sisteme NATIVE. Axă DIFERITĂ de `docs/PLAN-MAGAZINE-ONLINE.md` (care tratează
+> magazinul ca serviciu provizionat). Rezultat: **`docs/PLAN-SISTEME-NATIVE.md`**.
+> - **Metoda:** 10 agenți (6 recunoaștere, 3 lentile de evaluare, 1 arhitect) pe codul REAL al ambelor proiecte,
+>   apoi am verificat EU fiecare afirmație pe care se sprijină o decizie. PrestoConstruct atins STRICT read-only.
+> - **Verdict: adoptăm 5, adaptăm 2, respingem ~20.** Ordinea vine dintr-un fapt de arhitectură: DataRead are UN
+>   singur punct prin care trec toți banii de AI (`runAiJson` — există exact UN `client.messages.create`, la 1771)
+>   și UN singur punct prin care trece tot abuzul public (`clientIpHash`, 4160). Ambele sunt oarbe azi.
+> - **Bug REAL descoperit (nu ipoteză):** `clientIpHash` (4161) ia `split(',')[0]` din `X-Forwarded-For` — adică
+>   PRIMA intrare, complet controlată de client. Deci `SUBMIT_IP_DAILY_CAP`(30) și `TRACK_IP_DAILY_CAP`(1000)
+>   sunt ocolibile integral cu un antet. Presto ia ultima intrare, cu motivul scris în cod. NOTĂ de onestitate:
+>   „ultima" nu e universal corect — în spatele LB-ului Google e de regulă penultima; fixăm indexul după
+>   verificare empirică, nu prin copiere. În plus `handleTrack` (4205) are DOAR `trk_ip_`, pe când `handleSubmit`
+>   (4248) are și `sub_slug_` — verificat prin `grep lpRateExceeded`.
+> - **Fapt care schimbă implementarea ledgerului AI:** `runAiJson` ARUNCĂ pe `refusal` (1782) și `max_tokens`
+>   (1786) ÎNAINTE de `return { out, usage }` (1804). Logarea la cele 13 call-site-uri ar rata sistematic exact
+>   apelurile facturate integral care eșuează. Ledgerul se scrie ÎNĂUNTRUL lui `runAiJson`, pe toate 4 ieșirile.
+> - **Capcană de nume:** `aiUsage` există în AMBELE proiecte cu semantică OPUSĂ (Presto = ledger `.add()`,
+>   DataRead = contoare `.doc(uid)`). Port 1:1 ar amesteca rândurile cu contoarele și ar strica `HealthPanel:52-54`.
+>   → colecție nouă `aiCalls`, cu `clientUid` din felia 1 (multi-tenant din start, nu „mai târziu").
+> - **Corecții la documentația Presto** (`docs/REUTILIZARE.md`), verificate contra codului: (1) „harness = 2757
+>   linii de stub" e FALS — stubul e ~143 de linii, restul sunt aserțiuni; (2) „dashboard generic ca model" e
+>   PREA GENEROS — `types/dashboard.ts:4` importă `ReportDimension` → `lib/reports.ts` → `Order`, deci modelul
+>   însuși depinde de comenzi; (3) **PanelGrid lipsește din inventarul §5** deși e cuplaj 0 și e cel mai
+>   transplantabil lucru din repo pentru un admin multi-tenant.
+> - **Avertismentul care se aplică sursei înseși:** docul zice despre jurnalul de audit „adoptă-l integral sau
+>   deloc"; verificat — `AUDIT_KINDS` declară `mediaAsset`/`integration` dar NICIUN serviciu nu cheamă `journal()`
+>   cu ele. Proiectul-sursă își încalcă propria regulă.
+> - **Motivul dominant de respingere nu e „nu se potrivește", ci „avem deja, uneori mai bine":** LP form = 9 tipuri
+>   de câmp vs. 7 la Presto (verificat); `printDoc.ts` mai curat; `src/utils/csv.ts` are anti-formula-injection
+>   (`/^[=+\-@	]/`) pe care `PrestoConstruct/src/lib/formCsv.ts` NU îl are. Transferul ar fi invers.
+> - **Respins pe motiv LEGAL, nu tehnic:** Customer 360 + fingerprint de device. `contact.ts` maschează PII
+>   deliberat; un profil 360 ne-ar face împuternicit pentru datele clienților clienților noștri (DPIA + Art. 28).
+> - **Goluri confirmate în DataRead:** zero retenție (`grep prune|RETENTION` → 0; 10 colecții cresc nemărginit),
+>   24 `logger.error` invizibile în /admin, `errorReports` creabil ANONIM (`firestore.rules`, `create` fără
+>   `request.auth != null`), zero Storage (operatorul nu poate încărca o imagine pentru o LP).
+> - **Rază de explozie verificată, reformulată onest:** import CSV greșit → `campaigns.totals` →
+>   `calibrateBenchmarks` (5659) citește `campaigns` CROSS-TENANT (limit 5000, fără filtru) → `benchmarkStats` →
+>   prompturile TUTUROR clienților. NU e gaură de securitate (scrierea cere `isAdmin()`) — e raza de explozie a
+>   unei greșeli de operator, amplificată cross-tenant.
+> Cinci decizii rămân la Andrei (§8 din plan): indexul XFF, puntea de preview, biblioteca media, ghidul cu BM25,
+> rutarea notificărilor pe email (transportul EXISTĂ la 5045, gardat de `EMAIL_ENABLED=false`).
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

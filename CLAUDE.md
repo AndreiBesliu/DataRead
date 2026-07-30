@@ -34,7 +34,8 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 - GitHub: https://github.com/AndreiBesliu/DataRead (branch `main`).
 - Cale locală: `C:\Users\besli\Desktop\MyWork\Apps\DataRead`. Cont CLI: besliandrei@gmail.com.
 - Stripe: test mode; extensia `invertase/firestore-stripe-payments` (setup: STRIPE_SETUP.md).
-- Documente: `PROJECT_KICKOFF.md` (contractul de scope v1),
+- Documente: `PROJECT_KICKOFF.md` (contractul de scope v1), `docs/PLAN-SISTEME-NATIVE.md` (ce sisteme din
+  PrestoConstruct adoptăm NATIV + ce respingem, cu motive verificate în cod),
   `docs/SPEC-arhitectura-Ionut-2026-06-10.md` (viziunea), `docs/PACHETE-SI-PRETURI.md` (oferta).
 
 ## Reguli de lucru (hard)
