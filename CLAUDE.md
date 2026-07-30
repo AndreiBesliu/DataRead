@@ -686,7 +686,11 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
     **Limită asumată:** SEO/crawlerele văd textul nou abia după `npm run deploy` (prerenderul nu citește Firestore, ca
     build-ul să rămână determinist) — vizibil în editor, nu tăcut. NEACOPERIT (felii viitoare): `/servicii/:id` (7 rute,
     ~125 chei), `/self-marketing/pachete`, istoric/undo de versiuni, paginile `kind:'site'` servite de `serveLp`
-    (functions n-are i18n).
+    (functions n-are i18n). **Citiri colapsate (29.07):** `src/site/siteConfigOnce.ts` — `getSiteConfigOnce(docId)`
+    memoizează pe sesiune citirile temă/chrome/pageThemes/conținut (înainte `usePagePublicTheme` citea 2 docuri la
+    FIECARE navigare, dependența `[slug]`); garda `webdriver` a rămas EXPLICITĂ în `ensureLiveContentOverrides`,
+    fiindcă pentru conținut `coerce(null)` e GOL și ar reverta snapshotul copt la prerender (la temă/chrome
+    `coerce(null)` == snapshotul, deci sunt neutre sub webdriver).
   - **B2a — pagini de site:** `LandingPage.kind: 'campaign'|'site'` (default campaign). `LandingStudio` are prop
     `kind` (filtre/metrici/recompile pe tip; slug-unicitate GLOBALĂ pe colecție). serveLp separă strict: `/pagina`
     servește DOAR `kind:'site'` publicate, `/p` restul; kind greșit → 404. `firebase.json`: rewrite `/pagina/** →

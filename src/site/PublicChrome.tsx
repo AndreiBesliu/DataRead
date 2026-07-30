@@ -5,18 +5,16 @@
  * (`navigator.webdriver`: prerender/boot) NU citește → snapshot determinist. Tipar identic cu usePublicTheme.
  */
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { PUBLIC_CHROME_DEFAULT } from '../config/publicChrome';
 import { coerceToSiteChrome, type SiteChrome } from '../types/siteChrome';
+import { getSiteConfigOnce } from './siteConfigOnce';
 
 export function usePublicChrome(): SiteChrome {
   const [chrome, setChrome] = useState<SiteChrome>(PUBLIC_CHROME_DEFAULT);
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
     let cancelled = false;
-    getDoc(doc(db, 'siteConfig', 'publicChrome'))
-      .then((snap) => { if (!cancelled) setChrome(coerceToSiteChrome(snap.exists() ? snap.data() : null).chrome); })
+    getSiteConfigOnce('publicChrome')
+      .then((raw) => { if (!cancelled) setChrome(coerceToSiteChrome(raw).chrome); })
       .catch(() => {/* offline / interzis → rămâne snapshot-ul copt */});
     return () => { cancelled = true; };
   }, []);

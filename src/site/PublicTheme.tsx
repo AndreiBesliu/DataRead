@@ -9,12 +9,11 @@
  *  valorile din clasă (ancestor mai apropiat) — vezi SiteLayout.
  */
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { customThemeCss, type CustomTheme } from '../theme/themes';
 import { PUBLIC_THEME_DEFAULT } from '../config/publicTheme';
 import { coerceToSitePublic } from '../types/sitePublic';
 import { coerceToPageThemes, pageKeyForSlug } from '../types/pageThemes';
+import { getSiteConfigOnce } from './siteConfigOnce';
 
 const STYLE_ID = 'public-theme-css';
 
@@ -25,10 +24,9 @@ const STYLE_ID = 'public-theme-css';
 export function usePublicTheme(): CustomTheme {
   const [theme, setTheme] = useState<CustomTheme>(PUBLIC_THEME_DEFAULT);
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
     let cancelled = false;
-    getDoc(doc(db, 'siteConfig', 'publicTheme'))
-      .then((snap) => { if (!cancelled) setTheme(coerceToSitePublic(snap.exists() ? snap.data() : null).theme); })
+    getSiteConfigOnce('publicTheme')
+      .then((raw) => { if (!cancelled) setTheme(coerceToSitePublic(raw).theme); })
       .catch(() => {/* offline / interzis → rămâne snapshot-ul copt */});
     return () => { cancelled = true; };
   }, []);
@@ -42,17 +40,15 @@ export function usePublicTheme(): CustomTheme {
 export function usePagePublicTheme(slug: string): CustomTheme {
   const [theme, setTheme] = useState<CustomTheme>(PUBLIC_THEME_DEFAULT);
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.webdriver) return;
     let cancelled = false;
     const key = pageKeyForSlug(slug);
-    Promise.all([
-      getDoc(doc(db, 'siteConfig', 'publicTheme')),
-      getDoc(doc(db, 'siteConfig', 'pageThemes')),
-    ])
-      .then(([gSnap, pSnap]) => {
+    // Datele nu se schimbă cu slug-ul — doar CARE override se alege. `getSiteConfigOnce` e memoizat pe
+    // sesiune, deci navigarea între pagini re-alege din cache, fără `getDoc`-uri noi.
+    Promise.all([getSiteConfigOnce('publicTheme'), getSiteConfigOnce('pageThemes')])
+      .then(([gRaw, pRaw]) => {
         if (cancelled) return;
-        const global = coerceToSitePublic(gSnap.exists() ? gSnap.data() : null).theme;
-        const pt = coerceToPageThemes(pSnap.exists() ? pSnap.data() : null);
+        const global = coerceToSitePublic(gRaw).theme;
+        const pt = coerceToPageThemes(pRaw);
         const override = key ? pt.themes[key] : undefined;
         setTheme(override || global);
       })

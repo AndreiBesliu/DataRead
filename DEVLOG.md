@@ -2868,6 +2868,36 @@ normaliser, secretele niciodată în chat/repo.
 > paginile `kind:'site'` servite de `serveLp` (functions n-are i18n → ar cere port JS + paritate).
 
 
+### 2026-07-29 — getSiteConfigOnce: colaps citiri siteConfig pe paginile publice (Claude Opus 4.8, 1M context)
+> **Task Completed.** Datorie reală semnalată de review-ul arhitect în timpul Feliei B: pe paginile publice,
+> `usePagePublicTheme(slug)` avea dependența `[slug]`, deci FIECARE navigare client-side declanșa 2 `getDoc`
+> noi (publicTheme + pageThemes); `usePublicChrome` încă unul; Felia B a mai adăugat unul (conținut). Un
+> vizitator care vede 5 pagini plătea ~15 citiri pentru date IDENTICE (documentele siteConfig se schimbă doar
+> la o publicare din admin). Contează direct pentru direcția nexus (multe site-uri publice = cost de citiri).
+> - **Nou `src/site/siteConfigOnce.ts`:** `getSiteConfigOnce(docId)` memoizează PROMISIUNEA per docId într-un
+>   Map la nivel de modul ⇒ cel mult O citire per document pe toată sesiunea, indiferent câte pagini vizitezi;
+>   apeluri concurente din mai multe hook-uri partajează același zbor. Sub `navigator.webdriver` (prerender/boot)
+>   întoarce `Promise.resolve(null)` fără să atingă Firestore (build determinist). Eșecul e memoizat deliberat
+>   (nu re-lovim Firestore la fiecare navigare). Contract: nu aruncă niciodată.
+> - Cele 3 hook-uri (`usePublicTheme`, `usePagePublicTheme`, `usePublicChrome`) + `ensureLiveContentOverrides`
+>   trec pe el; niciun `getDoc` direct rămas în ele.
+> - **Capcană prinsă la review-ul propriu, înainte de deploy:** pentru TEMĂ și CHROME, `coerce(null)` întoarce
+>   snapshotul copt (`PUBLIC_THEME_DEFAULT`/`PUBLIC_CHROME_DEFAULT`), deci sub webdriver `setX(coerce(null))` ==
+>   starea inițială (fără regresie de prerender). Dar pentru CONȚINUT e diferit: `coerceToPageContent(null)` =
+>   GOL, iar `planContentApply(gol, snapshot)` ar REVERTA la implicit cheile deja aplicate din snapshotul copt ⇒
+>   prerenderul ar captura textul default, nu cel publicat. Am repus garda `navigator.webdriver` explicit în
+>   `ensureLiveContentOverrides`. Verificat DECISIV: am injectat un override în snapshot, `build:site`, iar
+>   `grep` pe `dist/index.html` confirmă textul COPT prezent (prerenderul nu-l revertește) + EN necontaminat.
+> - Preview-ul din admin rămâne corect: iframe-ul `?preview=1` se remontează prin `key={previewKey}` la publicare
+>   → context JS nou → cache-ul de modul e proaspăt → citește starea publicată. Admin-ul editează prin `onSnapshot`
+>   (listener live), deci nu e atins.
+> - Curățenie: `commit-msg.tmp` scos din tracking (intrase din greșeală în commit-ul Feliei B prin `git add -A`)
+>   + adăugat în `.gitignore`.
+> Verificat: typecheck + 27/27 suites + build:site (32 pagini) + boot-smoke + probă în browser (temă/chrome/conținut
+> se aplică pe 4 navigări SPA, fără flash, fără erori de consolă) + verificarea de prerender de mai sus. DEPLOYED
+> hosting+rules, 4 rute live 200.
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

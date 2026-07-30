@@ -10,22 +10,26 @@
  * altfel fiecare pagină publică ar mai costa o citire Firestore.
  */
 import { useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import i18n from '../i18n';
 import { applyRawContentOverrides } from '../i18n/contentOverride';
+import { getSiteConfigOnce } from './siteConfigOnce';
 
 let started = false;
 
-/** Citește `siteConfig/pageContent` o dată și aplică override-urile. Best-effort: orice eșec = textele coapte. */
+/** Citește `siteConfig/pageContent` o dată și aplică override-urile. Best-effort: orice eșec = textele coapte.
+ *  Citirea trece prin cache-ul de sesiune (`getSiteConfigOnce`) — o singură lovire Firestore per document. */
 export function ensureLiveContentOverrides(): void {
   if (started) return;
+  // Gardă webdriver AICI (nu doar în getSiteConfigOnce): pentru conținut, `null` NU e inofensiv.
+  // `applyRawContentOverrides(i18n, null)` → doc gol → `planContentApply` ar REVERTA la implicit cheile
+  // deja aplicate din snapshotul copt ⇒ prerenderul ar captura textul default, nu cel publicat. Sub
+  // prerender/boot lăsăm snapshotul aplicat sincron la init neatins.
   if (typeof navigator !== 'undefined' && navigator.webdriver) return;
   started = true;
-  getDoc(doc(db, 'siteConfig', 'pageContent'))
-    .then((snap) => {
+  getSiteConfigOnce('pageContent')
+    .then((raw) => {
       // `bindI18nStore: 'added'` (src/i18n/index.ts) face componentele montate să se re-randeze aici.
-      applyRawContentOverrides(i18n, snap.exists() ? snap.data() : null);
+      applyRawContentOverrides(i18n, raw);
     })
     .catch(() => {
       /* offline / interzis → rămân textele coapte (i18n + snapshot) */
