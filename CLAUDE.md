@@ -710,6 +710,17 @@ se adaugă produse software în timp. Verticala 1 (monetizare MVP): **Marketing 
 
 ## Capcane cunoscute
 
+- **`pinTag: true` pe rewrite-ul `/p/**` (firebase.json): `npm run deploy:functions` NU schimbă ce servește
+  Hosting pe `/p/`.** Hosting e fixat pe o revizie Cloud Run etichetată, actualizată la deploy de HOSTING.
+  Verificat live 30.07.2026: o schimbare în `serveLp` deployată doar cu `deploy:functions` era vizibilă pe URL-ul
+  direct de Cloud Run, dar `/p/**` servea în continuare codul vechi. **Orice reparație în `serveLp` (inclusiv de
+  securitate) cere ȘI `firebase deploy --only hosting`.** `/pagina/**` NU are pinTag (urmează ultima revizie).
+- **IP-ul clientului: cele două căi spre `serveLp` se comportă OPUS** (măsurat live 30.07.2026, vezi
+  `resolveClientIp` în functions). Prin **Hosting**, Fastly ȘTERGE `X-Forwarded-For`-ul clientului și setează
+  `Fastly-Client-IP` cu IP-ul real ⇒ prima intrare e cea bună, iar ULTIMA e proxy-ul Google, comun tuturor.
+  Direct pe **URL-ul public de Cloud Run**, GFE ADAUGĂ la lanțul clientului ⇒ ULTIMA e cea reală.
+  ⚠️ „Ia ultima intrare" (varianta din alte proiecte) ar băga TOȚI vizitatorii în aceeași găleată de rate-limit.
+
 - `base: '/'` în vite.config.ts — NU `'./'` (rupe asseturile pe rutele prerenderizate imbricate).
 - Tripleta de regiuni (extensie = `VITE_FIREBASE_FUNCTIONS_REGION` = functions) trebuie să
   coincidă, altfel callables eșuează cu „internal" opac.

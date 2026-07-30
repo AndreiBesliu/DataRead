@@ -2943,6 +2943,44 @@ normaliser, secretele niciodată în chat/repo.
 > rutarea notificărilor pe email (transportul EXISTĂ la 5045, gardat de `EMAIL_ENABLED=false`).
 
 
+### 2026-07-30 — Felia B: igienă de securitate publică (resolveClientIp + backstop pe slug) (Claude Opus 4.8, 1M context)
+> **Task Completed.** Prima felie din `docs/PLAN-SISTEME-NATIVE.md`. Rezultatul cel mai important NU e codul, ci
+> **corecția unei premise greșite** — pe care am scris-o chiar eu în plan cu o zi înainte.
+> - **Premisa inițială (GREȘITĂ):** „`clientIpHash` ia `split(',')[0]` din X-Forwarded-For ⇒ plafoanele publice
+>   sunt ocolibile integral cu un antet". Am refuzat să copiez soluția din Presto („ia ultima intrare") și am
+>   MĂSURAT infrastructura reală cu o sondă temporară în `handleTrack` (trei deploy-uri, apoi ștearsă complet).
+> - **Ce arată măsurătorile (30.07.2026):** cele două căi spre `serveLp` se comportă **OPUS**.
+>   (1) **Prin Firebase Hosting** (calea de producție): Fastly **ȘTERGE** XFF-ul trimis de client și rescrie
+>   lanțul ca `[client_real, proxy_Google]`; `Fastly-Client-IP` e setat cu IP-ul real, iar un antet fals trimis
+>   de client e **SUPRASCRIS** (verificat: `Fastly-Client-IP: 1.2.3.4` a devenit IP-ul meu real; `Via: 1.1 evil`
+>   a fost doar *completat* cu `1.1 Firebase Hosting`). => **prima** intrare era corectă.
+>   (2) **Direct pe URL-ul public de Cloud Run**: GFE **ADAUGĂ** la lanțul clientului -> `[fals…, client_real]`.
+>   => **ultima** intrare e cea reală.
+> - **Două concluzii care schimbă totul:** (a) codul vechi NU era o breșă pentru traficul real — ocolirea exista
+>   doar prin URL-ul direct de Cloud Run; (b) **dacă aș fi copiat varianta Presto, aș fi provocat o pană**: pe
+>   calea Hosting ultima intrare e proxy-ul Google, comun tuturor => toți vizitatorii ar fi căzut în ACEEAȘI
+>   găleată, iar `SUBMIT_IP_DAILY_CAP`=30 ar fi blocat formularele pe TOT site-ul după 30 de trimiteri.
+> - **Fix livrat:** `resolveClientIp(headers, fallback)` (pur, exportat, testat) — `Fastly-Client-IP` dacă există
+>   (nefalsificabil pe calea Hosting), altfel **ultima** intrare din XFF (nefalsificabilă pe calea Cloud Run).
+>   `clientIpHash` construit peste el. Rezidual asumat ȘI documentat în cod: cine lovește direct URL-ul de Cloud
+>   Run poate roti cheia de IP — de aceea plafonul pe SLUG e adevărata margine.
+> - **B2:** `TRACK_SLUG_DAILY_CAP` (20000/zi/pagină) adăugat la `handleTrack`, care avea DOAR `trk_ip_`
+>   (`handleSubmit` avea deja ambele). Ăsta e bound-ul real împotriva rotirii de IP.
+> - **DESCOPERIRE OPERAȚIONALĂ MAJORĂ (capcană nouă în CLAUDE.md):** rewrite-ul `/p/**` are `pinTag: true`, deci
+>   **`npm run deploy:functions` NU schimbă ce servește Hosting pe `/p/`**. Am prins-o pentru că sonda funcționa
+>   pe URL-ul direct de Cloud Run, dar NU prin Hosting — Hosting servea încă revizia veche. Consecință gravă:
+>   orice reparație în `serveLp` (inclusiv de securitate) cere **ȘI** `firebase deploy --only hosting`. Până azi,
+>   un `deploy:functions` singur ar fi lăsat reparația nelivrată în producție, tăcut.
+> - **B3 (`errorReports` creabil anonim) RĂMÂNE** — impact mărginit (whitelist de câmpuri + plafoane => spam/cost,
+>   nu scurgere), iar mutarea pe callable atinge plasa de siguranță a erorilor (inclusiv cele de la boot, unde
+>   App Check poate să nu fie inițializat). Merită felie proprie.
+> - **Teste:** 6 aserțiuni noi în `TEST ABUSE` care fixează AMBELE forme măsurate, inclusiv regresia care ar fi
+>   prins pana („doi vizitatori prin ACELAȘI proxy Google -> buckete DIFERITE"). Testul vechi codifica exact
+>   comportamentul de „prima intrare" și a trebuit rescris — dovadă că plasa își face treaba.
+> Verificat: node --check + typecheck + 27/27 suites + e2e + deploy functions **ȘI** hosting + verificare live
+> (sonda moartă pe ambele căi, zero document rezidual în Firestore, rute publice 200).
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

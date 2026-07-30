@@ -2062,11 +2062,32 @@ console.log('\nSEO) audit on-page — SSRF guard + extract + score');
 // ── TEST ABUSE: rate-limit anti-abuz pe endpointurile publice (/p/_submit & /p/_track). ──
 console.log('\nABUSE) rate-limit per-IP/slug + clientIpHash');
 {
-  // clientIpHash: deterministic, hex 24, derivat din primul IP din x-forwarded-for; gol → 'unknown'.
+  // resolveClientIp — regulile vin din MĂSURĂTORI LIVE pe infrastructura noastră (30.07.2026), nu din
+  // presupuneri. Cele două căi se comportă DIFERIT, iar testele de mai jos le fixează pe amândouă.
+  //
+  // (1) Prin Firebase Hosting (producție): Fastly ȘTERGE XFF-ul clientului și setează `fastly-client-ip`
+  //     cu IP-ul real; lanțul devine [client_real, proxy_Google]. Verificat: un `Fastly-Client-IP` fals
+  //     trimis de client e SUPRASCRIS.
+  ok(fns.resolveClientIp({ 'fastly-client-ip': '2a02::1', 'x-forwarded-for': '2a02::1, 66.249.93.39' }) === '2a02::1',
+    'resolveClientIp: pe calea Hosting ia fastly-client-ip (IP-ul real, nu proxy-ul)');
+  // REGRESIA CARE AR FI CAUZAT O PANĂ: dacă am fi luat „ultima intrare" (varianta din PrestoConstruct),
+  // toți vizitatorii ar fi căzut în găleata proxy-ului Google → 30 de submisii/zi ar fi blocat tot site-ul.
+  ok(fns.resolveClientIp({ 'fastly-client-ip': 'A', 'x-forwarded-for': 'A, 66.249.93.39' })
+    !== fns.resolveClientIp({ 'fastly-client-ip': 'B', 'x-forwarded-for': 'B, 66.249.93.39' }),
+    'resolveClientIp: doi vizitatori prin ACELAȘI proxy Google → buckete DIFERITE');
+  // (2) Direct pe URL-ul public de Cloud Run: GFE ADAUGĂ la lanțul clientului → [fals…, client_real].
+  //     Aici prima intrare e a atacatorului, ultima e reală.
+  ok(fns.resolveClientIp({ 'x-forwarded-for': '203.0.113.77, 198.51.100.2, 9.9.9.9' }) === '9.9.9.9',
+    'resolveClientIp: fără Fastly (Cloud Run direct) ia ULTIMA intrare, nu pe cea trimisă de client');
+  ok(fns.resolveClientIp({ 'x-forwarded-for': 'fals1, fals2, REAL' })
+    === fns.resolveClientIp({ 'x-forwarded-for': 'altceva, REAL' }),
+    'resolveClientIp: prefixul fals NU schimbă bucketul — rotirea antetului nu mai dă găleată nouă');
+  ok(fns.resolveClientIp({}, '10.0.0.5') === '10.0.0.5', 'resolveClientIp: fără antete → fallback');
+  ok(fns.resolveClientIp({}) === 'unknown', 'resolveClientIp: fără nimic → unknown, fără throw');
+  // clientIpHash: deterministic, hex 24, construit peste resolveClientIp.
   const h1 = fns.clientIpHash({ headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' } });
-  const h2 = fns.clientIpHash({ headers: { 'x-forwarded-for': '203.0.113.7' } });
   const h3 = fns.clientIpHash({ headers: {} });
-  ok(/^[0-9a-f]{24}$/.test(h1) && h1 === h2, 'clientIpHash: primul IP din XFF, stabil (24 hex)');
+  ok(/^[0-9a-f]{24}$/.test(h1), 'clientIpHash: 24 hex');
   ok(h3 === fns.clientIpHash({ headers: {} }), 'clientIpHash: fără IP → bucket stabil (unknown)');
   ok(h1 !== fns.clientIpHash({ headers: { 'x-forwarded-for': '198.51.100.9' } }), 'clientIpHash: IP-uri diferite → buckete diferite');
 

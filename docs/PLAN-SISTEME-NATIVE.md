@@ -24,8 +24,8 @@ UN `client.messages.create` în tot proiectul, la 1771) și **un singur punct pr
 
 **Adoptăm, în ordine:**
 1. **Ledger de cost AI per apel + plafon de buget** — scris ÎNĂUNTRUL lui `runAiJson`, colecție nouă `aiCalls`.
-2. **Igienă de securitate publică** — `clientIpHash` ia intrarea greșită din `X-Forwarded-For`; `handleTrack`
-   n-are backstop pe slug.
+2. ✅ **Igienă de securitate publică — LIVRAT 30.07** (`resolveClientIp` + backstop pe slug la `handleTrack`).
+   Atenție: măsurătorile au CORECTAT premisa inițială — vezi §3.B; copierea variantei Presto ar fi provocat o pană.
 3. **`logServerError` + panou de erori operabil** — 24 de `logger.error` sunt azi invizibile în /admin.
 4. **Motor de retenție** — DataRead nu are NICIUN `prune`; 10 colecții cresc nemărginit.
 5. **plan → review → apply pe importul CSV de metrici** — o greșeală de import se propagă azi în benchmark-ul
@@ -65,7 +65,7 @@ disciplina, acolo unde o aplicăm integral.
 | Sistem | Ce are DataRead azi | Golul real | Valoare | Efort | Verdict |
 |---|---|---|---|---|---|
 | **Ledger cost AI + buget** | 5 contoare `{month\|day, count}`; `usage` e disponibil la 1771 și **aruncat** | Zero USD, zero tokeni, zero per-apel, zero per-tenant, zero plafon pe bani | Foarte mare | Mediu | **ADOPTĂM** |
-| **`clientIpHash` + backstop slug** | ia `[0]` din `X-Forwarded-For` (4161); `handleTrack` fără backstop | Ambele plafoane publice ocolibile cu un antet | Mare (securitate) | Foarte mic | **ADOPTĂM** |
+| **`clientIpHash` + backstop slug** | `[0]` din XFF — **corect prin Hosting**, falsificabil doar pe URL-ul direct de Cloud Run; `handleTrack` fără backstop pe slug | Ocolire prin URL-ul direct de Cloud Run + zero plafon pe pagină la beacon-uri | Mare (securitate) | Foarte mic | ✅ **LIVRAT 30.07** |
 | **`logServerError` + panou operabil** | 24 `logger.error` doar în Cloud Logging; tabel plat de 50 | Erorile de SERVER invizibile în /admin; fără „rezolvat", fără grupare | Mare | Mic | **ADOPTĂM** |
 | **Motor de retenție** | `grep -E "prune\|RETENTION"` → **0** | 10 colecții cresc nemărginit (cost + minimizare GDPR) | Mare | Mic | **ADOPTĂM** |
 | **plan→review→apply pe CSV metrici** | `writeBatch` direct din browser (`MarketingCenter.tsx:304`) | Import greșit → raport fals la client **+ benchmark propagat cross-tenant** | Mare | Mediu | **ADOPTĂM** |
@@ -146,24 +146,39 @@ cu `resource-exhausted` **înainte** de `messages.create`.
 
 ### B. Igienă de securitate publică *(cea mai ieftină felie din tot planul)*
 
-**B1 — `clientIpHash` ia intrarea greșită.** `functions/index.js:4161` face
-`String(req.headers['x-forwarded-for']).split(',')[0]` — adică **prima** intrare, care e complet controlată de
-client. Oricine trimite `X-Forwarded-For: <valoare aleatoare>` primește o găleată de rate-limit nouă la fiecare
-cerere, deci `SUBMIT_IP_DAILY_CAP` (30) și `TRACK_IP_DAILY_CAP` (1000) sunt **ocolibile integral**. Presto ia
-ultima intrare, cu motivul scris în cod.
+**B1 — `clientIpHash`. ✅ LIVRAT 30.07.2026, dar cu o CORECȚIE importantă față de prima versiune a acestui
+plan.** Prima versiune spunea că plafoanele publice sunt „ocolibile integral cu un antet". **Măsurătorile live au
+arătat că afirmația era GREȘITĂ pentru calea de producție.** Am sondat infrastructura reală (o sondă temporară în
+`handleTrack`, apoi ștearsă) și cele două căi se comportă DIFERIT:
 
-⚠️ **Nuanță pe care n-o luăm de-a gata de la Presto:** „ultima" nu e universal corect. În spatele
-load-balancer-ului Google, IP-ul real e de regulă **penultima** intrare. Regula sigură e „numără din dreapta cu
-numărul de proxy-uri de încredere", nu „ia stânga". Felia include **verificarea empirică** pe o cerere live
-înainte de a fixa indexul (vezi §7 Q1).
+| Calea | Ce face infrastructura | Intrarea corectă |
+|---|---|---|
+| **Prin Firebase Hosting** (`/p/**`, producție) | Fastly **ȘTERGE** XFF-ul clientului; lanțul devine `[client_real, proxy_Google]`; `Fastly-Client-IP` e setat cu IP-ul real și un antet fals trimis de client e **SUPRASCRIS** | **prima** |
+| **Direct pe URL-ul public de Cloud Run** | GFE **ADAUGĂ** la lanțul clientului → `[fals…, client_real]` | **ultima** |
 
-**B2 — `handleTrack` n-are backstop pe slug.** `handleSubmit` are ambele plafoane (IP + slug, 4248), dar
-`handleTrack` are doar `trk_ip_`. Cu B1 nereparat, beacon-urile sunt practic nelimitate.
+Două consecințe:
+1. Codul vechi (`[0]`) era **corect pentru traficul real**. Ocolirea exista doar prin URL-ul direct de Cloud Run.
+2. **Dacă am fi copiat „ia ultima intrare" de la Presto, am fi provocat o pană**: pe calea Hosting ultima intrare
+   e proxy-ul Google, comun tuturor — toți vizitatorii ar fi căzut în aceeași găleată, iar `SUBMIT_IP_DAILY_CAP`
+   (30) ar fi blocat formularele **pe tot site-ul** după 30 de trimiteri.
 
-**B3 — `errorReports` e creabil anonim.** `firestore.rules:685` permite `create` fără `request.auth != null`.
-Un client poate umple colecția. Mutăm scrierea pe un callable rate-limitat (tiparul `logClientError` din Presto).
+**Fix livrat:** `resolveClientIp(headers, fallback)` — `Fastly-Client-IP` dacă există (nefalsificabil pe calea
+Hosting, verificat), altfel **ultima** intrare din XFF (nefalsificabilă pe calea Cloud Run). Rezidual asumat și
+documentat: cine lovește direct URL-ul de Cloud Run poate roti cheia de IP — de aceea plafonul pe SLUG e
+adevărata margine.
 
-**Acceptare:** o suită care trimite 40 de cereri cu `X-Forwarded-For` diferit și verifică refuzul după plafon.
+**B2 — `handleTrack` n-avea backstop pe slug. ✅ LIVRAT.** `handleSubmit` avea ambele plafoane (IP + slug),
+`handleTrack` doar `trk_ip_`. Adăugat `TRACK_SLUG_DAILY_CAP` (20000/zi/pagină — o pagină reală face ~3
+beacon-uri/vizitator, deci acoperă ~6-7k vizite/zi). Ăsta e acum **adevăratul** bound împotriva rotirii de IP
+prin URL-ul direct de Cloud Run.
+
+**B3 — `errorReports` e creabil anonim. ⏳ RĂMÂNE.** `firestore.rules` permite `create` fără
+`request.auth != null`. Impactul e mărginit (whitelist de câmpuri + plafoane de mărime ⇒ spam/cost, NU scurgere
+de date), iar mutarea pe un callable atinge plasa de siguranță a erorilor (inclusiv erorile de la boot, unde App
+Check poate să nu fie încă inițializat). Merită felie proprie, nu grabă.
+
+**Acceptare B1+B2 (îndeplinită):** 6 aserțiuni noi în `TEST ABUSE` care fixează AMBELE forme măsurate, inclusiv
+regresia „doi vizitatori prin același proxy Google → buckete DIFERITE" (cea care ar fi prins pana).
 
 ---
 
@@ -296,9 +311,9 @@ D și C sunt mici și se pot lipi de A. E și G pot aștepta.
 
 ## 8. Decizii care îți cer răspunsul
 
-1. **`X-Forwarded-For`: ce index?** Presto ia ultima intrare; în spatele LB-ului Google e de regulă penultima.
-   *Recomandarea mea:* verific empiric pe o cerere live la `/p/_track` și fixez indexul cu comentariul care
-   explică alegerea. Nu copiez orbește.
+1. ~~**`X-Forwarded-For`: ce index?**~~ **REZOLVAT prin măsurare, 30.07** — nu mai e o decizie. Vezi §3.B:
+   `Fastly-Client-IP` pe calea Hosting, ultima intrare pe calea Cloud Run. A rezultat și o corecție la acest plan:
+   codul vechi NU era o breșă în producție, iar copierea variantei Presto ar fi cauzat o pană.
 2. **Punte de preview live (postMessage)** — 116 linii la sursă, jumătate există deja la noi. Ar da editorului de
    conținut (Felia B, livrată ieri) previzualizarea **ciornei**, nu doar a ce e publicat. *Recomandarea mea:* da,
    dar după A–D; e confort de operator, nu risc.

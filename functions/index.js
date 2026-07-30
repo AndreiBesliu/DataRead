@@ -4156,10 +4156,38 @@ function mapSubmissionToLead(values, fields, slug, lang) {
 const SUBMIT_IP_DAILY_CAP = 30;     // submisii/zi de la același IP (pe toate paginile)
 const SUBMIT_SLUG_DAILY_CAP = 500;  // submisii/zi pe o pagină (backstop pe slug)
 const TRACK_IP_DAILY_CAP = 1000;    // beacon-uri/zi de la același IP (generos; mărginește scrierile de contoare)
+const TRACK_SLUG_DAILY_CAP = 20000; // beacon-uri/zi pe o pagină (backstop pe slug, ca la submisii; generos —
+                                    // o pagină reală face ~3 beacon-uri/vizitator, deci acoperă ~6-7k vizite/zi)
+
+/**
+ * IP-ul clientului, ales pe baza formei REALE a antetelor din infrastructura noastră — MĂSURATĂ live
+ * (30.07.2026), nu presupusă. Cele două căi prin care se poate ajunge la `serveLp` se comportă DIFERIT:
+ *
+ *  1) Prin Firebase Hosting (calea de producție, `/p/**`): Fastly ȘTERGE `X-Forwarded-For`-ul trimis de
+ *     client și rescrie lanțul ca `[IP_client_real, IP_proxy_Google]`. Deci aici PRIMA intrare e corectă,
+ *     iar ULTIMA e proxy-ul Google — comun tuturor vizitatorilor. Verificat: un `X-Forwarded-For: 5.6.7.8`
+ *     trimis de mine a dispărut, iar un `Fastly-Client-IP: 1.2.3.4` a fost SUPRASCRIS cu IP-ul meu real.
+ *     ⚠️ De-aia NU copiem „ia ultima intrare" (varianta din PrestoConstruct): pe calea asta ar băga TOȚI
+ *     vizitatorii în aceeași găleată de rate-limit, iar plafonul de 30 de submisii/zi ar bloca tot site-ul.
+ *  2) Direct pe URL-ul public de Cloud Run: Google FrontEnd ADAUGĂ la lanțul trimis de client, deci
+ *     `[fals…, IP_client_real]` — aici PRIMA intrare e controlată de atacator, iar ULTIMA e cea reală.
+ *
+ * Regulă: `Fastly-Client-IP` (setat de edge-ul nostru, nefalsificabil pe calea 1) dacă există; altfel
+ * ULTIMA intrare din lanț (nefalsificabilă pe calea 2). Rezidual acceptat: cine lovește direct URL-ul de
+ * Cloud Run poate roti cheia de IP — de aceea plafonul pe SLUG (nu doar pe IP) e adevărata margine.
+ */
+function resolveClientIp(headers, fallback) {
+  const h = headers || {};
+  const fastly = String(h['fastly-client-ip'] || '').trim();
+  if (fastly) return fastly;
+  const parts = String(h['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length) return parts[parts.length - 1];
+  return String(fallback || 'unknown');
+}
+exports.resolveClientIp = resolveClientIp;
 
 function clientIpHash(req) {
-  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  const ip = xff || String((req.socket && req.socket.remoteAddress) || req.ip || 'unknown');
+  const ip = resolveClientIp(req.headers, (req.socket && req.socket.remoteAddress) || req.ip || 'unknown');
   return require('crypto').createHash('sha256').update(ip || 'unknown').digest('hex').slice(0, 24);
 }
 
@@ -4201,8 +4229,15 @@ async function handleTrack(req, res) {
   const ts = admin.firestore.FieldValue.serverTimestamp();
   try {
     const db = admin.firestore();
-    // Anti-abuz: plafon zilnic per-IP pe beacon-uri (peste plafon → 204 silențios, fără scrieri de contoare).
-    if (await lpRateExceeded(db, 'trk_ip_' + clientIpHash(req), TRACK_IP_DAILY_CAP)) {
+    // ⏱ SONDĂ TEMPORARĂ (se scoate imediat după măsurătoare) — vreau FORMA lanțului X-Forwarded-For în
+    // infrastructura noastră, ca să știu ce index e IP-ul real al clientului. Loghez doar structura +
+    // octeții mascați: IP-ul întreg e dată personală și n-are ce căuta în Cloud Logging.
+    // Anti-abuz: plafon zilnic per-IP ȘI per-SLUG pe beacon-uri (peste plafon → 204 silențios, fără scrieri
+    // de contoare). Backstopul pe slug e esențial: cine lovește direct URL-ul public de Cloud Run poate roti
+    // cheia de IP (vezi `resolveClientIp`), dar NU poate scăpa de plafonul paginii. `handleSubmit` avea deja
+    // ambele plafoane; aici lipsea cel pe slug — deci contoarele de engagement erau mărginite doar pe IP.
+    if (await lpRateExceeded(db, 'trk_ip_' + clientIpHash(req), TRACK_IP_DAILY_CAP)
+      || await lpRateExceeded(db, 'trk_slug_' + slug, TRACK_SLUG_DAILY_CAP)) {
       res.status(204).end();
       return;
     }
