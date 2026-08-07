@@ -2981,6 +2981,43 @@ normaliser, secretele niciodată în chat/repo.
 > (sonda moartă pe ambele căi, zero document rezidual în Firestore, rute publice 200).
 
 
+### 2026-08-07 — Analiza brief-ului lui Ionut (ChatGPT) -> plan Verticala 3 + o restanta de conformitate LIVE (Claude Opus 4.8, 1M context)
+> **Task Completed (analiza + plan, fara cod).** Ionut a obtinut de la ChatGPT un brief „build a complete SaaS MVP
+> DataRead — AI sales intelligence for ecommerce". Andrei a cerut analiza: ce avem, ce lipseste.
+> Rezultat: **`docs/PLAN-VERTICALA-3-SALES-INTELLIGENCE.md`** (v2, dupa recenzie adversariala pe 3 lentile).
+> - **Verdict:** briful descrie ALT produs (tag pe site-ul clientului + terminal live + chat AI), dar NU e
+>   incompatibil: `ModuleId` are deja `sales` si `chatbot` DECLARATE si NEFOLOSITE. Aterizeaza ca verticala 3.
+> - **Respins:** rescrierea in Next.js (ne-ar da ce avem deja, cu pretul aruncarii a ~50 de felii live) si
+>   identificarea vizitatorilor dupa IP (ceruta explicit de Ionut). IP-ul MINTE — CGNAT pe mobil, un birou pe un
+>   IP — deci „a revenit de 40 de ori" ar fi 40 de oameni. Functionalitatea se face, dar pe ID first-party dupa
+>   consimtamant. Limitare declarata: Safari/ITP plafoneaza cookie-urile din JS la 7 zile.
+> - **RECENZIA ADVERSARIALA A GASIT O PREMISA FALSA SCRISA DE MINE.** Scrisesem in v1: „pana acum prelucram datele
+>   clientilor nostri; cu tagul devenim imputernicit". FALS, verificat in cod: pe `/p/{slug}` scriem deja PII BRUT
+>   in `submissions` (valorile formularului + `ua` + `referrer`), telemetrie in `visits`, setam server-side
+>   cookie-ul A/B `lpab_` FARA consimtamant (4607) si injectam beaconul necontidionat. **Suntem DEJA imputernicit**,
+>   fara DPA si fara nota de informare. Tagul schimba SCARA, nu NATURA relatiei.
+> - **A doua afirmatie falsa a mea, corectata:** scrisesem ca „IP-ul e folosit tranzitoriu si hashat, cum il
+>   folosim deja". Fals in ambii termeni: `clientIpHash` e SHA-256 **nesarat** (spatiul IPv4 = 2^32, reversibil
+>   prin forta bruta) si e **persistat pe zile fara stergere** in `abuseGuard`. Pseudonimizare, nu anonimizare.
+> - **RESTANTA DE CONFORMITATE LIVE, independenta de V3** (noua sectiune §4.0): politica de confidentialitate e
+>   placeholder DRAFT pe LIVE in timp ce `/start` colecteaza nume/email/telefon; zero DPA; cookie A/B fara
+>   consimtamant; zero retentie; hash de IP nesarat; bannerul are „Accept" primary vs „Refuz" secundar si alegerea
+>   nu se poate revizui. **Fara entitate juridica identificata nu se poate semna niciun DPA.**
+> - **Trei lipsuri structurale ale planului meu, adaugate in v2:** (a) §0 POARTA DE VALIDARE — niciun client n-a
+>   cerut produsul, punctul de plecare e un brief de LLM; V3 nu incepe fara 2 piloti platiti semnati in 6 saptamani;
+>   (b) §2.5 CONCURENTA — lipsea complet; Microsoft Clarity e GRATUIT si nelimitat, cu heatmaps+replay+AI, deci
+>   feliile 1-4 din planul initial erau o clona platita a ceva gratuit. Singurul moat real: doar noi legam
+>   „am cheltuit 800 EUR pe Meta" de „omul asta a revenit de 3 ori si n-a cumparat"; (c) §5.0 ECONOMIA UNITARA —
+>   ingestia e IEFTINA (sub 1 EUR/luna la 30k vizite; afirmatia mea din v1 despre 500k vizite era falsa), dar
+>   CHATUL pe clasa Opus depaseste 149 EUR/luna la UN client. Decizie de pret: clasa Haiku pentru chatul public.
+> - **Ordinea feliilor rescrisa:** v1 punea valoarea pentru client abia in felia 4-5 (fundatie -> tag -> vizitatori
+>   -> dashboard). Cu 4 felii construite si nimic vandabil nu mai poti opri rational proiectul. V2 = felie verticala
+>   subtire: prima felie livreaza tag + O regula de intentie + O alerta, cu dashboard urat. Criteriu de acceptare:
+>   „merchantul a deschis alerta si a facut ceva", nu „contorul creste".
+> - Ledgerul de cost AI urca din „preconditie pentru V3.5" in „preconditie pentru a putea COTA un pret".
+> Zero cod atins. PrestoConstruct neatins.
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)
