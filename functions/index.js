@@ -4186,9 +4186,34 @@ function resolveClientIp(headers, fallback) {
 }
 exports.resolveClientIp = resolveClientIp;
 
-function clientIpHash(req) {
-  const ip = resolveClientIp(req.headers, (req.socket && req.socket.remoteAddress) || req.ip || 'unknown');
-  return require('crypto').createHash('sha256').update(ip || 'unknown').digest('hex').slice(0, 24);
+/** Sarea pentru hash-ul de IP, memorată la nivel de instanță (o citire la ~1h, nu una per cerere).
+ *  Rotită zilnic de `pruneOldTelemetry`. Eșec de citire → '' = fallback pe hash nesărat: rate-limitul
+ *  trebuie să funcționeze ORICUM, o gardă care se strică la o citire eșuată e mai rea decât una nesărată. */
+let __ipSaltCache = { salt: '', at: 0 };
+const IP_SALT_TTL_MS = 3600000;
+async function getIpSalt(db) {
+  const now = Date.now();
+  if (__ipSaltCache.at && now - __ipSaltCache.at < IP_SALT_TTL_MS) return __ipSaltCache.salt;
+  try {
+    const snap = await db.collection('appConfig').doc('ipSalt').get();
+    const salt = snap.exists ? String((snap.data() || {}).salt || '') : '';
+    __ipSaltCache = { salt, at: now };
+    return salt;
+  } catch (e) {
+    __ipSaltCache = { salt: '', at: now }; // memorăm și eșecul, ca să nu lovim Firestore la fiecare cerere
+    return '';
+  }
+}
+exports.getIpSalt = getIpSalt;
+
+/** Cheia de rate-limit derivată din IP. Cu sare → HMAC (nereversibil chiar dacă baza s-ar scurge);
+ *  fără sare → SHA-256 simplu (comportamentul de dinainte, păstrat ca fallback). */
+function clientIpHash(req, salt) {
+  const ip = resolveClientIp(req.headers, (req.socket && req.socket.remoteAddress) || req.ip || 'unknown') || 'unknown';
+  const crypto = require('crypto');
+  return salt
+    ? crypto.createHmac('sha256', salt).update(ip).digest('hex').slice(0, 24)
+    : crypto.createHash('sha256').update(ip).digest('hex').slice(0, 24);
 }
 
 // Rate-limit zilnic per cheie (tranzacțional). true = peste plafon → respinge. Fail-OPEN la eroare de guard
@@ -4236,7 +4261,8 @@ async function handleTrack(req, res) {
     // de contoare). Backstopul pe slug e esențial: cine lovește direct URL-ul public de Cloud Run poate roti
     // cheia de IP (vezi `resolveClientIp`), dar NU poate scăpa de plafonul paginii. `handleSubmit` avea deja
     // ambele plafoane; aici lipsea cel pe slug — deci contoarele de engagement erau mărginite doar pe IP.
-    if (await lpRateExceeded(db, 'trk_ip_' + clientIpHash(req), TRACK_IP_DAILY_CAP)
+    const ipSalt = await getIpSalt(db);
+    if (await lpRateExceeded(db, 'trk_ip_' + clientIpHash(req, ipSalt), TRACK_IP_DAILY_CAP)
       || await lpRateExceeded(db, 'trk_slug_' + slug, TRACK_SLUG_DAILY_CAP)) {
       res.status(204).end();
       return;
@@ -4280,7 +4306,8 @@ async function handleSubmit(req, res) {
   try {
     const db = admin.firestore();
     // Anti-abuz: plafon zilnic per-IP + per-slug pe submisii (mărginește inundarea pipeline-ului de lead-uri + costul triggerelor).
-    if (await lpRateExceeded(db, 'sub_ip_' + clientIpHash(req), SUBMIT_IP_DAILY_CAP) || await lpRateExceeded(db, 'sub_slug_' + slug, SUBMIT_SLUG_DAILY_CAP)) {
+    const ipSalt = await getIpSalt(db);
+    if (await lpRateExceeded(db, 'sub_ip_' + clientIpHash(req, ipSalt), SUBMIT_IP_DAILY_CAP) || await lpRateExceeded(db, 'sub_slug_' + slug, SUBMIT_SLUG_DAILY_CAP)) {
       res.status(429).json({ ok: false });
       return;
     }
@@ -5444,10 +5471,91 @@ exports.onMetricTotals = onDocumentWritten({ document: 'campaigns/{campaignId}/m
   } catch (e) { logger.error('onMetricTotals recompute failed', { campaignId, err: String(e) }); }
 });
 
+// ── RETENȚIE: plafonează cât păstrăm telemetria. Port 1:1 al `src/analytics/retention.ts` (paritate în e2e). ──
+// Până acum nu ștergeam NIMIC — `errorReports`/`abuseGuard`/`predictionLog`/`campaignInsightLog` creșteau la infinit.
+// E deopotrivă cost Firestore ȘI minimizare de date (GDPR).
+const RETENTION_DAY_MS = 86400000;
+const RETENTION_BATCH = 400;              // sub limita Firestore de 500 scrieri/batch
+const RETENTION_MAX_PER_COLLECTION = 5000; // plafon pe rulare — jobul e zilnic, restul se prinde mâine
+/** ⚠️ Ultimul zid: chiar dacă tabelul de reguli ar fi modificat greșit, astea NU se șterg niciodată.
+ *  (a) financiar/legal — obligații de păstrare; (b) datele de business ale clientului. */
+const RETENTION_PROTECTED = [
+  'invoices', 'invoiceCounters', 'appConfig', 'settings', 'siteConfig',
+  'clients', 'leads', 'campaigns', 'landingPages', 'admins', 'adminAudit',
+  'contacts', 'submissions', 'customers', 'products',
+];
+/** OGLINDĂ EXACTĂ a `RETENTION_RULES` din src/analytics/retention.ts (paritate testată — TEST RET). */
+const RETENTION_RULES = [
+  { collection: 'abuseGuard', field: 'day', kind: 'dayString', days: 3 },
+  { collection: 'errorReports', field: 'at', kind: 'timestamp', days: 90 },
+  { collection: 'predictionLog', field: 'at', kind: 'timestamp', days: 365 },
+  { collection: 'campaignInsightLog', field: 'at', kind: 'timestamp', days: 365 },
+];
+exports.RETENTION_RULES = RETENTION_RULES;
+exports.RETENTION_PROTECTED = RETENTION_PROTECTED;
+
+/** Șterge documentele mai vechi decât pragul fiecărei reguli. Idempotent, mărginit, fail-soft per colecție:
+ *  o colecție care eșuează nu oprește restul. Interogare cu inegalitate pe UN câmp ⇒ fără index compus. */
+async function pruneCollectionsCore(db, nowMs, rules) {
+  const out = { deleted: 0, byCollection: {}, errors: [] };
+  for (const r of rules || []) {
+    if (RETENTION_PROTECTED.indexOf(r.collection) !== -1) {
+      logger.error('retention: colecție PROTEJATĂ refuzată', { collection: r.collection });
+      out.errors.push(r.collection + ':protected');
+      continue;
+    }
+    const cutMs = nowMs - r.days * RETENTION_DAY_MS;
+    // `Date` simplu, nu `admin.firestore.Timestamp`: Admin SDK îl acceptă la comparație cu un câmp Timestamp,
+    // iar funcția rămâne testabilă fără a stuba tot namespace-ul `admin.firestore`.
+    const cutoff = r.kind === 'dayString'
+      ? new Date(cutMs).toISOString().slice(0, 10)
+      : new Date(cutMs);
+    let deleted = 0;
+    try {
+      // Fiecare pasă șterge un batch; ieșim când nu mai sunt candidați sau la plafon.
+      for (let pass = 0; deleted < RETENTION_MAX_PER_COLLECTION; pass++) {
+        const snap = await db.collection(r.collection).where(r.field, '<', cutoff).limit(RETENTION_BATCH).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        deleted += snap.size;
+        if (snap.size < RETENTION_BATCH) break;
+      }
+    } catch (e) {
+      logger.warn('retention: colecție eșuată (continuăm)', { collection: r.collection, err: String(e).slice(0, 160) });
+      out.errors.push(r.collection + ':' + String(e).slice(0, 60));
+    }
+    out.byCollection[r.collection] = deleted;
+    out.deleted += deleted;
+  }
+  return out;
+}
+exports.pruneCollectionsCore = pruneCollectionsCore;
+
 // D#5: backstop ZILNIC — dacă o tranzacție de recompute eșuează sub contenție extremă (rafală CSV) și niciun trigger
 // ulterior nu o repară, jobul reconciliază totalurile TUTUROR campaniilor. Ungated, fără AI, idempotent (aceeași cale pură).
 {
   const { onSchedule } = require('firebase-functions/v2/scheduler');
+  // Retenție + rotirea sării de IP. La 03:30, înaintea joburilor de reconciliere (04:00-06:00).
+  exports.pruneOldTelemetry = onSchedule({ schedule: '30 3 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
+    const db = admin.firestore();
+    try {
+      const res = await pruneCollectionsCore(db, Date.now(), RETENTION_RULES);
+      logger.info('retention done', res);
+    } catch (e) { logger.error('retention failed', { err: String(e) }); }
+    // Sarea pentru hash-ul de IP: rotită zilnic. Nu strică nimic — bucketul de rate-limit e OricUM per zi,
+    // deci o sare nouă coincide cu o găleată nouă. Fără sare, SHA-256(IP) e reversibil prin forță brută
+    // (spațiul IPv4 = 2^32), deci hash-ul stocat n-ar fi anonimizare, ci doar ofuscare.
+    try {
+      await db.collection('appConfig').doc('ipSalt').set({
+        schema: 1,
+        salt: require('crypto').randomBytes(32).toString('hex'),
+        rotatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) { logger.warn('ip salt rotation failed', { err: String(e).slice(0, 120) }); }
+  });
+
   exports.reconcileCampaignTotals = onSchedule({ schedule: '15 5 * * *', timeZone: 'Europe/Bucharest', region: REGION }, async () => {
     try {
       const db = admin.firestore();

@@ -3018,6 +3018,46 @@ normaliser, secretele niciodată în chat/repo.
 > Zero cod atins. PrestoConstruct neatins.
 
 
+### 2026-08-07 — Restanțele §4.0 reparabile fără decizii: retenție + hash IP sărat + banner cookie (Claude Opus 4.8, 1M context)
+> **Task Completed.** Din restanțele de conformitate descoperite azi (`PLAN-VERTICALA-3` §4.0), partea care NU
+> depinde de entitatea juridică, de avocat sau de o decizie de produs. Restul rămâne explicit la Andrei.
+> - **RETENȚIE (prima din istoria proiectului).** `src/analytics/retention.ts` PUR (ceas injectat) + port JS +
+>   `pruneOldTelemetry` (onSchedule 03:30, înaintea joburilor de reconciliere). Buclă generică: inegalitate pe UN
+>   câmp (fără index compus), batch-uri de 400, plafon 5000/colecție/rulare, fail-soft per colecție.
+>   **Reguli: DOAR telemetrie** — `abuseGuard` 3z, `errorReports` 90z, `predictionLog` + `campaignInsightLog` 365z
+>   (bucla de învățare reconciliază la ≥14 zile și măsoară acuratețea pe un an).
+> - **SCOP RESTRÂNS DELIBERAT:** `visits` și `submissions` NU intră. Sunt subcolecții (ar cere `collectionGroup` +
+>   index declarat, iar `firestore.indexes.json` e gol), dar motivul principal e altul: **`submissions` conține
+>   lead-urile CLIENTULUI**. Ștergerea lor pe baza unui default tehnic ar fi pierdere de date, nu igienă — e
+>   decizie de business, nu de infrastructură.
+> - **Trei ziduri, nu unul:** (a) `PROTECTED_COLLECTIONS` în modulul pur, verificat de `validateRetentionRules`;
+>   (b) aceeași listă în functions, verificată la RUNTIME în `pruneCollectionsCore` (o regulă otrăvită pe
+>   `invoices` e refuzată FĂRĂ ca `db.collection()` să fie măcar apelat — testat cu un stub care aruncă la
+>   atingere); (c) `shouldDelete` e FAIL-SAFE: valoare lipsă/coruptă → NU se șterge.
+> - **HASH DE IP SĂRAT.** Era SHA-256 **nesărat** (spațiul IPv4 = 2^32 ⇒ reversibil prin forță brută) și persistat
+>   pe zile. Acum: HMAC cu sare rotită zilnic de același job, în `appConfig/ipSalt`. Sarea e **server-only** —
+>   regulile o exclud explicit de la citirea de admin (`docId != 'ipSalt'`), fiindcă un cont de admin compromis ar
+>   face hash-urile din `abuseGuard` reversibile din nou. `getIpSalt` memorează la nivel de instanță (TTL 1h, o
+>   citire la oră, nu una per cerere) și **fail-open pe '' = comportamentul vechi**: o gardă care se strică la o
+>   citire eșuată e mai rea decât una nesărată. Rotirea zilnică e gratuită — bucketul era OricUM per zi.
+> - **BANNER DE COOKIE.** „Accept" era `btn-primary`, „Refuz" era `btn` — dark pattern clasic. Acum ambele au
+>   aceeași clasă, aceeași lățime (96px) și același fundal, cu **Refuz primul**. Plus: consimțământul se poate
+>   **RETRAGE** — link „Setări cookie" în footer (`setCookieConsent(null)`), care șterge alegerea și reîncarcă
+>   pagina (GA4 nu se poate opri curat în aceeași pagină). Înainte, o alegere făcută o dată era definitivă.
+> - **Curățenie descoperită pe parcurs:** `pruneCollectionsCore` folosea `admin.firestore.Timestamp.fromMillis`,
+>   ceea ce-l făcea netestabil fără a stuba tot namespace-ul. Înlocuit cu `new Date(ms)` — Admin SDK îl acceptă la
+>   comparație cu un câmp Timestamp, iar funcția devine testabilă.
+> - **LECȚIE OPERAȚIONALĂ, aplicată greșit întâi:** am deployat hosting ÎNAINTE de functions. Cu `pinTag` pe
+>   `/p/**`, ordinea corectă e **functions, apoi hosting** — altfel Hosting rămâne pinuit pe revizia veche.
+>   Corectat în aceeași sesiune printr-un al doilea deploy de hosting.
+> - **RĂMÂN la Andrei (nu le pot face eu):** nota de informare art. 13 + Termenii reali (cer denumire/CUI/sediu —
+>   fără entitate identificată nu se poate semna niciun DPA) · șablonul DPA art. 28 · cookie-ul A/B `lpab_` fără
+>   consimțământ (decizie de produs: ori intră sub consimțământ, ori renunțăm la stickiness).
+> Verificat: node --check + typecheck + **28/28 suites** (19 aserțiuni noi în test-retention, 11 în e2e TEST RET,
+> 1 în test-rules) + e2e + build:site (32 pagini) + boot-smoke + deploy functions ȘI hosting + **verificare live**
+> (fluxul complet accept → retragere → banner reapărut, zero erori de consolă, `/p/_track` intact).
+
+
 ### Backlog (adaugat 2026-06-13)
 - [x] Sistem Landing Pages (LP Studio v1: IDE cod+preview+AI, servire /p/{slug}, analytics) ✅ 2026-06-13
 - [ ] Builder vizual Landing Pages (drag&drop elemente din UI) — peste IDE-ul de cod actual (viitor)

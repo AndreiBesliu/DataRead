@@ -26,14 +26,21 @@ export function cookieConsent(): 'granted' | 'denied' | null {
   }
 }
 
-export function setCookieConsent(value: 'granted' | 'denied'): void {
+/**
+ * Salvează alegerea. `null` = RETRAGEREA consimțământului (link-ul „Setări cookie" din footer): alegerea se
+ * șterge, bufferul se aruncă și bannerul reapare. GA4, o dată pornit, nu se poate opri curat în aceeași
+ * pagină — de aceea retragerea reîncarcă pagina, ca nimic să nu rămână activ până la o alegere nouă.
+ */
+export function setCookieConsent(value: 'granted' | 'denied' | null): void {
   try {
-    localStorage.setItem(CONSENT_KEY, value);
+    if (value === null) localStorage.removeItem(CONSENT_KEY);
+    else localStorage.setItem(CONSENT_KEY, value);
   } catch {
     /* ignore */
   }
-  if (value === 'granted') void initAnalytics();
-  else pending.length = 0; // refuzat: aruncă bufferul, GA nu pornește
+  if (value === 'granted') { void initAnalytics(); return; }
+  pending.length = 0; // refuzat/retras: aruncă bufferul, GA nu pornește
+  if (value === null && started && typeof window !== 'undefined') window.location.reload();
 }
 
 export async function initAnalytics(): Promise<void> {

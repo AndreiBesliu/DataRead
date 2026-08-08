@@ -374,6 +374,7 @@ const en: typeof ro = {
     clientLogin: 'Client login',
   },
   cookies: {
+    manage: 'Cookie settings',
     message: 'We only use cookies for anonymous statistics, to improve the platform. Do you agree?',
     accept: 'Accept',
     decline: 'Decline',

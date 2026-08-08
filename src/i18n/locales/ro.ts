@@ -391,6 +391,7 @@ const ro = {
     clientLogin: 'Cont client',
   },
   cookies: {
+    manage: 'Setări cookie',
     message: 'Folosim cookie-uri doar pentru statistici anonime, ca să îmbunătățim platforma. Ești de acord?',
     accept: 'Accept',
     decline: 'Refuz',

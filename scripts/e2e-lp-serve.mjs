@@ -2059,6 +2059,49 @@ console.log('\nSEO) audit on-page — SSRF guard + extract + score');
   ok(fns.buildSeoPrompt(sig, scored.issues, 'curatenie bucuresti', 'https://exemplu.ro/curatenie').includes('SEMNALE ON-PAGE'), 'SEO: promptul include semnalele grounding');
 }
 
+// ── TEST RET: retenție — reguli, garda pe colecțiile protejate, fail-soft, hash de IP sărat. ──
+console.log('\nRET) retenție + garda pe colecții protejate + hash sărat');
+{
+  const rules = fns.RETENTION_RULES;
+  ok(Array.isArray(rules) && rules.length === 4, 'RETENTION_RULES: 4 reguli exportate din functions');
+  const cols = rules.map((r) => r.collection).sort();
+  ok(JSON.stringify(cols) === JSON.stringify(['abuseGuard', 'campaignInsightLog', 'errorReports', 'predictionLog']),
+    'RETENTION_RULES: exact telemetria, nimic altceva');
+  ok(rules.every((r) => fns.RETENTION_PROTECTED.indexOf(r.collection) === -1),
+    'RETENTION_RULES: nicio regulă pe o colecție protejată');
+  ok(['invoices', 'invoiceCounters', 'submissions', 'leads', 'contacts', 'clients'].every((c) => fns.RETENTION_PROTECTED.includes(c)),
+    'RETENTION_PROTECTED: financiarul SI datele clientului sunt acolo');
+
+  // Ultimul zid: chiar cu o regulă otrăvită, pruneCollectionsCore NU atinge colecția protejată.
+  let touched = null;
+  const poisonDb = { collection: (c) => { touched = c; throw new Error('nu trebuie atins'); } };
+  const res = await fns.pruneCollectionsCore(poisonDb, Date.now(), [{ collection: 'invoices', field: 'at', kind: 'timestamp', days: 1 }]);
+  ok(touched === null && res.deleted === 0 && res.errors[0] === 'invoices:protected',
+    'pruneCollectionsCore: regulă otrăvită pe `invoices` → refuzată FĂRĂ să atingă colecția');
+
+  // O colecție care aruncă nu oprește restul (fail-soft per colecție).
+  const flakyDb = {
+    collection: (c) => ({ where: () => ({ limit: () => ({ get: async () => { if (c === 'errorReports') throw new Error('boom'); return { empty: true, size: 0, forEach() {} }; } }) }) }),
+    batch: () => ({ delete() {}, commit: async () => {} }),
+  };
+  const res2 = await fns.pruneCollectionsCore(flakyDb, Date.now(), [
+    { collection: 'errorReports', field: 'at', kind: 'timestamp', days: 90 },
+    { collection: 'predictionLog', field: 'at', kind: 'timestamp', days: 365 },
+  ]);
+  ok(res2.errors.length === 1 && res2.byCollection.predictionLog === 0,
+    'pruneCollectionsCore: o colecție care eșuează NU oprește restul');
+
+  // Hash de IP: sărat != nesărat, stabil pe aceeași sare, diferit pe sări diferite.
+  const req = { headers: { 'fastly-client-ip': '203.0.113.5' } };
+  const plain = fns.clientIpHash(req);
+  const salted = fns.clientIpHash(req, 'sare-a');
+  ok(plain !== salted, 'clientIpHash: cu sare dă alt bucket decât fără (HMAC, nu SHA simplu)');
+  ok(salted === fns.clientIpHash(req, 'sare-a'), 'clientIpHash: stabil pe aceeași sare');
+  ok(salted !== fns.clientIpHash(req, 'sare-b'), 'clientIpHash: sare rotită → bucket nou (aliniat cu ziua)');
+  ok(/^[0-9a-f]{24}$/.test(salted), 'clientIpHash: tot 24 hex');
+  ok(fns.clientIpHash(req, '') === plain, 'clientIpHash: sare goală = fallback pe comportamentul vechi');
+}
+
 // ── TEST ABUSE: rate-limit anti-abuz pe endpointurile publice (/p/_submit & /p/_track). ──
 console.log('\nABUSE) rate-limit per-IP/slug + clientIpHash');
 {

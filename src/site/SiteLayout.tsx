@@ -128,6 +128,15 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
           {chrome.footerLinks.map((it, i) => (
             <Link key={i} to={p(it.href)} style={{ color: 'var(--fg-1)' }}>{chromeLabel(it, lang)}</Link>
           ))}
+          {/* Consimțământul trebuie să poată fi RETRAS la fel de ușor cum a fost dat. Fără linkul ăsta, o
+              alegere făcută o dată rămânea definitivă (era scrisă în localStorage și bannerul nu mai apărea). */}
+          <button
+            type="button"
+            onClick={() => { setCookieConsent(null); setConsent(null); }}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--fg-1)', font: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            {t('cookies.manage')}
+          </button>
           <span style={{ marginLeft: 'auto', color: '#dbe4f5', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>{chrome.brandName.toUpperCase()}</span>
         </div>
       </footer>
@@ -135,8 +144,11 @@ export default function SiteLayout({ route, children }: { route: PublicRoute; ch
       {consent === null && (
         <div role="dialog" aria-live="polite" style={{ position: 'fixed', bottom: 16, left: 16, right: 16, maxWidth: 560, margin: '0 auto', background: 'var(--bg-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 6px 24px rgba(0,0,0,0.45)', padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', zIndex: 50 }}>
           <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)', minWidth: 220 }}>{t('cookies.message')}</span>
-          <button className="btn btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => decide('granted')}>{t('cookies.accept')}</button>
-          <button className="btn" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => decide('denied')}>{t('cookies.decline')}</button>
+          {/* Consimțământul trebuie să fie LIBER: „Accept" și „Refuz" au aceeași greutate vizuală (aceeași clasă,
+              aceeași mărime). Un accept evidențiat vs. un refuz șters e un „dark pattern" — exact ce sancționează
+              autoritățile de protecție a datelor. Refuzul e primul, ca să nu fie cel „de scăpat". */}
+          <button className="btn" style={{ padding: '6px 14px', fontSize: 13, minWidth: 96 }} onClick={() => decide('denied')}>{t('cookies.decline')}</button>
+          <button className="btn" style={{ padding: '6px 14px', fontSize: 13, minWidth: 96 }} onClick={() => decide('granted')}>{t('cookies.accept')}</button>
         </div>
       )}
     </div>

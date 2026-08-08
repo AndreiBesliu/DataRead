@@ -516,7 +516,10 @@ service cloud.firestore {
     // Config intern al platformei (zona operatorilor). Ex.: appConfig/automation = plafon zilnic AI + bypass entitlement
     // pentru acțiunile AI din automatizări. Read+write admin (setat din /admin); motorul îl citește prin Admin SDK.
     match /appConfig/{docId} {
-      allow read: if isAdmin();
+      // `ipSalt` = sarea pentru HMAC-ul de IP (rotită zilnic de pruneOldTelemetry). SERVER-ONLY: dacă un cont
+      // de admin ar fi compromis, sarea scursă ar face hash-urile de IP din `abuseGuard` reversibile din nou.
+      // Scrierea e deja imposibilă (docId nu e în allowlist-ul de mai jos).
+      allow read: if isAdmin() && docId != 'ipSalt';
       allow write: if isAdmin() && request.resource.data.schema == 1 && (
         (docId == 'automation'
           && request.resource.data.aiDailyCap is int

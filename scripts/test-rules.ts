@@ -55,6 +55,10 @@ check('siteConfig: pageContent are plafon de chei în reguli (doc citit de fieca
 check('siteConfig: content acceptă DOAR limbile cunoscute', rules.includes("content.keys().hasOnly(['ro', 'en'])"));
 check('siteConfig: updatedBy e legat de autorul real', rules.includes('updatedBy == request.auth.uid'));
 
+// appConfig/ipSalt: sarea pentru HMAC-ul de IP e SERVER-ONLY — nici adminii n-o citesc (un cont compromis
+// ar face hash-urile din abuseGuard reversibile din nou).
+check('appConfig: ipSalt e exclus de la citirea de admin', rules.includes("docId != 'ipSalt'"));
+
 if (failures) {
   console.error(`${failures} checks failed`);
   process.exit(1);
