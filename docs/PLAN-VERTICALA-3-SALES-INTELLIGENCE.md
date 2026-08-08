@@ -129,9 +129,9 @@ Nu e datorie a verticalei 3. E datorie a produsului live, cu termen propriu.
 | Politica de confidențialitate + Termeni = **placeholder DRAFT pe LIVE**, în timp ce `/start` colectează nume/email/telefon | `src/i18n/locales/ro.ts` (`legal.privacyBody`) | Notă art. 13 reală, cu operatorul identificat (denumire, CUI, sediu). **Fără entitate juridică identificată nu se poate semna niciun DPA** |
 | DPA art. 28 cu clienții pentru LP-urile deja servite | — | Șablon semnat, înainte de V3 |
 | Cookie `lpab_` fără consimțământ | `functions/index.js:4607` | A/B nu e „strict necesar"; ori intră sub consimțământ, ori renunțăm la stickiness pe cookie |
-| Zero retenție (`submissions`, `visits`, `abuseGuard`) | grep TTL = 0 | Motorul de retenție (`PLAN-SISTEME-NATIVE` §3.D) devine scadent **acum** |
-| `clientIpHash` SHA-256 nesărat, persistat | `functions/index.js` | HMAC cu sare rotită + TTL pe `abuseGuard` |
-| Banner: „Accept" = primary, „Refuz" = secundar; alegerea nu se poate revizui | `SiteLayout.tsx:138-139` | Butoane egale vizual + link permanent „Setări cookie" |
+| ~~Zero retenție~~ ✅ **LIVRAT 07.08** pe TELEMETRIE (`abuseGuard` 3z, `errorReports` 90z, log-urile de învățare 365z) | commit `ddcbf86` | RĂMÂNE: `visits` + `submissions` — subcolecții, iar `submissions` = lead-urile CLIENTULUI ⇒ termenul e **decizie de business**, nu default tehnic |
+| ~~`clientIpHash` SHA-256 nesărat~~ ✅ **LIVRAT 07.08** | commit `ddcbf86` | HMAC cu sare rotită zilnic (`appConfig/ipSalt`, server-only, exclus de la citirea de admin) + TTL 3 zile pe `abuseGuard` |
+| ~~Banner cu Accept evidențiat + alegere definitivă~~ ✅ **LIVRAT 07.08** | commit `ddcbf86` | Butoane identice (aceeași clasă/lățime/fundal), Refuz primul, + link de retragere în footer. Verificat live |
 
 ### 4.1 Ce adaugă V3
 ⚖️ DPA art. 28 cu fiecare client · ⚖️ DPIA (monitorizare sistematică) · respectarea semnalului de consimțământ de
