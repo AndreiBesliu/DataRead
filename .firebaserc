@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "dataread-e1bd6"
+    "default": "dataread-e1bd6",
+    "live": "dataread-e1bd6"
   }
 }
